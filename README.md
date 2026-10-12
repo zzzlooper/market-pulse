@@ -349,7 +349,13 @@ app/
   health.py   per-source health: last good update, errors, staleness, outage alerts
   halts.py    Nasdaq Trader halts feed: parsing, reason codes, new-halt/resumption diffing
   notify.py   phone push via ntfy / Telegram: batching, rate cap, delivery status
-  engine.py   background loops + WebSocket broadcast hub
+  engine/     the engine: one object, a file per area (see engine/__init__.py)
+    core.py       lifecycle, loop runner, health, snapshot, dashboard actions, settings
+    prices.py     quotes, Finnhub ticks, movers, unusual volume, price alerts
+    feeds.py      news, SEC filings, halts
+    risk.py       dilution-risk badges and the level filing alerts carry
+    catalysts.py  catalyst reaction tracking and the Reactions report
+    daily.py      the end-of-day recap
   main.py     FastAPI routes, access token and /ws endpoint
 static/       single-page dashboard (vanilla JS, no build step)
   app.js      tables, news, alerts, halts, WebSocket client

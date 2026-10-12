@@ -184,8 +184,8 @@ def test_setup_checklist_over_the_api(client, monkeypatch):
 # --- the checklist ------------------------------------------------------------------------------
 
 def items(**kw):
-    base = dict(channels=[], phone_error=None, health=[], watchlist=["AAPL"], default_watchlist=["SPY"],
-                recap_on=True, local_client=True, local_server=True, https=False, under_systemd=False)
+    base = {"channels": [], "phone_error": None, "health": [], "watchlist": ["AAPL"], "default_watchlist": ["SPY"],
+                "recap_on": True, "local_client": True, "local_server": True, "https": False, "under_systemd": False}
     return {i["id"]: i for i in checklist(Settings(**kw.pop("settings", {})), **{**base, **kw})}
 
 

@@ -8,7 +8,7 @@ import logging
 import re
 from calendar import timegm
 from collections import OrderedDict
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 
 import feedparser
 import httpx
@@ -57,7 +57,7 @@ def _clean(text: str) -> str:
 
 def _published(entry) -> str:
     parsed = entry.get("published_parsed") or entry.get("updated_parsed")
-    dt = datetime.fromtimestamp(timegm(parsed), timezone.utc) if parsed else clock.now(timezone.utc)
+    dt = datetime.fromtimestamp(timegm(parsed), UTC) if parsed else clock.now(UTC)
     return dt.isoformat()
 
 

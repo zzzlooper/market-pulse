@@ -92,7 +92,7 @@ def test_movers_report_failing_screeners_and_keep_their_old_lists(tmp_path, monk
     assert engine.health.status_of("movers")["reason"] == "screener failing: losers"
 
     engine, _, _ = make_engine(tmp_path)
-    monkeypatch.setattr(market, "fetch_movers", lambda: {})
+    monkeypatch.setattr(market, "fetch_movers", dict)
     run(engine, engine._run_step("movers", engine._update_movers))
     status = engine.health.status_of("movers")
     assert (status["state"], status["reason"]) == ("down", "every Yahoo screener failed")

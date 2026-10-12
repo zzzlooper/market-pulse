@@ -74,11 +74,16 @@ def _iso(dt: datetime | None) -> str | None:
     return dt.isoformat() if dt else None
 
 
+def _field(item, tag: str) -> str:
+    return (item.findtext(NS + tag) or "").strip()
+
+
 def parse_halts(content: bytes) -> list[dict]:
     root = ET_XML.fromstring(content)
     halts = []
     for item in root.iter("item"):
-        field = lambda tag: (item.findtext(NS + tag) or "").strip()
+        def field(tag: str, item=item) -> str:
+            return _field(item, tag)
         symbol = field("IssueSymbol") or (item.findtext("title") or "").strip()
         halted_at = parse_et(field("HaltDate"), field("HaltTime"))
         if not symbol or halted_at is None:
@@ -124,8 +129,8 @@ def halt_messages(new: list[dict], resumption_set: list[dict], watchlist: list[s
             out.append((h, "halt", f"{h['symbol']} halted at {_hhmm(h['halted_at'])} ET · {h['reason']}{resume}"))
     for h in resumption_set:
         if relevant(h):
-            out.append((h, "resume", f"{h['symbol']} trading resumes {_hhmm(h['resume_trade_at'])} ET "
-                                     f"(halted {_hhmm(h['halted_at'])} · {h['reason']})"))
+            out.append((h, "resume", (f"{h['symbol']} trading resumes {_hhmm(h['resume_trade_at'])} ET "
+                                      f"(halted {_hhmm(h['halted_at'])} · {h['reason']})")))
     return out
 
 

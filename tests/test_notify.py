@@ -12,9 +12,9 @@ ALL = {"price": True, "halts": True, "news": True, "unusual": True}
 
 
 def settings(**kw):
-    base = dict(ntfy_server="https://ntfy.test", ntfy_topic="mp-secret-topic-x7k2",
-                telegram_bot_token="123:SECRETTOKEN", telegram_chat_id="987654321",
-                telegram_api="https://tg.test")
+    base = {"ntfy_server": "https://ntfy.test", "ntfy_topic": "mp-secret-topic-x7k2",
+                "telegram_bot_token": "123:SECRETTOKEN", "telegram_chat_id": "987654321",
+                "telegram_api": "https://tg.test"}
     return Settings(**{**base, **kw})
 
 

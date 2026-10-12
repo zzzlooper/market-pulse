@@ -149,7 +149,7 @@ def close_engine(engine):
 
 def test_engine_tracks_catalysts_and_measures_them_with_one_download_per_symbol(tmp_path, monkeypatch):
     engine = make_engine(tmp_path)
-    monkeypatch.setattr("app.engine.now_ts", lambda: AT + 3600)
+    monkeypatch.setattr("app.engine.catalysts.now_ts", lambda: AT + 3600)
     engine._track("f1", "ACME", "dilution", "offering from shelf", "Acme: offering", "2026-10-13T10:00:00-04:00", "high")
     engine._track("f2", "ACME", "event", "delisting notice", "Acme: delisting", "2026-10-13T10:00:00-04:00")
     engine._track("old", "ACME", "event", "x", "x", "2026-09-01T10:00:00-04:00")      # too old to measure
@@ -255,7 +255,7 @@ def test_api_reports_reactions_and_previews_the_recap_without_sending(client, mo
 def test_an_event_before_todays_first_bar_is_priced_off_the_last_session(tmp_path, monkeypatch):
     engine = make_engine(tmp_path)
     at = ts(13, 2, 0)  # 2 AM: today's 1-minute bars start at 4 AM
-    monkeypatch.setattr("app.engine.now_ts", lambda: at + 3 * 3600)
+    monkeypatch.setattr("app.engine.catalysts.now_ts", lambda: at + 3 * 3600)
     engine._track("early", "ACME", "event", "delisting notice", "t", "2026-10-13T02:00:00-04:00")
     fetches = []
 
@@ -271,7 +271,7 @@ def test_an_event_before_todays_first_bar_is_priced_off_the_last_session(tmp_pat
 
 def test_offerings_without_a_risk_level_get_one_looked_up(tmp_path, monkeypatch):
     engine = make_engine(tmp_path)
-    monkeypatch.setattr("app.engine.now_ts", lambda: AT + 60)
+    monkeypatch.setattr("app.engine.catalysts.now_ts", lambda: AT + 60)
 
     async def get(symbol):
         return {"level": "high", "points": 5, "reasons": []}

@@ -11,7 +11,7 @@ import logging
 import time
 from collections import deque
 from collections.abc import Awaitable, Callable
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 
 import httpx
 
@@ -182,7 +182,7 @@ class PhoneNotifier:
         if failures:
             log.warning("phone notification failed: %s", self.last_error)
         if len(failures) < len(results):  # at least one channel got it
-            self.last_sent = datetime.now(timezone.utc).isoformat()
+            self.last_sent = datetime.now(UTC).isoformat()
         if self._on_status:
             await self._on_status(self.status())
 
