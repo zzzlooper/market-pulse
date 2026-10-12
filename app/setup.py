@@ -22,7 +22,7 @@ from urllib.parse import urlparse
 
 from .config import CONFIG_PATH, RECAP_TIME, SECRET_ENV, Settings, load_settings
 
-VERSION = "0.6"
+VERSION = "0.7"
 EXAMPLE_DOMAINS = ("example.com", "example.org", "example.net")
 
 
@@ -52,6 +52,8 @@ EDITABLE: dict[str, Field] = {
     "min_volume": Field("…and at least shares traded", "integer", high=1e10),
     "insider_min_value": Field("Smallest insider trade shown ($)", "number", high=1e10),
     "recap_time": Field("Daily recap at (ET)", "time"),
+    "record": Field("Record the day's data for replay", "bool", live=False,
+                    hint="Saved in data/recordings, readable by you only; see README: Record and replay."),
 }
 GENERATED = {"access_token": lambda: secrets.token_urlsafe(24),
              "ntfy_topic": lambda: "mp-" + secrets.token_urlsafe(12)}
@@ -89,6 +91,12 @@ def validate(name: str, value: object) -> object:
     spec = EDITABLE.get(name)
     if spec is None:
         raise SettingsError(f"{name} can't be changed from the dashboard")
+    if spec.kind == "bool":
+        if isinstance(value, bool):
+            return value
+        if value in ("true", "false"):
+            return value == "true"
+        raise SettingsError(f"{spec.label}: on or off")
     if spec.kind in ("number", "integer"):
         try:
             number = float(value)  # type: ignore[arg-type]

@@ -239,7 +239,7 @@ function updateDetailStats() {
   let earnings = "–";
   if (p.next_earnings) {
     const d = new Date(p.next_earnings * 1000);
-    const days = Math.ceil((d - Date.now()) / 86_400_000);
+    const days = Math.ceil((d - appNow()) / 86_400_000);
     earnings = `${d.toLocaleDateString([], { month: "short", day: "numeric" })} <small class="muted">(${days <= 0 ? "today" : `in ${days}d`})</small>`;
   }
   const stat = (label, value, cls = "") => `<div><span>${label}</span><b class="${cls}">${value}</b></div>`;

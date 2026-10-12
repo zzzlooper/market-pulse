@@ -16,6 +16,8 @@ from zoneinfo import ZoneInfo
 import pandas as pd
 import yfinance as yf
 
+from .clock import clock as app_clock
+
 log = logging.getLogger(__name__)
 
 ET = ZoneInfo("America/New_York")
@@ -43,7 +45,7 @@ def session_fraction(now: datetime | None = None) -> float:
     Outside regular hours the latest volume covers a full session, so 1.0. Floored at
     0.05 so the first minutes after the open don't produce absurd ratios.
     """
-    now = (now or datetime.now(ET)).astimezone(ET)
+    now = (now or app_clock.now(ET)).astimezone(ET)
     if now.weekday() >= 5 or not (OPEN <= now.time() < CLOSE):
         return 1.0
     minutes = (now.hour * 60 + now.minute) - (OPEN.hour * 60 + OPEN.minute)
@@ -52,7 +54,7 @@ def session_fraction(now: datetime | None = None) -> float:
 
 def pace(session_date: date | None, now: datetime | None = None) -> float:
     """session_fraction, but only when the volume figure belongs to today's session."""
-    now = (now or datetime.now(ET)).astimezone(ET)
+    now = (now or app_clock.now(ET)).astimezone(ET)
     if session_date != now.date():
         return 1.0
     return session_fraction(now)
@@ -233,7 +235,7 @@ def quote_from_bars(symbol: str, bars: list[dict], profile: dict, now: datetime 
     compare like-for-like with the daily average."""
     if not bars:
         return None
-    now = (now or datetime.now(ET)).astimezone(ET)
+    now = (now or app_clock.now(ET)).astimezone(ET)
     session = [
         b for b in bars
         if (t := datetime.fromtimestamp(b["t"], ET)).date() == now.date() and OPEN <= t.time() < CLOSE

@@ -61,6 +61,9 @@ class Settings:
     risk_movers: list[str] = field(default_factory=lambda: ["gainers", "small_caps"])
     risk_max_symbols: int = 60
     recap_time: str = "16:30"  # ET, weekdays: end-of-day recap to the phone (Phone box: Daily recap)
+    # Record what the data sources answer, to replay later (app/replay.py). Newest record_keep kept.
+    record: bool = False
+    record_keep: int = 10
 
 
 # Settings that may come from same-named upper-case env vars (which win), so secrets and

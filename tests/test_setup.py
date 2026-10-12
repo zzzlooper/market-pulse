@@ -9,7 +9,14 @@ from fastapi.testclient import TestClient
 
 from app import main
 from app.config import Settings
-from app.setup import DashboardSettings, SettingsError, checklist, masked, validate
+from app.setup import (
+    VERSION,
+    DashboardSettings,
+    SettingsError,
+    checklist,
+    masked,
+    validate,
+)
 
 EMAIL = "jane.trader@mailbox.test"
 TOPIC = "mp-Zq8fWm3RkT2vYp"
@@ -37,7 +44,7 @@ def everything(resp) -> str:
 # --- validation and masking -----------------------------------------------------------------
 
 def test_the_email_becomes_the_sec_user_agent_and_placeholders_are_refused():
-    assert validate("sec_user_agent", f" {EMAIL} ") == f"market-pulse/0.6 {EMAIL}"
+    assert validate("sec_user_agent", f" {EMAIL} ") == f"market-pulse/{VERSION} {EMAIL}"
     with pytest.raises(SettingsError, match="real address"):
         validate("sec_user_agent", "you@example.com")
 
@@ -54,7 +61,7 @@ def test_invalid_values_are_refused_without_repeating_them(name, value):
 
 
 def test_masks_tell_values_apart_without_revealing_them():
-    assert masked("sec_user_agent", f"market-pulse/0.6 {EMAIL}") == "j…@….test"
+    assert masked("sec_user_agent", f"market-pulse/{VERSION} {EMAIL}") == "j…@….test"
     assert masked("sec_user_agent", "market-pulse/0.1 admin@example.com") == "placeholder"
     assert masked("telegram_bot_token", TG_TOKEN) == "…xyz"
     assert masked("telegram_chat_id", "987654321") == "set"  # too short to show any of it
@@ -96,7 +103,7 @@ def test_secrets_go_in_but_never_come_back_out(client, caplog):
     # Applied at once: the phone uses the new channel, SEC requests the new contact.
     engine = main.engine
     assert engine.phone.channels == ["ntfy", "telegram"]
-    assert engine.sec._client.headers["User-Agent"] == f"market-pulse/0.6 {EMAIL}"
+    assert engine.sec._client.headers["User-Agent"] == f"market-pulse/{VERSION} {EMAIL}"
     assert engine.settings.rvol_threshold == 2.5
     assert stat.S_IMODE(os.stat(engine.dashboard.path).st_mode) == 0o600
     # Phone status masks the topic and chat id too.
@@ -196,7 +203,7 @@ def test_checklist_covers_phone_service_data_and_extras():
     assert i["data"]["state"] == "warn" and "SEC filings" in i["data"]["detail"]
     assert i["watchlist"]["state"] == "info" and i["finnhub"]["state"] == "info"
     ok = items(channels=["ntfy"], under_systemd=True, recap_on=False,
-               settings={"sec_user_agent": f"market-pulse/0.6 {EMAIL}", "finnhub_api_key": "k" * 20})
+               settings={"sec_user_agent": f"market-pulse/{VERSION} {EMAIL}", "finnhub_api_key": "k" * 20})
     assert ok["sec"]["state"] == ok["phone"]["state"] == ok["service"]["state"] == "ok"
     assert "recap is switched off" in ok["phone"]["detail"]
     assert "finnhub" not in ok and "watchlist" not in ok

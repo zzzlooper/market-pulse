@@ -120,6 +120,34 @@ sh scripts/install-service.sh --uninstall
 - Rerun the script after changing `MP_HOST`/`MP_PORT`; after editing the env file or
   `config.toml`, `systemctl --user restart market-pulse`.
 
+### Record and replay
+
+Record a trading day, then replay it on a weekend to test alerts, the recap and the dashboard
+without waiting for the market:
+
+```sh
+# record: turn on "Record the day's data for replay" in Setup (or record = true in config.toml,
+# or MARKET_PULSE_RECORD=1), restart, and let it run
+python -m app.replay list
+python -m app.replay play data/recordings/2026-10-13_092500.jsonl.gz --from 15:45 --speed 10
+# then open http://localhost:8001
+```
+
+- A recording holds what the data sources answered: Yahoo results, the news and halt feeds,
+  SEC feeds and documents. Never the requests themselves, so your SEC contact address, tokens
+  and cookies aren't in it, and URLs lose any credential-like parameter.
+- SEC insider (Form 4) and 13D documents name private people, often with addresses and phone
+  numbers. They're cut down as they're recorded to the fields the app reads: no names (except
+  firms the app itself would show), addresses, signatures or free text. Feed entries naming an
+  insider or investor are redacted too.
+- Feeds are stored item by item and only when something changed, so a day is a few tens of MB.
+  Files are readable by you only; the newest `record_keep` (default 10) are kept.
+- A replay never uses the network (anything not recorded shows as a data outage) and never
+  sends phone alerts. It runs on the recorded watchlist and rules in a temporary folder, so your
+  real watchlist, settings and reaction history aren't touched. A banner shows it's a replay;
+  the clock, the market session and "today" follow the replayed time, at `--speed`.
+- Ticker details work for the tickers whose charts were fetched while recording.
+
 ### Opening it from your phone or another computer
 
 `uvicorn app.main:app` listens on `127.0.0.1`, so only this computer can open it. To reach it
@@ -314,6 +342,8 @@ app/
   reactions.py  catalyst reaction tracking: what's due, price at each horizon, medians
   recap.py    end-of-day recap message and its schedule
   setup.py    dashboard settings (write-only secrets) and the first-run checklist
+  clock.py    the market clock: real time, or a replayed day's time and speed
+  replay.py   record what the data sources answer, and replay it offline (python -m app.replay)
   sentiment.py  rule-based headline sentiment (finance lexicon + negation)
   alerts.py   price/move/RVOL alert rules (crossing + cooldown) and unusual-volume entries
   health.py   per-source health: last good update, errors, staleness, outage alerts

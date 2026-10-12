@@ -14,6 +14,7 @@ import feedparser
 import httpx
 
 from . import sentiment
+from .clock import clock
 from .config import SEC_8K_FEED, Settings
 from .sec import SecClient, is_sec_url
 
@@ -56,14 +57,15 @@ def _clean(text: str) -> str:
 
 def _published(entry) -> str:
     parsed = entry.get("published_parsed") or entry.get("updated_parsed")
-    dt = datetime.fromtimestamp(timegm(parsed), timezone.utc) if parsed else datetime.now(timezone.utc)
+    dt = datetime.fromtimestamp(timegm(parsed), timezone.utc) if parsed else clock.now(timezone.utc)
     return dt.isoformat()
 
 
 class NewsFeed:
     """Polls feeds, tags tickers, dedupes by headline and keeps a bounded history."""
 
-    def __init__(self, settings: Settings, sec: SecClient | None = None):
+    def __init__(self, settings: Settings, sec: SecClient | None = None,
+                 transport: httpx.AsyncBaseTransport | None = None):
         self.settings = settings
         self._own_sec = sec is None
         self.sec = sec or SecClient(settings.sec_user_agent)
@@ -73,7 +75,8 @@ class NewsFeed:
         self.failed: list[str] = []  # feeds that failed in the last poll
         self.source_count = 0         # feeds tried in the last poll
         self._fail_streak: dict[str, int] = {}
-        self._client = httpx.AsyncClient(timeout=15, follow_redirects=True, headers={"User-Agent": BROWSER_UA})
+        self._client = httpx.AsyncClient(timeout=15, follow_redirects=True, headers={"User-Agent": BROWSER_UA},
+                                         transport=transport)
 
     async def aclose(self) -> None:
         await self._client.aclose()

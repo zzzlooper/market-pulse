@@ -8,7 +8,10 @@ import math
 import os
 import re
 import secrets
+import shutil
+import tempfile
 from contextlib import asynccontextmanager
+from pathlib import Path
 from urllib.parse import urlparse
 
 from fastapi import (
@@ -24,6 +27,7 @@ from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
 
 from .alerts import KINDS
+from .clock import clock
 from .config import (
     DEFAULT_PHONE_ALERTS,
     DEFAULT_WATCHLIST,
@@ -35,6 +39,7 @@ from .config import (
 from .engine import Engine, Hub
 from .health import SourceError, describe
 from .market import CHART_RANGES
+from .replay import Player, Recorder, replay_settings
 from .setup import EDITABLE, GENERATED, DashboardSettings, SettingsError, checklist
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(name)s: %(message)s")
@@ -52,8 +57,30 @@ TOKEN_COOKIE_DAYS = 365
 LOGIN_FAIL_DELAY = 1.0  # seconds; slows down guessing
 
 hub = Hub()
-engine = Engine(load_settings(dashboard=DashboardSettings(STATE_PATH.parent / "settings.json").load()),
-                UserState(), hub)
+REPLAY = os.environ.get("MARKET_PULSE_REPLAY")  # set by `python -m app.replay play`
+
+
+def build_engine() -> Engine:
+    settings = load_settings(dashboard=DashboardSettings(STATE_PATH.parent / "settings.json").load())
+    state = UserState()
+    if REPLAY:
+        # Its own throwaway folder for state, settings and reactions: a replay must never write
+        # to your real data folder (your watchlist, your reaction history).
+        state = UserState(Path(tempfile.mkdtemp(prefix="market-pulse-replay-")) / "state.json")
+        player = Player(Path(REPLAY))
+        recorded = player.header.get("state", {})
+        for key in ("watchlist", "keywords", "alert_rules", "unusual_alerts", "halt_alerts"):
+            if key in recorded:
+                setattr(state, key, recorded[key])
+        return Engine(replay_settings(settings), state, hub, io=player)
+    if settings.record or os.environ.get("MARKET_PULSE_RECORD") == "1":
+        recorder = Recorder(STATE_PATH.parent / "recordings", state.to_dict(), settings.record_keep)
+        log.info("recording to %s", recorder.recording.name)
+        return Engine(settings, state, hub, io=recorder)
+    return Engine(settings, state, hub)
+
+
+engine = build_engine()
 
 
 @asynccontextmanager
@@ -61,13 +88,20 @@ async def lifespan(_: FastAPI):
     if engine.settings.public_url and not engine.settings.access_token:
         log.warning("public_url is set but access_token is empty: anyone who can reach this app "
                     "can change its watchlist, alert rules and phone alerts (see README)")
-    if "@example.com" in engine.settings.sec_user_agent:
+    if "@example.com" in engine.settings.sec_user_agent and not REPLAY:
         # The value itself isn't logged: once set, it holds the user's contact address.
         log.warning("sec_user_agent is still the example value; SEC may block news and filings. "
                     "Set it in config.toml (or SEC_USER_AGENT) to an app name and your contact email")
+    if REPLAY:
+        player = engine.io
+        clock.start_replay(player.start_at(os.environ.get("MARKET_PULSE_REPLAY_FROM")),
+                           float(os.environ.get("MARKET_PULSE_REPLAY_SPEED") or 1))
+        log.warning("REPLAY of %s: no network, no phone alerts", player.recording.name)
     await engine.start()
     yield
     await engine.stop()
+    if REPLAY:  # the replay's throwaway copy of state, settings and reactions
+        shutil.rmtree(engine.state.path.parent, ignore_errors=True)
 
 
 app = FastAPI(title="Market Pulse", lifespan=lifespan)
@@ -183,7 +217,7 @@ def snapshot():
 
 
 class SettingsIn(BaseModel):
-    values: dict[str, str | float | int | None]
+    values: dict[str, bool | str | float | int | None]
 
 
 class GenerateIn(BaseModel):
@@ -241,6 +275,10 @@ def setup(request: Request):
         recap_on=engine.state.phone_alerts.get("recap", False), local_client=is_loopback(client),
         local_server=is_loopback(server[0]), https=request.url.scheme == "https",
         under_systemd=os.environ.get("MARKET_PULSE_SERVICE") == "1")  # set by scripts/install-service.sh
+    if REPLAY:
+        items.insert(0, {"id": "replay", "state": "info", "title": "This is a replay",
+                         "detail": "Settings changed here apply to this replay only, and nothing is sent anywhere.",
+                         "fix": None})
     return JSONResponse({"items": items, "editable": list(EDITABLE)}, headers=NO_STORE)
 
 

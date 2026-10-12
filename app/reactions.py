@@ -17,10 +17,10 @@ from __future__ import annotations
 import os
 import sqlite3
 import statistics
-import time
 from datetime import date, datetime, timedelta
 from pathlib import Path
 
+from .clock import clock
 from .market import CLOSE, ET, is_regular_bar
 
 GRACE = 20 * 60           # Yahoo's bars arrive ~15 minutes late
@@ -194,4 +194,4 @@ def due(event: dict, now: int) -> bool:
 
 
 def now_ts() -> int:
-    return int(time.time())
+    return int(clock.time())

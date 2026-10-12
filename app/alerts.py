@@ -12,6 +12,7 @@ from collections import deque
 from collections.abc import Callable
 from datetime import datetime
 
+from .clock import clock as app_clock
 from .market import ET
 
 COOLDOWN_SECONDS = 30 * 60
@@ -44,7 +45,7 @@ def _describe(kind: str, q: dict, value: float) -> str:
 
 
 class AlertMonitor:
-    def __init__(self, clock: Callable[[], datetime] = lambda: datetime.now(ET)):
+    def __init__(self, clock: Callable[[], datetime] = lambda: app_clock.now(ET)):
         self._clock = clock
         self._hit: dict[tuple[str, str], bool] = {}     # (rule id, symbol) -> condition at last check
         self._fired_at: dict[tuple[str, str], float] = {}

@@ -52,7 +52,7 @@ def test_only_sec_hosts_get_the_contact_address():
 
 def test_ticker_map_is_retried_after_a_failure_and_reports_why(monkeypatch):
     calls, clock = [], [1_000.0]
-    monkeypatch.setattr(sec_module.time, "monotonic", lambda: clock[0])
+    monkeypatch.setattr(sec_module.clock, "time", lambda: clock[0])
 
     def handler(request):
         calls.append(request)

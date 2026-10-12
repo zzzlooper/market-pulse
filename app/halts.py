@@ -130,11 +130,12 @@ def halt_messages(new: list[dict], resumption_set: list[dict], watchlist: list[s
 
 
 class HaltFeed:
-    def __init__(self, url: str = HALTS_URL):
+    def __init__(self, url: str = HALTS_URL, transport: httpx.AsyncBaseTransport | None = None):
         self.url = url
         self._halts: dict[str, dict] = {}
         self._primed = False
-        self._client = httpx.AsyncClient(timeout=15, follow_redirects=True, headers={"User-Agent": BROWSER_UA})
+        self._client = httpx.AsyncClient(timeout=15, follow_redirects=True, headers={"User-Agent": BROWSER_UA},
+                                         transport=transport)
 
     async def aclose(self) -> None:
         await self._client.aclose()

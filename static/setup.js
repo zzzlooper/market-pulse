@@ -12,6 +12,7 @@ const SETUP_GROUPS = [
   ["Opening it from your phone", ["access_token", "public_url"]],
   ["Real-time prices", ["finnhub_api_key"]],
   ["Alert tuning", ["rvol_threshold", "min_volume", "insider_min_value", "recap_time"]],
+  ["Record and replay", ["record"]],
 ];
 const SETUP_ICON = { ok: "✓", todo: "○", warn: "!", info: "i" };
 const GENERATED_NOTE = {
@@ -30,7 +31,7 @@ async function loadSetup(autoOpen = false) {
   }
   updateSetupButton();
   if (setup.open) renderSetup();
-  else if (autoOpen && setup.items.some((i) => i.state === "todo")) {
+  else if (autoOpen && appClock.base == null && setup.items.some((i) => i.state === "todo")) {  // not in a replay
     let seen = false;
     try { seen = localStorage.getItem(SETUP_SEEN) === "1"; } catch { /* private window */ }
     if (!seen) openSetup();
@@ -76,6 +77,10 @@ function fieldRow(f) {
     return `<div class="set-row"><label>${esc(f.label)}${from}</label>
       <div class="set-locked">${f.secret ? status : esc(f.value)} · set by the environment variable
         <code>${esc(f.name.toUpperCase())}</code>; change it there</div></div>`;
+  }
+  if (f.kind === "bool") {
+    return `<div class="set-row"><label><input name="${esc(f.name)}" type="checkbox"${f.value ? " checked" : ""}>
+      ${esc(f.label)}${from}${restart}</label><small class="muted">${esc(f.hint)}</small></div>`;
   }
   const type = f.kind === "secret" ? "password" : f.kind === "email" ? "email"
     : ["number", "integer"].includes(f.kind) ? "number" : "text";
@@ -124,9 +129,7 @@ function renderSetup() {
 async function saveSettings(values) {
   const result = await api("PUT", "/api/settings", { values });
   setup.fields = result.fields;
-  toast(result.restart_required.length
-    ? "Saved. Restart Market Pulse to use the new Finnhub key."
-    : "Saved");
+  toast(result.restart_required.length ? "Saved. It takes effect when Market Pulse restarts." : "Saved");
   await loadSetup();
 }
 
@@ -142,6 +145,10 @@ $("#setup").addEventListener("submit", async (ev) => {
   for (const input of ev.target.querySelectorAll("input[name]")) {
     const f = setup.fields.find((x) => x.name === input.name);
     if (!f || f.locked) continue;
+    if (f.kind === "bool") {
+      if (input.checked !== Boolean(f.value)) values[f.name] = input.checked;
+      continue;
+    }
     const v = input.value.trim();
     if (f.secret) {
       if (v) values[f.name] = v;  // empty = keep the current secret

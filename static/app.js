@@ -31,10 +31,26 @@ function fmtVol(v) {
   return String(v);
 }
 
+// The market clock: real time, or the replayed day's time during a replay (from the server,
+// running at its speed). Data-source ages ("4m ago") stay on real time.
+const appClock = { base: null, at: 0, speed: 1 };
+const appNow = () => (appClock.base == null ? Date.now() : appClock.base + (Date.now() - appClock.at) * appClock.speed);
+
+function setClock(c) {
+  if (!c) return;
+  Object.assign(appClock, c.replay ? { base: c.now * 1000, at: Date.now(), speed: c.speed } : { base: null });
+  const banner = $("#replay-banner");
+  banner.hidden = !c.replay && !c.recording;
+  banner.classList.toggle("recording", !c.replay);
+  banner.textContent = c.replay
+    ? `REPLAY of ${c.recording}${c.speed !== 1 ? ` at ${c.speed}×` : ""} · no network, no phone alerts`
+    : `Recording today's data for replay (${c.recording})`;
+}
+
 function fmtTime(iso) {
   const d = new Date(iso);
   const time = d.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" });
-  return d.toDateString() === new Date().toDateString()
+  return d.toDateString() === new Date(appNow()).toDateString()
     ? time
     : `${d.toLocaleDateString([], { month: "short", day: "numeric" })} ${time}`;
 }
@@ -81,12 +97,12 @@ function renderWatchlist() {
 
 // The feed only gives times; whether a halt is over depends on the clock, so status is
 // derived here and the table re-rendered periodically.
-function haltStatus(h, now = Date.now()) {
+function haltStatus(h, now = appNow()) {
   if (!h.resume_trade_at) return "halted";
   return Date.parse(h.resume_trade_at) <= now ? "resumed" : "resuming";
 }
 
-const etDate = (d = new Date()) => new Intl.DateTimeFormat("en-CA", { timeZone: "America/New_York" }).format(d);
+const etDate = (d = new Date(appNow())) => new Intl.DateTimeFormat("en-CA", { timeZone: "America/New_York" }).format(d);
 const fmtET = (iso) => new Date(iso).toLocaleTimeString("en-GB", { timeZone: "America/New_York" });
 const isToday = (h) => h.halted_at.slice(0, 10) === etDate();  // halted_at carries the ET offset
 const normSym = (s) => s.replace("-", ".");                    // Yahoo BRK-B is BRK.B at Nasdaq
@@ -110,7 +126,7 @@ function haltBadge(sym) {
 }
 
 function renderHalts() {
-  const now = Date.now();
+  const now = appNow();
   activeHalts = new Map(state.halts.filter((h) => haltStatus(h, now) !== "resumed").map((h) => [h.symbol, h]));
   const todayActive = state.halts.filter((h) => isToday(h) && haltStatus(h, now) !== "resumed").length;
   $("#halt-count").textContent = todayActive ? `(${todayActive})` : "";
@@ -210,7 +226,7 @@ function sentimentBadge(s) {
 // Mean score of the ticker's headlines from the last 24h, so one bearish story among many
 // bullish ones still shows up as a dent rather than flipping the label.
 function tickerSentimentCell(sym) {
-  const since = Date.now() - DAY_MS;
+  const since = appNow() - DAY_MS;
   const items = state.news.filter((n) => n.tickers.includes(sym) && Date.parse(n.published) >= since);
   if (!items.length) return `<td class="muted">–</td>`;
   const mean = items.reduce((sum, n) => sum + n.sentiment.score, 0) / items.length;
@@ -481,7 +497,7 @@ function tick() {
   const parts = Object.fromEntries(new Intl.DateTimeFormat("en-US", {
     timeZone: "America/New_York", weekday: "short", hour: "2-digit", minute: "2-digit",
     second: "2-digit", hourCycle: "h23",
-  }).formatToParts(new Date()).map((p) => [p.type, p.value]));
+  }).formatToParts(new Date(appNow())).map((p) => [p.type, p.value]));
   $("#clock").textContent = `${parts.hour}:${parts.minute}:${parts.second} ET`;
 
   const mins = Number(parts.hour) * 60 + Number(parts.minute);
@@ -524,6 +540,7 @@ let riskRender = null;
 function handle({ type, data }) {
   switch (type) {
     case "snapshot":
+      setClock(data.clock);
       Object.assign(state, data);
       renderHalts();  // first: other tables show HALTED badges
       renderKeywords(); renderWatchlist(); renderUnusual(); renderMovers(); renderSources(); renderNews();

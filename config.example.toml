@@ -3,7 +3,7 @@
 
 # SEC requires automated clients to identify themselves: an app name and a contact email.
 # It's sent only to www.sec.gov. To keep it out of this file, set SEC_USER_AGENT instead.
-sec_user_agent = "market-pulse/0.6 you@example.com"
+sec_user_agent = "market-pulse/0.7 you@example.com"
 
 # Real-time watchlist prices. Free key at https://finnhub.io/register (or set FINNHUB_API_KEY).
 # Leave empty to use delayed Yahoo prices only.
@@ -49,6 +49,10 @@ risk_max_symbols = 60
 
 # End-of-day recap to the phone (Phone box: Daily recap), weekdays at this ET time.
 recap_time = "16:30"
+
+# Record what the data sources answer, to replay later: python -m app.replay (see README).
+record = false
+record_keep = 10
 
 # Setting [feeds] replaces the default list entirely.
 # [feeds]

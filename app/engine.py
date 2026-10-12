@@ -13,6 +13,7 @@ from fastapi import WebSocket
 
 from . import market
 from .alerts import AlertMonitor, new_rule
+from .clock import clock
 from .config import Settings, UserState
 from .dilution import DilutionProfiles
 from .dilution import summary as risk_summary
@@ -35,6 +36,7 @@ from .reactions import (
     summarize,
 )
 from .recap import build_recap, next_run
+from .replay import LiveIO
 from .sec import SecClient
 from .setup import DashboardSettings, SettingsError, apply, validate
 
@@ -70,12 +72,14 @@ class Hub:
 
 
 class Engine:
-    def __init__(self, settings: Settings, state: UserState, hub: Hub, health: SourceHealth | None = None):
+    def __init__(self, settings: Settings, state: UserState, hub: Hub, health: SourceHealth | None = None,
+                 io: LiveIO | None = None):
         self.settings = settings
         self.state = state
         self.hub = hub
-        self.sec = SecClient(settings.sec_user_agent)  # the only client that carries the contact address
-        self.news = NewsFeed(settings, self.sec)
+        self.io = io or LiveIO()  # live data, or recording it, or replaying a recording (app/replay.py)
+        self.sec = SecClient(settings.sec_user_agent, self.io.transport("sec"))  # the only client with the contact address
+        self.news = NewsFeed(settings, self.sec, self.io.transport("news"))
         self.filings = FilingsFeed(settings, self.sec) if settings.sec_filings else None
         self.dilution = DilutionProfiles(self.sec)
         self.risk: dict[str, dict | None] = {}  # symbol -> dilution summary; None = not an SEC filer
@@ -86,7 +90,7 @@ class Engine:
         self.dashboard = DashboardSettings(state.path.parent / "settings.json")  # mode 600
         self._reaction_retry: dict[str, float] = {}  # event id -> monotonic time to try again
         self._risk_queue: asyncio.Queue[tuple[str, str]] = asyncio.Queue()  # offerings awaiting a risk level
-        self.halts = HaltFeed()
+        self.halts = HaltFeed(transport=self.io.transport("halts"))
         self.phone = PhoneNotifier(settings, on_status=self._phone_status)
         self._ticks = asyncio.Event()  # set by the Finnhub feed whenever a price changes
         self.finnhub = FinnhubFeed(settings.finnhub_api_key, self._ticks.set) if settings.finnhub_api_key else None
@@ -117,8 +121,18 @@ class Engine:
         by_symbol = {q["symbol"]: q for q in self.yahoo_quotes}
         return [self.finnhub.overlay(by_symbol.get(sym, {"symbol": sym})) for sym in self.state.watchlist]
 
+    async def _call(self, name: str, fn: Callable, *args):
+        """A Yahoo call (blocking, so on a thread), through the recorder or player if any."""
+        return await self.io.call(name, fn, *args)
+
+    def clock_info(self) -> dict:
+        recording = self.io.recording
+        return {"now": clock.time(), "speed": clock.speed, "replay": clock.replaying,
+                "recording": recording.name if recording else None}
+
     def snapshot(self) -> dict:
         return {
+            "clock": self.clock_info(),
             **self._config(),
             "quotes": self.quotes,
             "movers": self.movers,
@@ -168,6 +182,7 @@ class Engine:
         await self.halts.aclose()
         await self.phone.aclose()
         self.reactions.close()
+        self.io.close()
         if self.finnhub:
             await self.finnhub.aclose()
 
@@ -213,8 +228,8 @@ class Engine:
         alerts already stream to the browser, which filters them itself so they stay live.
         None if Yahoo has neither a profile nor bars for the symbol."""
         profile, chart = await asyncio.gather(
-            asyncio.to_thread(market.fetch_profile, symbol),
-            asyncio.to_thread(market.fetch_chart, symbol, range_),
+            self._call("fetch_profile", market.fetch_profile, symbol),
+            self._call("fetch_chart", market.fetch_chart, symbol, range_),
             return_exceptions=True,
         )
         errors = []
@@ -285,11 +300,12 @@ class Engine:
         health records the outcome: step returns a note on partial success, raises on failure."""
         while True:
             await self._run_step(name, step)
+            # Intervals are market time: a replay at 10x speed polls 10x as often.
             if wake is None:
-                await asyncio.sleep(interval)
+                await clock.sleep(interval)
                 continue
             try:
-                await asyncio.wait_for(wake.wait(), interval)
+                await asyncio.wait_for(wake.wait(), clock.real_seconds(interval))
             except TimeoutError:
                 pass
             wake.clear()
@@ -339,7 +355,7 @@ class Engine:
 
     async def _update_quotes(self) -> str | None:
         symbols = list(self.state.watchlist)
-        rows = await asyncio.to_thread(market.fetch_quotes, symbols)
+        rows = await self._call("fetch_quotes", market.fetch_quotes, symbols)
         if symbols and not rows:
             # yfinance reports most failures by returning nothing. Keep the last good rows on
             # screen (the health status marks them stale) rather than blanking the watchlist.
@@ -371,7 +387,7 @@ class Engine:
             self.phone.enqueue([from_alert(e, self.settings.public_url) for e in fired], self.state.phone_alerts)
 
     async def _update_movers(self) -> str | None:
-        fetched = await asyncio.to_thread(market.fetch_movers)
+        fetched = await self._call("fetch_movers", market.fetch_movers)
         if not fetched:
             raise SourceError("every Yahoo screener failed")
         self.movers.update(fetched)  # a failed screener keeps its previous list
@@ -526,11 +542,11 @@ class Engine:
                 work.setdefault((event["symbol"], chart_range(event, now)), []).append(event)
         for (symbol, range_), events in list(work.items())[:REACTION_FETCHES]:
             try:
-                bars = (await asyncio.to_thread(market.fetch_chart, symbol, range_))["bars"]
+                bars = (await self._call("fetch_chart", market.fetch_chart, symbol, range_))["bars"]
                 if range_ == "1d" and any(e["base"] is None and price_at(bars, e["at"], MAX_BASE_AGE) is None
                                           for e in events):
                     # An event before today's first bar (4 AM): price it off the last session.
-                    earlier = (await asyncio.to_thread(market.fetch_chart, symbol, "5d"))["bars"]
+                    earlier = (await self._call("fetch_chart", market.fetch_chart, symbol, "5d"))["bars"]
                     bars = sorted({b["t"]: b for b in [*earlier, *bars]}.values(), key=lambda b: b["t"])
             except Exception as exc:
                 log.info("reaction prices for %s unavailable: %s", symbol, describe(exc))
@@ -563,7 +579,7 @@ class Engine:
     # --- end-of-day recap -----------------------------------------------------------------
 
     async def recap_note(self, measure_first: bool = True) -> dict:
-        today = datetime.now(market.ET).date()
+        today = clock.today(market.ET)
         if measure_first:
             await self._update_reactions()  # closes measured at the last moment make it in
         start = int(datetime.combine(today, dtime(0), market.ET).timestamp())
@@ -573,15 +589,15 @@ class Engine:
                            set(self.state.watchlist), problems, self.settings.public_url)
 
     async def _traded_today(self) -> bool:
-        bars = (await asyncio.to_thread(market.fetch_chart, "SPY", "1d"))["bars"]
-        today = datetime.now(market.ET).date()
+        bars = (await self._call("fetch_chart", market.fetch_chart, "SPY", "1d"))["bars"]
+        today = clock.today(market.ET)
         return any(market.is_regular_bar(b["t"]) and datetime.fromtimestamp(b["t"], market.ET).date() == today
                    for b in bars)
 
     async def _recap_loop(self) -> None:
         while True:
-            run = next_run(datetime.now(market.ET), self.settings.recap_time)
-            await asyncio.sleep(max(0.0, run.timestamp() - time.time()))
+            run = next_run(clock.now(market.ET), self.settings.recap_time)
+            await clock.sleep_until(run.timestamp())
             try:
                 if await self._traded_today():
                     self.phone.enqueue([await self.recap_note()], self.state.phone_alerts)
@@ -590,7 +606,7 @@ class Engine:
                     log.info("no regular session today; recap skipped")
             except Exception:
                 log.exception("end-of-day recap failed")
-            await asyncio.sleep(60)
+            await clock.sleep(60)
 
     # --- dilution risk ------------------------------------------------------------------
 

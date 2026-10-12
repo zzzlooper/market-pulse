@@ -21,7 +21,9 @@ from datetime import date, timedelta
 
 import httpx
 
+from .clock import clock
 from .filings import DILUTION, ITEMS_8K
+from .market import ET
 from .sec import SecClient
 
 log = logging.getLogger(__name__)
@@ -275,7 +277,7 @@ class DilutionProfiles:
         submissions, cash, operating, shares = await asyncio.gather(
             self.sec.get(SUBMISSIONS_URL.format(cik=cik)),
             self._concept(cik, CASH), self._concept(cik, OPERATING_CASH_FLOW), self._concept(cik, SHARES))
-        today = date.today()
+        today = clock.today(ET)
         history = filing_history(submissions.json(), today)
         runway = cash_runway(cash, operating, today)
         growth = share_growth(shares, today)

@@ -14,6 +14,7 @@ from urllib.parse import urlparse
 
 import httpx
 
+from .clock import clock
 from .health import SourceError, describe
 
 log = logging.getLogger(__name__)
@@ -29,8 +30,9 @@ def is_sec_url(url: str) -> bool:
 
 
 class SecClient:
-    def __init__(self, user_agent: str):
-        self._client = httpx.AsyncClient(timeout=15, follow_redirects=False, headers={"User-Agent": user_agent})
+    def __init__(self, user_agent: str, transport: httpx.AsyncBaseTransport | None = None):
+        self._client = httpx.AsyncClient(timeout=15, follow_redirects=False, headers={"User-Agent": user_agent},
+                                         transport=transport)
         self._gate = asyncio.Lock()
         self._next_request = 0.0
         self._tickers: dict[str, str] = {}  # CIK (10 digits) -> ticker
@@ -64,10 +66,11 @@ class SecClient:
         """CIK -> ticker for every listed company, loaded once. After a failure it's retried
         every TICKER_MAP_RETRY seconds and is empty until then."""
         async with self._tickers_lock:
+            # Market-clock time, so a replay at 10x retries 10x sooner too.
             due = self._tickers_at is None or (
-                not self._tickers and time.monotonic() - self._tickers_at >= TICKER_MAP_RETRY)
+                not self._tickers and clock.time() - self._tickers_at >= TICKER_MAP_RETRY)
             if due:
-                self._tickers_at = time.monotonic()
+                self._tickers_at = clock.time()
                 try:
                     rows = (await self.get(TICKERS_URL)).json().values()
                     tickers: dict[str, str] = {}
