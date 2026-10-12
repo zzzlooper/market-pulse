@@ -1,7 +1,14 @@
 import ipaddress
+import os
 import socket
+import tempfile
 
 import pytest
+
+# Set before any test imports app.main, whose engine loads settings and state at import time:
+# tests must never read your real config.toml or write to your real data folder.
+os.environ["MARKET_PULSE_CONFIG"] = os.path.join(tempfile.mkdtemp(prefix="mp-test-"), "config.toml")
+os.environ["MARKET_PULSE_DATA"] = tempfile.mkdtemp(prefix="mp-test-data-")
 
 _connect = socket.socket.connect
 

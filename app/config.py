@@ -3,6 +3,7 @@ from __future__ import annotations
 
 import json
 import os
+import re
 import tomllib
 from dataclasses import dataclass, field, fields
 from pathlib import Path
@@ -10,7 +11,8 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parent.parent
 # MARKET_PULSE_CONFIG points elsewhere, e.g. for tests that must not read your real settings.
 CONFIG_PATH = Path(os.environ.get("MARKET_PULSE_CONFIG") or ROOT / "config.toml")
-STATE_PATH = ROOT / "data" / "state.json"
+# MARKET_PULSE_DATA moves the data folder (watchlist state, reaction history), e.g. for tests.
+STATE_PATH = Path(os.environ.get("MARKET_PULSE_DATA") or ROOT / "data") / "state.json"
 
 # 8-K filings come through app/filings.py, which tags their items; this feed is used only
 # when sec_filings is off.
@@ -58,12 +60,16 @@ class Settings:
     # Dilution risk badges: profiles are kept fresh for the watchlist and these movers lists.
     risk_movers: list[str] = field(default_factory=lambda: ["gainers", "small_caps"])
     risk_max_symbols: int = 60
+    recap_time: str = "16:30"  # ET, weekdays: end-of-day recap to the phone (Phone box: Daily recap)
 
 
 # Settings that may come from same-named upper-case env vars (which win), so secrets and
 # your contact address can stay out of config.toml.
 SECRET_ENV = ("sec_user_agent", "finnhub_api_key", "ntfy_topic", "ntfy_token", "telegram_bot_token", "telegram_chat_id",
               "access_token")
+
+
+RECAP_TIME = re.compile(r"^([01]\d|2[0-3]):[0-5]\d$")
 
 
 def load_settings(path: Path = CONFIG_PATH) -> Settings:
@@ -76,13 +82,16 @@ def load_settings(path: Path = CONFIG_PATH) -> Settings:
             raw[name] = value
     if "telegram_chat_id" in raw:
         raw["telegram_chat_id"] = str(raw["telegram_chat_id"])  # TOML may give an int
-    return Settings(**raw)
+    settings = Settings(**raw)
+    if not RECAP_TIME.match(settings.recap_time):
+        raise ValueError(f'recap_time must be "HH:MM" (24-hour, ET), got {settings.recap_time!r}')
+    return settings
 
 
 # Which alert categories go to the phone. Unusual volume is off: it can fire dozens of times a day.
 # "sources" is a data source going down (and coming back), so silence isn't mistaken for a calm market.
 DEFAULT_PHONE_ALERTS = {"price": True, "halts": True, "news": True, "filings": True, "unusual": False,
-                        "sources": True}
+                        "sources": True, "recap": True}
 
 DEFAULT_ALERT_RULES = [
     {"id": "default-move", "symbol": "", "kind": "move", "value": 5.0},

@@ -4,7 +4,10 @@ from __future__ import annotations
 import asyncio
 import json
 import logging
+import time
 from collections.abc import Awaitable, Callable
+from datetime import datetime
+from datetime import time as dtime
 
 from fastapi import WebSocket
 
@@ -19,6 +22,19 @@ from .halts import HaltFeed, halt_messages
 from .health import SourceError, SourceHealth, describe
 from .news import NewsFeed
 from .notify import PhoneNotifier, from_alert, from_filing, from_news, from_outage
+from .reactions import (
+    MAX_BASE_AGE,
+    ReactionStore,
+    chart_range,
+    due,
+    finished,
+    measure,
+    now_ts,
+    price_at,
+    returns,
+    summarize,
+)
+from .recap import build_recap, next_run
 from .sec import SecClient
 
 log = logging.getLogger(__name__)
@@ -28,6 +44,11 @@ HEALTH_CHECK_SECONDS = 5.0
 RISK_INTERVAL = 60.0      # how often the risk loop looks for symbols without a fresh profile
 RISK_RETRY = 900.0        # after a failed profile, wait this long before trying the symbol again
 RISK_ALERT_WAIT = 8.0     # a filing alert waits at most this long for the stock's risk level
+REACTIONS_INTERVAL = 120.0  # how often pending catalyst reactions are measured
+REACTION_FETCHES = 20       # chart downloads per round, so Yahoo isn't hammered after a burst
+REACTION_BACKOFF = 1800.0   # an event with nothing new to measure waits this long
+TRACK_MAX_AGE = 5 * 86400   # older events can't be measured (5-day bars are the furthest back)
+HALT_LABELS = {"news": "news halt", "volatility": "volatility pause", "regulatory": "regulatory halt"}
 
 
 class Hub:
@@ -59,6 +80,10 @@ class Engine:
         self.risk: dict[str, dict | None] = {}  # symbol -> dilution summary; None = not an SEC filer
         self._risk_failed: dict[str, float] = {}  # symbol -> monotonic time of the last failure
         self._wake_risk = asyncio.Event()
+        # Catalyst reactions live next to the user state, in a file only the user can read.
+        self.reactions = ReactionStore(state.path.parent / "reactions.db")
+        self._reaction_retry: dict[str, float] = {}  # event id -> monotonic time to try again
+        self._risk_queue: asyncio.Queue[tuple[str, str]] = asyncio.Queue()  # offerings awaiting a risk level
         self.halts = HaltFeed()
         self.phone = PhoneNotifier(settings, on_status=self._phone_status)
         self._ticks = asyncio.Event()  # set by the Finnhub feed whenever a price changes
@@ -116,6 +141,9 @@ class Engine:
             asyncio.create_task(self.phone.run()),
             asyncio.create_task(self._watch_health()),
             asyncio.create_task(self._loop("risk", RISK_INTERVAL, self._update_risk, self._wake_risk)),
+            asyncio.create_task(self._loop("reactions", REACTIONS_INTERVAL, self._update_reactions)),
+            asyncio.create_task(self._recap_loop()),
+            asyncio.create_task(self._fill_offering_risk()),
         ]
         if self.filings:
             self._tasks.append(asyncio.create_task(
@@ -137,6 +165,7 @@ class Engine:
         await self.sec.aclose()
         await self.halts.aclose()
         await self.phone.aclose()
+        self.reactions.close()
         if self.finnhub:
             await self.finnhub.aclose()
 
@@ -366,6 +395,10 @@ class Engine:
     async def _apply_halts(self, changed: bool, new: list[dict], resumption_set: list[dict]) -> None:
         if changed:
             await self.hub.broadcast({"type": "halts", "data": self.halts.latest()})
+        for halt in new:
+            self._track(f"halt:{halt['symbol']}:{halt['halted_at']}", halt["symbol"], "halt",
+                        HALT_LABELS.get(halt["category"], "halt"), f"{halt['symbol']} halted · {halt['reason']}",
+                        halt["halted_at"])
         messages = halt_messages(new, resumption_set, self.state.watchlist, self.state.halt_alerts)
         await self._publish_alerts(self.alerts.record(
             [self.alerts.event(halt, kind, message) for halt, kind, message in messages]))
@@ -375,6 +408,10 @@ class Engine:
         if fresh:
             await self.hub.broadcast({"type": "news", "data": fresh})
             self.phone.enqueue([from_news(n) for n in fresh if n["alert"]], self.state.phone_alerts)
+            for n in fresh:
+                if n["alert"] and n["tickers"]:
+                    self._track(n["id"], n["tickers"][0], "headline", f"headline ({n['sentiment']['label']})",
+                                n["title"], n["published"])
         total, failing = self.news.source_count, self.news.failing
         if total and len(self.news.failed) == total:
             raise SourceError(f"all {total} feeds failed")
@@ -406,12 +443,127 @@ class Engine:
             by_symbol = dict(zip(alerting, levels))
             for n in fresh:
                 n["filing"]["risk"] = by_symbol.get(n["tickers"][0])
+        for n in fresh:
+            f, symbol = n["filing"], n["tickers"][0]
+            if f["kind"] == "report" and not f["hot"]:
+                continue  # routine 8-Ks: hundreds a day, tracked only for watched and moving stocks
+            risk = f.get("risk") or (self.risk.get(symbol) or {}).get("level")
+            if self._track(n["id"], symbol, f["kind"], f["label"], n["title"], n["published"], risk) \
+                    and f["kind"] == "dilution" and risk is None:
+                self._risk_queue.put_nowait((n["id"], symbol))  # so offerings can be compared by risk
         if fresh:
             await self.hub.broadcast({"type": "news", "data": fresh})
             self.phone.enqueue([from_filing(n, self.settings.public_url) for n in fresh if n["alert"]],
                                self.state.phone_alerts)
         failing = self.filings.failing
         return f"EDGAR feeds failing: {', '.join(failing)}" if failing else None
+
+    # --- catalyst reactions --------------------------------------------------------------
+
+    def _context(self, symbol: str) -> str:
+        if symbol in self.state.watchlist:
+            return "watchlist"
+        return "mover" if symbol in self._movers_by_symbol() else "other"
+
+    def _track(self, event_id: str, symbol: str, kind: str, label: str, title: str, when: str,
+               risk: str | None = None) -> bool:
+        """Start tracking an event; False if it's too old, not a stock, or already tracked."""
+        try:
+            at = int(datetime.fromisoformat(when).timestamp())
+        except ValueError:
+            return False
+        if now_ts() - at > TRACK_MAX_AGE or symbol.startswith("^") or "=" in symbol:
+            return False
+        return self.reactions.add({"id": event_id, "symbol": symbol, "kind": kind, "label": label,
+                                   "title": title[:200], "context": self._context(symbol), "risk": risk, "at": at})
+
+    async def _fill_offering_risk(self) -> None:
+        """Look up the dilution risk of each tracked offering, one at a time. The level is read
+        just after the filing, so it already counts that filing."""
+        while True:
+            event_id, symbol = await self._risk_queue.get()
+            try:
+                if summary := await self._risk_profile(symbol):
+                    self.reactions.update(event_id, {"risk": summary["level"]})
+            except Exception as exc:
+                log.info("no dilution risk for %s offering: %s", symbol, describe(exc))
+
+    async def _update_reactions(self) -> None:
+        """Measure what's due: one chart download per symbol covers all its events."""
+        now, clock = now_ts(), time.monotonic()
+        work: dict[tuple[str, str], list[dict]] = {}
+        for event in self.reactions.pending():
+            if finished(event, now):
+                self.reactions.update(event["id"], {"done": 1})
+            elif due(event, now) and self._reaction_retry.get(event["id"], 0) <= clock:
+                work.setdefault((event["symbol"], chart_range(event, now)), []).append(event)
+        for (symbol, range_), events in list(work.items())[:REACTION_FETCHES]:
+            try:
+                bars = (await asyncio.to_thread(market.fetch_chart, symbol, range_))["bars"]
+                if range_ == "1d" and any(e["base"] is None and price_at(bars, e["at"], MAX_BASE_AGE) is None
+                                          for e in events):
+                    # An event before today's first bar (4 AM): price it off the last session.
+                    earlier = (await asyncio.to_thread(market.fetch_chart, symbol, "5d"))["bars"]
+                    bars = sorted({b["t"]: b for b in [*earlier, *bars]}.values(), key=lambda b: b["t"])
+            except Exception as exc:
+                log.info("reaction prices for %s unavailable: %s", symbol, describe(exc))
+                for e in events:
+                    self._reaction_retry[e["id"]] = clock + REACTION_BACKOFF
+                continue
+            for e in events:
+                fields = measure(e, bars, now)
+                if finished({**e, **fields}, now):
+                    fields["done"] = 1
+                if fields:
+                    self.reactions.update(e["id"], fields)
+                    self._reaction_retry.pop(e["id"], None)
+                else:  # e.g. a weekend before the next close: don't download again every round
+                    self._reaction_retry[e["id"]] = clock + REACTION_BACKOFF
+
+    def reactions_report(self, days: int) -> dict:
+        rows = self.reactions.since(now_ts() - days * 86400)
+        keep = ("symbol", "kind", "label", "title", "context", "risk", "at", "close_day")
+        return {
+            "days": days,
+            "tracked": len(rows),
+            "by_type": summarize(rows, lambda r: r["label"]),
+            "offerings_by_risk": summarize([r for r in rows if r["kind"] == "dilution"],
+                                           lambda r: r["risk"] or "unknown"),
+            "by_context": summarize(rows, lambda r: r["context"]),
+            "recent": [{**{k: r[k] for k in keep}, "returns": returns(r)} for r in rows[:60]],
+        }
+
+    # --- end-of-day recap -----------------------------------------------------------------
+
+    async def recap_note(self, measure_first: bool = True) -> dict:
+        today = datetime.now(market.ET).date()
+        if measure_first:
+            await self._update_reactions()  # closes measured at the last moment make it in
+        start = int(datetime.combine(today, dtime(0), market.ET).timestamp())
+        halts = [h for h in self.halts.latest() if h["halted_at"][:10] == today.isoformat()]
+        problems = [s["label"] for s in self.health.status() if s["state"] == "down"]
+        return build_recap(today, list(self.quotes), halts, self.reactions.since(start),
+                           set(self.state.watchlist), problems, self.settings.public_url)
+
+    async def _traded_today(self) -> bool:
+        bars = (await asyncio.to_thread(market.fetch_chart, "SPY", "1d"))["bars"]
+        today = datetime.now(market.ET).date()
+        return any(market.is_regular_bar(b["t"]) and datetime.fromtimestamp(b["t"], market.ET).date() == today
+                   for b in bars)
+
+    async def _recap_loop(self) -> None:
+        while True:
+            run = next_run(datetime.now(market.ET), self.settings.recap_time)
+            await asyncio.sleep(max(0.0, run.timestamp() - time.time()))
+            try:
+                if await self._traded_today():
+                    self.phone.enqueue([await self.recap_note()], self.state.phone_alerts)
+                    log.info("end-of-day recap queued")  # its contents stay out of the log
+                else:
+                    log.info("no regular session today; recap skipped")
+            except Exception:
+                log.exception("end-of-day recap failed")
+            await asyncio.sleep(60)
 
     # --- dilution risk ------------------------------------------------------------------
 

@@ -31,6 +31,12 @@ SCREENS = {
 }
 
 
+def is_regular_bar(t: int) -> bool:
+    """Whether a bar starting at epoch t falls in the 9:30–16:00 ET weekday session."""
+    dt = datetime.fromtimestamp(t, ET)
+    return dt.weekday() < 5 and OPEN <= dt.time() < CLOSE
+
+
 def session_fraction(now: datetime | None = None) -> float:
     """Share of today's regular session elapsed, used to pace intraday volume.
 

@@ -31,6 +31,8 @@ logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(name
 # httpx logs every request URL at INFO; Telegram bot URLs contain the bot token and ntfy URLs
 # the topic, so keep those out of the log.
 logging.getLogger("httpx").setLevel(logging.WARNING)
+# yfinance logs every delisted or unknown symbol as an ERROR; failures show in data health instead.
+logging.getLogger("yfinance").setLevel(logging.CRITICAL)
 
 log = logging.getLogger(__name__)
 
@@ -131,6 +133,27 @@ MAX_RULES = 100
 @app.get("/api/snapshot")
 def snapshot():
     return engine.snapshot()
+
+
+@app.get("/api/reactions")
+def reactions(days: int = 30):
+    if not 1 <= days <= 365:
+        raise HTTPException(422, "days must be between 1 and 365")
+    return engine.reactions_report(days)
+
+
+@app.get("/api/recap")
+async def recap_preview():
+    """Today's recap as it would be sent now, without sending it."""
+    return await engine.recap_note(measure_first=False)
+
+
+@app.post("/api/recap/send")
+async def recap_send():
+    if not engine.phone.channels:
+        raise HTTPException(409, "No phone channel configured; see README (ntfy or Telegram)")
+    await engine.phone.deliver(await engine.recap_note())
+    return engine.phone.status()
 
 
 @app.get("/api/dilution/{symbol}")

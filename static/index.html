@@ -38,6 +38,7 @@
     <nav class="tabs">
       <button data-left-tab="unusual" class="active">Unusual volume</button>
       <button data-left-tab="halts">Halts <span id="halt-count"></span></button>
+      <button data-left-tab="reactions" title="How stocks moved after filings, halts and alert headlines">Reactions</button>
     </nav>
     <div id="tab-unusual">
       <h2><small id="rvol-note"></small></h2>
@@ -59,6 +60,34 @@
         <thead><tr><th>Symbol</th><th>Halted</th><th>Reason</th><th>Resumes</th><th>Status</th></tr></thead>
         <tbody id="halts"></tbody>
       </table>
+    </div>
+    <div id="tab-reactions" hidden>
+      <div class="filters">
+        <select id="reactions-days">
+          <option value="7">Last 7 days</option>
+          <option value="30" selected>Last 30 days</option>
+          <option value="90">Last 90 days</option>
+        </select>
+        <small class="muted" id="reactions-note"></small>
+      </div>
+      <h3 class="sub">By catalyst <small>median move from the event price</small></h3>
+      <table>
+        <thead><tr><th>Catalyst</th><th title="Tracked · measured to the close">n</th><th>5m</th><th>30m</th>
+          <th>Close</th><th title="Share that closed lower than the event price">↓</th></tr></thead>
+        <tbody id="reactions-types"></tbody>
+      </table>
+      <h3 class="sub">Offerings by dilution risk <small>risk when the filing arrived</small></h3>
+      <table>
+        <thead><tr><th>Risk</th><th>n</th><th>5m</th><th>30m</th><th>Close</th><th>↓</th></tr></thead>
+        <tbody id="reactions-risk"></tbody>
+      </table>
+      <h3 class="sub">Recent</h3>
+      <ul id="reactions-recent" class="detail-list"></ul>
+      <details class="recap-box">
+        <summary>Today's recap</summary>
+        <pre id="recap-preview" class="muted">…</pre>
+        <button id="recap-send" type="button">Send to phone now</button>
+      </details>
     </div>
   </section>
 
@@ -137,6 +166,8 @@
         <label title="Offerings, insider trades and 13D stakes for watchlist stocks and today's movers">
           <input type="checkbox" data-phone-cat="filings"> SEC filings</label>
         <label><input type="checkbox" data-phone-cat="unusual"> Unusual volume</label>
+        <label title="Weekdays after the close: watchlist moves, halts, filings and the biggest reactions">
+          <input type="checkbox" data-phone-cat="recap"> Daily recap</label>
         <label title="A data source has been down for a few minutes, and when it's back">
           <input type="checkbox" data-phone-cat="sources"> Data outages</label>
       </div>

@@ -153,6 +153,47 @@ function setLeftTab(tab) {
   for (const b of document.querySelectorAll("[data-left-tab]")) b.classList.toggle("active", b.dataset.leftTab === tab);
   $("#tab-unusual").hidden = tab !== "unusual";
   $("#tab-halts").hidden = tab !== "halts";
+  $("#tab-reactions").hidden = tab !== "reactions";
+  clearInterval(reactionsTimer);
+  if (tab === "reactions") {
+    loadReactions();
+    reactionsTimer = setInterval(loadReactions, 120_000);
+  }
+}
+
+// --- catalyst reactions ------------------------------------------------------------------
+
+let reactionsTimer = null;
+const fmtMove = (v) => (v == null ? `<td class="muted">–</td>`
+  : `<td class="${dir(v)}" title="${fmtPct(v)}">${v > 0 ? "+" : ""}${v.toFixed(1)}%</td>`);
+
+function reactionRows(groups, empty) {
+  return groups.map((g) => `<tr><td>${esc(g.group)}</td><td><small>${g.n} · ${g.measured}</small></td>
+    ${fmtMove(g.median_5m)}${fmtMove(g.median_30m)}${fmtMove(g.median_close)}
+    <td>${g.down_share == null ? "–" : `${Math.round(g.down_share * 100)}%`}</td></tr>`).join("")
+    || `<tr class="empty"><td colspan="6">${empty}</td></tr>`;
+}
+
+async function loadReactions() {
+  try {
+    const days = $("#reactions-days").value;
+    const [r, recap] = await Promise.all([api("GET", `/api/reactions?days=${days}`), api("GET", "/api/recap")]);
+    $("#reactions-note").textContent = `${r.tracked} catalysts tracked`;
+    $("#reactions-types").innerHTML = reactionRows(r.by_type,
+      "Nothing tracked yet: filings, halts and alert headlines are measured as they arrive");
+    $("#reactions-risk").innerHTML = reactionRows(r.offerings_by_risk, "No offerings tracked yet");
+    $("#reactions-recent").innerHTML = r.recent.map((e) => {
+      const ret = e.returns;
+      const moves = ["5m", "30m", "close"].map((h) => (ret[h] == null ? "" :
+        `<span class="${dir(ret[h])}">${h} ${fmtPct(ret[h])}</span>`)).filter(Boolean).join(" · ");
+      return `<li><div class="meta">${fmtTime(new Date(e.at * 1000).toISOString())} · ${esc(e.label)}
+          · <a class="sym" data-sym="${esc(e.symbol)}">${esc(e.symbol)}</a></div>
+        ${esc(e.title)}${moves ? `<div class="meta">${moves}</div>` : `<div class="meta muted">measuring…</div>`}</li>`;
+    }).join("") || `<li class="muted">Nothing yet</li>`;
+    $("#recap-preview").textContent = `${recap.title}\n\n${recap.body}`;
+  } catch (err) {
+    $("#reactions-note").textContent = err.message;
+  }
 }
 
 // --- sentiment ------------------------------------------------------------------------
@@ -684,6 +725,20 @@ $("#halt-pill").addEventListener("click", () => {
 $("#halt-scope").addEventListener("input", () => renderHalts());
 setInterval(refreshHalts, 10_000);  // "resumes in Nm" countdowns and halted -> resumed
 if (location.hash === "#halts") setLeftTab("halts");
+if (location.hash === "#reactions") setLeftTab("reactions");
+$("#reactions-days").addEventListener("input", loadReactions);
+$("#recap-send").addEventListener("click", async (ev) => {
+  ev.target.disabled = true;
+  try {
+    state.phone = await api("POST", "/api/recap/send");
+    renderPhone();
+    toast(state.phone.last_error ? "Recap not delivered everywhere — see the error under Phone" : "Recap sent");
+  } catch (err) {
+    toast(err.message);
+  } finally {
+    ev.target.disabled = false;
+  }
+});
 
 for (const id of ["#news-search", "#news-source", "#news-sentiment", "#news-watchlist", "#news-alerts"]) {
   $(id).addEventListener("input", () => renderNews());

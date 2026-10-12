@@ -137,6 +137,21 @@ td small { color: var(--muted); }
 .x { padding: 0 6px; border: none; color: var(--muted); background: none; }
 .x:hover { color: var(--down); }
 .empty td { text-align: center; color: var(--muted); padding: 16px; }
+.empty td { white-space: normal; }
+h3.sub { font-size: 11px; text-transform: uppercase; letter-spacing: 0.04em; color: var(--muted);
+  font-weight: 600; margin: 12px 0 4px; }
+h3.sub small { text-transform: none; letter-spacing: 0; font-weight: normal; }
+#tab-reactions { overflow-y: auto; }
+#tab-reactions table { table-layout: fixed; font-size: 11px; }
+#tab-reactions th, #tab-reactions td { padding: 3px 2px; overflow: hidden; text-overflow: ellipsis; }
+#tab-reactions td:first-child { white-space: normal; overflow-wrap: anywhere; }
+#tab-reactions th:nth-child(1) { width: 34%; }
+#tab-reactions th:nth-child(2) { width: 13%; }
+#tab-reactions th:nth-child(6) { width: 12%; }
+#reactions-recent { max-height: 320px; overflow-y: auto; }
+.recap-box { margin: 12px 0 4px; font-size: 12px; }
+.recap-box summary { cursor: pointer; color: var(--muted); }
+.recap-box pre { white-space: pre-wrap; font-family: inherit; margin: 6px 0; }
 
 .flash-up { animation: flash-up 1.2s; }
 .flash-down { animation: flash-down 1.2s; }

@@ -61,7 +61,12 @@ Secrets can come from environment variables instead of `config.toml`: `NTFY_TOPI
 and `SEC_USER_AGENT` for your contact address).
 
 - The *Phone* box has switches for which alerts go to the phone: price, halts, news (keyword
-  and watchlist headlines), SEC filings, unusual volume and data outages. Unusual volume is off by default,
+  and watchlist headlines), SEC filings, unusual volume, the daily recap and data outages.
+- *Daily recap*: weekdays at `recap_time` (default 16:30 ET), one message with the watchlist's
+  moves, the day's halts (yours named), filings by type, the biggest reactions by the close
+  (see *Catalyst reactions*) and any data source that's down. Skipped on market holidays.
+  *Reactions* tab → *Today's recap* previews it and can send it right away. It names your
+  watchlist tickers, so on public ntfy.sh keep the topic secret. Unusual volume is off by default,
   since it can fire dozens of times a day.
 - *Data outages*: when a data source has been down for `source_alert_minutes` (default 5;
   0 turns it off), you get one message saying which alerts can't fire, and another when it's
@@ -236,6 +241,22 @@ uvicorn app.main:app --host 0.0.0.0
     figures it computes, none of the addresses or phone numbers in SEC's responses.
   - `sec_filings = false` turns it off (8-Ks then show as plain news, as in v0.1). EDGAR doesn't accept filings on weekends and federal
     holidays, and insiders have two business days to file a Form 4.
+- **Catalyst reactions** (*Reactions* tab, bottom left; `app/reactions.py`): every filing
+  (routine 8-Ks only for watched and moving stocks), new trading halt and alerting headline
+  is recorded with the price when it arrived, then 5 and 30 minutes later and at the close
+  of the next regular session.
+  - The tab shows the median move per catalyst type over 7/30/90 days, with *n* (tracked ·
+    measured to the close) and the share that closed lower, and the same for offerings
+    grouped by the stock's dilution risk. That's the check on the risk score: if *high* doesn't
+    fall harder than *low* after a few weeks, the weights need work. Every offering's risk is
+    looked up as it's tracked, so the level already counts that filing.
+  - Prices are Yahoo's intraday bars, read once they've arrived (20 minutes after each
+    horizon): 1-minute bars with pre/post-market for today, 5-minute bars back to 5 days.
+    An event overnight has no 5m/30m reading; it's measured from the last trade before it to
+    the next close. Bars come one chart per stock per round, at most 20 a round.
+  - Stored in `data/reactions.db` (SQLite, readable by you only): tickers, event types,
+    headlines, times and prices. Nothing about you.
+  - *n* is small for weeks; a median of 3 says little.
 - **Data health**: the header shows whether every data source is delivering (Yahoo prices,
   Yahoo movers, news feeds, Nasdaq halts, SEC filings, and the Finnhub stream when configured). Click it
   for each source's last update and error.
@@ -271,6 +292,8 @@ app/
   sec.py      the one client for SEC hosts: rate limit, contact address, ticker map
   filings.py  SEC offerings, Form 4 insider trades, 13D stakes and 8-K items, as news items
   dilution.py dilution risk profile: filing history, cash runway, share growth
+  reactions.py  catalyst reaction tracking: what's due, price at each horizon, medians
+  recap.py    end-of-day recap message and its schedule
   sentiment.py  rule-based headline sentiment (finance lexicon + negation)
   alerts.py   price/move/RVOL alert rules (crossing + cooldown) and unusual-volume entries
   health.py   per-source health: last good update, errors, staleness, outage alerts
@@ -283,5 +306,6 @@ static/       single-page dashboard (vanilla JS, no build step)
   detail.js   ticker detail drawer and its canvas chart
 scripts/
   install-service.sh  systemd user service install/uninstall
-tests/        offline: a fixture blocks any network access
+tests/        offline: a fixture blocks any network access, and they use a scratch
+              config (MARKET_PULSE_CONFIG) and data folder (MARKET_PULSE_DATA), never yours
 ```
