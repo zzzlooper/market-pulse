@@ -170,11 +170,42 @@ function setLeftTab(tab) {
   $("#tab-unusual").hidden = tab !== "unusual";
   $("#tab-halts").hidden = tab !== "halts";
   $("#tab-reactions").hidden = tab !== "reactions";
+  $("#tab-gaps").hidden = tab !== "gaps";
+  if (tab === "gaps") renderGaps();
   clearInterval(reactionsTimer);
   if (tab === "reactions") {
     loadReactions();
     reactionsTimer = setInterval(loadReactions, 120_000);
   }
+}
+
+// --- pre-market gaps ---------------------------------------------------------------------
+
+function etMinutes() {
+  const p = Object.fromEntries(new Intl.DateTimeFormat("en-US", {
+    timeZone: "America/New_York", weekday: "short", hour: "2-digit", minute: "2-digit", hourCycle: "h23",
+  }).formatToParts(new Date(appNow())).map((x) => [x.type, x.value]));
+  return { mins: Number(p.hour) * 60 + Number(p.minute), weekend: p.weekday === "Sat" || p.weekday === "Sun" };
+}
+
+function renderGaps() {
+  const { mins, weekend } = etMinutes();
+  const scanning = !weekend && mins >= 240 && mins < 600;
+  const rows = state.gaps ?? [];
+  const atOpen = rows.some((g) => g.at_open);
+  $("#gaps-note").textContent = scanning
+    ? `Gaps ≥ ${state.gap_min_pct}% ${atOpen ? "at the open" : "pre-market"} · watchlist, fresh catalysts, movers`
+    : "The scan runs 4:00–10:00 ET on weekdays";
+  const html = rows.map((g) => {
+    const why = g.catalyst
+      ? `<span class="clamp" title="${esc(`${fmtTime(g.catalyst.at)} · ${g.catalyst.text}`)}">${
+        g.catalyst.filing ? `<b>${esc(g.catalyst.text)}</b>` : esc(g.catalyst.text)}</span>`
+      : `<span class="muted">${esc(g.why)}</span>`;
+    return `<tr><td><a class="sym" data-sym="${esc(g.symbol)}">${esc(g.symbol)}</a>${haltBadge(g.symbol)}${riskBadge(g.symbol)}</td>
+      <td class="${dir(g.gap_pct)}">${fmtPct(g.gap_pct)}</td><td>${fmtPrice(g.price)}</td>
+      <td>${g.at_open ? `<small class="muted">open</small>` : g.pre_minutes}</td><td class="why">${why}</td></tr>`;
+  }).join("");
+  fillTable($("#gaps"), html, 5, scanning ? `No gaps of ${state.gap_min_pct}% or more yet` : "No gaps scanned today");
 }
 
 // --- catalyst reactions ------------------------------------------------------------------
@@ -243,7 +274,7 @@ function renderUnusual() {
 }
 
 function renderMovers() {
-  for (const b of document.querySelectorAll(".tabs button")) {
+  for (const b of document.querySelectorAll("[data-tab]")) {  // the movers tabs only, not the left panel's
     b.classList.toggle("active", b.dataset.tab === state.tab);
   }
   const rows = state.movers[state.tab] ?? [];
@@ -545,6 +576,7 @@ function handle({ type, data }) {
       renderHalts();  // first: other tables show HALTED badges
       renderKeywords(); renderWatchlist(); renderUnusual(); renderMovers(); renderSources(); renderNews();
       renderRules(); renderAlertLog(); renderPhone(); setHealth(data.health);
+      renderGaps();  // after setClock: whether it's scanning depends on the (possibly replayed) time
       window.dispatchEvent(new Event("mp-snapshot"));
       break;
     case "phone": state.phone = data; renderPhone(); window.dispatchEvent(new Event("mp-status")); break;
@@ -562,12 +594,13 @@ function handle({ type, data }) {
     case "movers": state.movers = data; renderMovers(); break;
     case "unusual": state.unusual = data; renderUnusual(); break;
     case "news": addNews(data); break;
+    case "gaps": state.gaps = data; renderGaps(); break;
     case "risk":
       Object.assign(state.risk, data);
       // Profiles arrive one symbol at a time after startup; redraw once per frame at most.
       riskRender ??= requestAnimationFrame(() => {
         riskRender = null;
-        renderWatchlist(); renderMovers(); renderUnusual(); renderNews();
+        renderWatchlist(); renderMovers(); renderUnusual(); renderNews(); renderGaps();
       });
       break;
   }
@@ -744,6 +777,7 @@ $("#halt-scope").addEventListener("input", () => renderHalts());
 setInterval(refreshHalts, 10_000);  // "resumes in Nm" countdowns and halted -> resumed
 if (location.hash === "#halts") setLeftTab("halts");
 if (location.hash === "#reactions") setLeftTab("reactions");
+if (location.hash === "#gaps") setLeftTab("gaps");
 $("#reactions-days").addEventListener("input", loadReactions);
 $("#recap-send").addEventListener("click", async (ev) => {
   ev.target.disabled = true;

@@ -40,6 +40,7 @@
     <nav class="tabs">
       <button data-left-tab="unusual" class="active">Unusual volume</button>
       <button data-left-tab="halts">Halts <span id="halt-count"></span></button>
+      <button data-left-tab="gaps" title="Pre-market gaps against yesterday's close, 4:00–10:00 ET">Gaps</button>
       <button data-left-tab="reactions" title="How stocks moved after filings, halts and alert headlines">Reactions</button>
     </nav>
     <div id="tab-unusual">
@@ -61,6 +62,18 @@
       <table>
         <thead><tr><th>Symbol</th><th>Halted</th><th>Reason</th><th>Resumes</th><th>Status</th></tr></thead>
         <tbody id="halts"></tbody>
+      </table>
+    </div>
+    <div id="tab-gaps" hidden>
+      <div class="filters">
+        <small class="muted" id="gaps-note"></small>
+        <span class="health-badge" data-sources="gaps" hidden></span>
+      </div>
+      <table>
+        <thead><tr><th>Symbol</th><th>Gap</th><th>Last</th>
+          <th title="Minutes with pre-market trades. Yahoo doesn't report pre-market volume.">Active</th>
+          <th>Why</th></tr></thead>
+        <tbody id="gaps"></tbody>
       </table>
     </div>
     <div id="tab-reactions" hidden>
@@ -168,6 +181,8 @@
         <label title="Offerings, insider trades and 13D stakes for watchlist stocks and today's movers">
           <input type="checkbox" data-phone-cat="filings"> SEC filings</label>
         <label><input type="checkbox" data-phone-cat="unusual"> Unusual volume</label>
+        <label title="Weekdays at 9:15 ET: the biggest pre-market gaps and what's behind them">
+          <input type="checkbox" data-phone-cat="gaps"> Pre-market brief</label>
         <label title="Weekdays after the close: watchlist moves, halts, filings and the biggest reactions">
           <input type="checkbox" data-phone-cat="recap"> Daily recap</label>
         <label title="A data source has been down for a few minutes, and when it's back">

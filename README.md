@@ -86,7 +86,7 @@ Secrets can come from environment variables instead of `config.toml`: `NTFY_TOPI
 and `SEC_USER_AGENT` for your contact address).
 
 - The *Phone* box has switches for which alerts go to the phone: price, halts, news (keyword
-  and watchlist headlines), SEC filings, unusual volume, the daily recap and data outages.
+  and watchlist headlines), SEC filings, unusual volume, the pre-market brief, the daily recap and data outages.
 - *Daily recap*: weekdays at `recap_time` (default 16:30 ET), one message with the watchlist's
   moves, the day's halts (yours named), filings by type, the biggest reactions by the close
   (see *Catalyst reactions*) and any data source that's down. Skipped on market holidays.
@@ -294,6 +294,20 @@ uvicorn app.main:app --host 0.0.0.0
     figures it computes, none of the addresses or phone numbers in SEC's responses.
   - `sec_filings = false` turns it off (8-Ks then show as plain news, as in v0.1). EDGAR doesn't accept filings on weekends and federal
     holidays, and insiders have two business days to file a Form 4.
+- **Pre-market gaps** (*Gaps* tab, bottom left; `app/gaps.py`): from 04:00 to 10:00 ET on
+  weekdays, every minute, the stocks opening well away from yesterday's close (default 3%,
+  `gap_min_pct`), biggest first, with why each was scanned: the filing or headline behind it,
+  the watchlist, or yesterday's movers. DIL and HALTED badges as everywhere.
+  - Yahoo has no pre-market screener, so the scan covers the watchlist, every stock with a
+    filing or headline in the last 18 hours, and the last session's movers (at most
+    `gap_max_symbols` = 80), in one batched download a minute. A new filing, headline or
+    movers list rescans at once.
+  - Yahoo's pre-market bars have prices but no volume, so activity is counted in minutes with
+    a trade (*Active*); a gap needs `gap_min_minutes` (5) of them, so one stale print doesn't
+    count. After 09:30 the gap is measured at the open.
+  - A **pre-market brief** goes to the phone at `gap_brief_time` (09:15 ET): the biggest gaps
+    with their cause and any high or medium dilution risk. Skipped on mornings without
+    pre-market trading. Open `http://localhost:8000/#gaps` to start on the tab.
 - **Catalyst reactions** (*Reactions* tab, bottom left; `app/reactions.py`): every filing
   (routine 8-Ks only for watched and moving stocks), new trading halt and alerting headline
   is recorded with the price when it arrived, then 5 and 30 minutes later and at the close
@@ -346,6 +360,7 @@ app/
   filings.py  SEC offerings, Form 4 insider trades, 13D stakes and 8-K items, as news items
   dilution.py dilution risk profile: filing history, cash runway, share growth
   reactions.py  catalyst reaction tracking: what's due, price at each horizon, medians
+  gaps.py     pre-market gaps: the gap, what to scan, what to show, the 09:15 brief
   recap.py    end-of-day recap message and its schedule
   setup.py    dashboard settings (write-only secrets) and the first-run checklist
   clock.py    the market clock: real time, or a replayed day's time and speed
@@ -362,6 +377,7 @@ app/
     risk.py       dilution-risk badges and the level filing alerts carry
     catalysts.py  catalyst reaction tracking and the Reactions report
     daily.py      the end-of-day recap
+    gaps.py       the pre-market gap scanner and its brief
   main.py     FastAPI routes, access token and /ws endpoint
 static/       single-page dashboard (vanilla JS, no build step)
   app.js      tables, news, alerts, halts, WebSocket client

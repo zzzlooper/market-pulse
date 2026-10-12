@@ -52,6 +52,8 @@ EDITABLE: dict[str, Field] = {
     "min_volume": Field("…and at least shares traded", "integer", high=1e10),
     "insider_min_value": Field("Smallest insider trade shown ($)", "number", high=1e10),
     "recap_time": Field("Daily recap at (ET)", "time"),
+    "gap_min_pct": Field("Pre-market gaps from (%)", "number", low=0.5, high=100),
+    "gap_brief_time": Field("Pre-market brief at (ET)", "time"),
     "record": Field("Record the day's data for replay", "bool", live=False,
                     hint="Saved in data/recordings, readable by you only; see README: Record and replay."),
 }

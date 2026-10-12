@@ -11,7 +11,7 @@ const SETUP_GROUPS = [
   ["Phone alerts", ["ntfy_topic", "ntfy_server", "ntfy_token", "telegram_bot_token", "telegram_chat_id"]],
   ["Opening it from your phone", ["access_token", "public_url"]],
   ["Real-time prices", ["finnhub_api_key"]],
-  ["Alert tuning", ["rvol_threshold", "min_volume", "insider_min_value", "recap_time"]],
+  ["Alert tuning", ["rvol_threshold", "min_volume", "insider_min_value", "gap_min_pct", "gap_brief_time", "recap_time"]],
   ["Record and replay", ["record"]],
 ];
 const SETUP_ICON = { ok: "✓", todo: "○", warn: "!", info: "i" };

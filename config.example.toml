@@ -50,6 +50,12 @@ risk_max_symbols = 60
 # End-of-day recap to the phone (Phone box: Daily recap), weekdays at this ET time.
 recap_time = "16:30"
 
+# Pre-market gap scanner, 04:00–10:00 ET on weekdays (Gaps tab), and its brief to the phone.
+gap_min_pct = 3.0
+gap_min_minutes = 5        # minutes with pre-market trades before a gap counts
+gap_max_symbols = 80
+gap_brief_time = "09:15"
+
 # Record what the data sources answer, to replay later: python -m app.replay (see README).
 record = false
 record_keep = 10

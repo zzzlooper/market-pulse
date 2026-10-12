@@ -235,6 +235,10 @@ button:disabled { opacity: .5; cursor: default; border-color: var(--border); }
   cursor: help;
 }
 #tab-halts td { text-align: left; }
+#tab-gaps td.why { text-align: left; white-space: normal; font-size: 11px; max-width: 140px; }
+#tab-gaps td.why .clamp { display: -webkit-box; -webkit-line-clamp: 2; line-clamp: 2; -webkit-box-orient: vertical;
+  overflow: hidden; cursor: help; }
+#tab-gaps th:last-child { text-align: left; }
 #tab-halts th { text-align: left; }
 #tab-halts td.reason { cursor: help; font-weight: 600; }
 #tab-halts td.reason.news { color: var(--accent); }

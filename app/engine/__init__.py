@@ -8,6 +8,7 @@ One Engine object, assembled from a mixin per area so each file stays about one 
     risk.py       dilution-risk summaries for the watched and moving stocks
     catalysts.py  catalyst reaction tracking (what's due, measuring, the report)
     daily.py      the end-of-day recap
+    gaps.py       the pre-market gap scanner and its 09:15 brief
 
 Each mixin sets up the state it owns in its own _init_* method, called from Engine.__init__.
 """

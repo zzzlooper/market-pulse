@@ -27,6 +27,7 @@ from ..setup import DashboardSettings, SettingsError, apply, validate
 from .catalysts import REACTIONS_INTERVAL, CatalystsMixin
 from .daily import DailyMixin
 from .feeds import FeedsMixin
+from .gaps import GAP_INTERVAL, GapsMixin
 from .prices import PricesMixin
 from .risk import RISK_INTERVAL, RiskMixin
 
@@ -52,7 +53,7 @@ class Hub:
                 self.clients.discard(ws)
 
 
-class Engine(PricesMixin, FeedsMixin, RiskMixin, CatalystsMixin, DailyMixin):
+class Engine(PricesMixin, FeedsMixin, RiskMixin, CatalystsMixin, DailyMixin, GapsMixin):
     def __init__(self, settings: Settings, state: UserState, hub: Hub, health: SourceHealth | None = None,
                  io: LiveIO | None = None):
         self.settings = settings
@@ -71,6 +72,7 @@ class Engine(PricesMixin, FeedsMixin, RiskMixin, CatalystsMixin, DailyMixin):
         self._init_feeds()
         self._init_risk()
         self._init_catalysts()
+        self._init_gaps()
         self.finnhub = FinnhubFeed(settings.finnhub_api_key, self._ticks.set) if settings.finnhub_api_key else None
 
         self.alerts = AlertMonitor()
@@ -81,6 +83,7 @@ class Engine(PricesMixin, FeedsMixin, RiskMixin, CatalystsMixin, DailyMixin):
         self.health.register("movers", "Yahoo movers", settings.movers_interval)
         self.health.register("news", "News feeds", settings.news_interval)
         self.health.register("halts", "Nasdaq halts", settings.halts_interval)
+        self.health.register("gaps", "Yahoo pre-market", GAP_INTERVAL)
         if self.filings:
             self.health.register("filings", "SEC filings", settings.filings_interval)
         if self.finnhub:
@@ -112,6 +115,8 @@ class Engine(PricesMixin, FeedsMixin, RiskMixin, CatalystsMixin, DailyMixin):
             "price_source": "finnhub" if self.finnhub else "yahoo",
             "health": self._health(),
             "risk": self.risk,
+            "gaps": self.gaps,
+            "gap_min_pct": self.settings.gap_min_pct,
         }
 
     # --- lifecycle ------------------------------------------------------------------------
@@ -128,6 +133,8 @@ class Engine(PricesMixin, FeedsMixin, RiskMixin, CatalystsMixin, DailyMixin):
             asyncio.create_task(self._loop("risk", RISK_INTERVAL, self._update_risk, self._wake_risk)),
             asyncio.create_task(self._loop("reactions", REACTIONS_INTERVAL, self._update_reactions)),
             asyncio.create_task(self._recap_loop()),
+            asyncio.create_task(self._loop("gaps", GAP_INTERVAL, self._update_gaps, self._wake_gaps)),
+            asyncio.create_task(self._gap_brief_loop()),
             asyncio.create_task(self._fill_offering_risk()),
         ]
         if self.filings:

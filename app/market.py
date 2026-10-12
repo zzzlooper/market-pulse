@@ -39,6 +39,28 @@ def is_regular_bar(t: int) -> bool:
     return dt.weekday() < 5 and OPEN <= dt.time() < CLOSE
 
 
+def fetch_premarket(symbols: list[str]) -> list[dict]:
+    """Pre-market gap rows (see gaps.premarket_row) from one batched download of 2 days of
+    1-minute bars with pre/post-market."""
+    from .gaps import premarket_row
+
+    if not symbols:
+        return []
+    df = yf.download(symbols, period="2d", interval="1m", prepost=True, group_by="ticker",
+                     auto_adjust=False, progress=False, threads=True)
+    today = app_clock.today(ET)
+    rows = []
+    for sym in symbols:
+        frame = _bars_for(df, sym)
+        if frame is None or frame.empty:
+            continue
+        bars = [{"t": int(ts.timestamp()), "o": _num(r["Open"]), "c": _num(r["Close"]),
+                 "v": int(_num(r["Volume"]) or 0)} for ts, r in frame.iterrows()]
+        if row := premarket_row(sym, bars, today):
+            rows.append(row)
+    return rows
+
+
 def session_fraction(now: datetime | None = None) -> float:
     """Share of today's regular session elapsed, used to pace intraday volume.
 

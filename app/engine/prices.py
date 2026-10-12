@@ -64,6 +64,7 @@ class PricesMixin:
             raise SourceError("every Yahoo screener failed")
         self.movers.update(fetched)  # a failed screener keeps its previous list
         self._wake_risk.set()  # new movers may need risk profiles
+        self._wake_gaps.set()  # and are candidates for the gap scan
         await self.hub.broadcast({"type": "movers", "data": self.movers})
         await self._update_unusual()
         failed = [key for key in market.SCREENS if key not in fetched]

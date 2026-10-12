@@ -22,6 +22,7 @@ class FeedsMixin:
         if fresh:
             await self.hub.broadcast({"type": "news", "data": fresh})
             self.phone.enqueue([from_news(n) for n in fresh if n["alert"]], self.state.phone_alerts)
+            self._wake_gaps.set()  # a fresh headline may explain (or start) a gap
             for n in fresh:
                 if n["alert"] and n["tickers"]:
                     self._track(n["id"], n["tickers"][0], "headline", f"headline ({n['sentiment']['label']})",
@@ -56,6 +57,7 @@ class FeedsMixin:
             await self.hub.broadcast({"type": "news", "data": fresh})
             self.phone.enqueue([from_filing(n, self.settings.public_url) for n in fresh if n["alert"]],
                                self.state.phone_alerts)
+            self._wake_gaps.set()
         failing = self.filings.failing
         return f"EDGAR feeds failing: {', '.join(failing)}" if failing else None
 

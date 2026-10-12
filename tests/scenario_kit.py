@@ -15,7 +15,7 @@ carry only a role), placeholder contact details. Nothing leaves the machine: the
 uses the network and the phone is never called; notes are read from its queue.
 
 The engine's loops are not running. Each step freezes the market clock and runs one round:
-quotes, movers, news, halts, filings, risk, reaction measuring, health. Sources are polled in
+quotes, movers, news, halts, filings, pre-market gaps, risk, reaction measuring, health. Sources are polled in
 that order, so a filing at a step sees the movers of the same step.
 """
 from __future__ import annotations
@@ -41,7 +41,7 @@ from app.replay import Player, Recorder, url_key
 from app.sec import TICKERS_URL
 
 DAY = date(2026, 10, 13)  # a Tuesday
-OPEN = "09:00"            # when the recording starts; first step usually 09:31
+OPEN = "09:00"            # default start of the recording; first step usually 09:31
 WIRE = "https://wire.example.test/rss"
 CONTACT = "market-pulse/scenarios ops@example.org"
 PHONE_TOPIC = "mp-scenario-topic-000000"
@@ -74,8 +74,9 @@ def iso(hhmm: str) -> str:
 class Day:
     """A made-up trading day, built up source by source, then written as a recording."""
 
-    def __init__(self, folder: Path):
+    def __init__(self, folder: Path, start: str = OPEN):
         self.folder = folder
+        self.start = start  # when the recording begins (04:00 for a pre-market day)
         self._records: list[tuple[float, str, dict]] = []
         self._feeds: dict[str, list[tuple[float, str]]] = {t: [] for t in FEED_TYPES}  # type -> (time, entry)
         self._wire: list[tuple[float, str]] = []            # (time, RSS item)
@@ -83,9 +84,9 @@ class Day:
         self._halts: dict[tuple[str, str], list[tuple[float, str]]] = {}  # (symbol, halted) -> versions
         self._accessions = 0
         self._quoted = False
-        self.record(OPEN, get(TICKERS_URL), self._json({
+        self.record(self.start, get(TICKERS_URL), self._json({
             str(i): {"cik_str": int(cik), "ticker": t} for i, (t, (_, cik)) in enumerate(COMPANIES.items())}))
-        self.movers(OPEN)
+        self.movers(self.start)
 
     # --- raw ---------------------------------------------------------------------------------
 
@@ -115,8 +116,9 @@ class Day:
         self.record(hhmm, "call fetch_movers []", {"r": {
             "gainers": rows(gainers), "losers": [], "active": [], "small_caps": rows(small_caps)}})
 
-    def chart(self, symbol: str, price_at, recorded: str = OPEN) -> None:
+    def chart(self, symbol: str, price_at, recorded: str | None = None) -> None:
         """1-minute bars for the whole day (04:00–20:00), price_at("HH:MM") -> price."""
+        recorded = recorded or self.start
         bars, t = [], ts("04:00")
         while t < ts("20:00"):
             p = price_at(datetime.fromtimestamp(t, ET).strftime("%H:%M"))
@@ -124,6 +126,13 @@ class Day:
             t += 60
         self.record(recorded, f'call fetch_chart {json.dumps([symbol, "1d"])}',
                     {"r": {"range": "1d", "interval": "1m", "bars": bars}})
+
+    def premarket(self, hhmm: str, **gaps: tuple[float, int]) -> None:
+        """Pre-market gap rows as the scanner's Yahoo download returns them:
+        symbol=(gap %, minutes with trades), from a 10.00 close."""
+        rows = [{"symbol": s, "prev_close": 10.0, "price": round(10 * (1 + g / 100), 4), "gap_pct": g,
+                 "pre_minutes": m, "last_trade": int(ts(hhmm)), "at_open": False} for s, (g, m) in gaps.items()]
+        self.record(hhmm, f"call fetch_premarket {json.dumps([sorted(gaps)])}", {"r": rows})
 
     # --- SEC ----------------------------------------------------------------------------------
 
@@ -180,14 +189,14 @@ class Day:
             cash, burn, shares = 900_000_000, 50_000_000, (100_000_000, 99_000_000)
         else:
             raise ValueError(level)
-        self.record(OPEN, get(SUBMISSIONS_URL.format(cik=cik)), self._json({
+        self.record(self.start, get(SUBMISSIONS_URL.format(cik=cik)), self._json({
             "cik": cik, "filings": {"files": [], "recent": {
                 "form": [r[0] for r in rows], "filingDate": [r[1] for r in rows], "items": [r[2] for r in rows],
                 "accessionNumber": [f"{cik}-26-9{i:05d}" for i in range(len(rows))]}}}))
 
         def concept(spec, unit, facts):
             taxonomy, name = spec[0]
-            self.record(OPEN, get(CONCEPT_URL.format(cik=cik, taxonomy=taxonomy, concept=name)),
+            self.record(self.start, get(CONCEPT_URL.format(cik=cik, taxonomy=taxonomy, concept=name)),
                         self._json({"units": {unit: facts}}))
         concept(CASH, "USD", [{"end": "2026-06-30", "val": cash, "filed": "2026-08-01"}])
         concept(OPERATING_CASH_FLOW, "USD", [{"start": "2026-01-01", "end": "2026-06-30", "val": burn}])
@@ -220,14 +229,14 @@ class Day:
 
     def _cumulative(self, key: str, items: list[tuple[float, str]], wrap) -> None:
         """Record a feed's full contents at the start and each time an item appears."""
-        times = sorted({ts(OPEN), *(t for t, _ in items)})
+        times = sorted({ts(self.start), *(t for t, _ in items)})
         for t in times:
             shown = [text for when, text in sorted(items, key=lambda i: -i[0]) if when <= t]
             self._records.append((t, key, wrap(shown)))
 
     def build(self, watchlist: list[str]) -> Path:
         if not self._quoted:  # flat prices, so Yahoo doesn't look down
-            self.quotes(OPEN, **dict.fromkeys(watchlist, 0.0))
+            self.quotes(self.start, **dict.fromkeys(watchlist, 0.0))
         def atom(entries):
             return {"s": 200, "ct": "application/atom+xml",
                     "b": '<feed xmlns="http://www.w3.org/2005/Atom">' + "".join(entries) + "</feed>"}
@@ -236,7 +245,7 @@ class Day:
             self._cumulative(key, entries, atom)
 
         # The wire, recorded whenever an item appears or an outage starts or ends.
-        changes = {ts(OPEN), *(t for t, _ in self._wire), *(t for span in self._wire_outages for t in span)}
+        changes = {ts(self.start), *(t for t, _ in self._wire), *(t for span in self._wire_outages for t in span)}
         for t in sorted(changes):
             if any(start <= t < end for start, end in self._wire_outages):
                 payload = {"s": 503, "ct": "text/plain", "b": ""}
@@ -246,14 +255,14 @@ class Day:
                            "b": "<rss><channel>" + "".join(items) + "</channel></rss>"}
             self._records.append((t, get(WIRE), payload))
 
-        for t in sorted({ts(OPEN), *(t for versions in self._halts.values() for t, _ in versions)}):
+        for t in sorted({ts(self.start), *(t for versions in self._halts.values() for t, _ in versions)}):
             current = [max((v for v in versions if v[0] <= t), default=(0, ""))[1] for versions in self._halts.values()]
             self._records.append((t, get(HALTS_URL), {
                 "s": 200, "ct": "application/rss+xml",
                 "b": '<rss xmlns:ndaq="http://www.nasdaqtrader.com/"><channel>' + "".join(current) + "</channel></rss>"}))
 
         # Write through the real recorder, so the scenarios exercise the recording format too.
-        clock.freeze(ts(OPEN))
+        clock.freeze(ts(self.start))
         recorder = Recorder(self.folder / "recordings", {"watchlist": watchlist}, keep=5)
         for t, key, payload in sorted(self._records, key=lambda r: r[0]):
             clock.freeze(t)
@@ -282,7 +291,7 @@ class Run:
         if phone:
             state.phone_alerts.update(phone)
         self.hub = Hub()
-        clock.freeze(ts(OPEN))  # data-source health starts counting from the recorded morning
+        clock.freeze(ts(day.start))  # data-source health starts counting from the recorded morning
         base = {"feeds": {"Wire": WIRE}, "ticker_news": False, "sec_user_agent": CONTACT,
                 "ntfy_topic": PHONE_TOPIC, "source_alert_minutes": 5}
         self.engine = Engine(Settings(**{**base, **settings}), state, self.hub,
@@ -295,7 +304,7 @@ class Run:
         clock.freeze(ts(hhmm))
         self.now = hhmm
         for name, update in (("quotes", e._update_quotes), ("movers", e._update_movers), ("news", e._update_news),
-                             ("halts", e._update_halts), ("filings", e._update_filings)):
+                             ("halts", e._update_halts), ("filings", e._update_filings), ("gaps", e._update_gaps)):
             await e._run_step(name, update)
         await e._update_risk()
         while not e._risk_queue.empty():
@@ -311,6 +320,17 @@ class Run:
                 await self._step(hhmm)
         asyncio.run(go())
         return self
+
+    def brief(self, hhmm: str = "09:15") -> bool:
+        """Run the pre-market brief at hhmm; True if it was queued for the phone."""
+        clock.freeze(ts(hhmm))
+
+        async def go():
+            sent = await self.engine._send_gap_brief()
+            while not self.engine.phone._queue.empty():
+                self.phone.append({**self.engine.phone._queue.get_nowait(), "at": hhmm})
+            return sent
+        return asyncio.run(go())
 
     def recap(self, hhmm: str = "16:30") -> dict:
         clock.freeze(ts(hhmm))

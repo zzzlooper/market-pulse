@@ -61,6 +61,11 @@ class Settings:
     risk_movers: list[str] = field(default_factory=lambda: ["gainers", "small_caps"])
     risk_max_symbols: int = 60
     recap_time: str = "16:30"  # ET, weekdays: end-of-day recap to the phone (Phone box: Daily recap)
+    # Pre-market gap scanner (app/gaps.py): 04:00–10:00 ET on weekdays, brief to the phone.
+    gap_min_pct: float = 3.0
+    gap_min_minutes: int = 5          # minutes with pre-market trades before a gap counts
+    gap_max_symbols: int = 80
+    gap_brief_time: str = "09:15"     # ET, weekdays (Phone box: Pre-market brief)
     # Record what the data sources answer, to replay later (app/replay.py). Newest record_keep kept.
     record: bool = False
     record_keep: int = 10
@@ -88,15 +93,16 @@ def load_settings(path: Path = CONFIG_PATH, dashboard: dict | None = None) -> Se
     if "telegram_chat_id" in raw:
         raw["telegram_chat_id"] = str(raw["telegram_chat_id"])  # TOML may give an int
     settings = Settings(**raw)
-    if not RECAP_TIME.match(settings.recap_time):
-        raise ValueError(f'recap_time must be "HH:MM" (24-hour, ET), got {settings.recap_time!r}')
+    for name in ("recap_time", "gap_brief_time"):
+        if not RECAP_TIME.match(getattr(settings, name)):
+            raise ValueError(f'{name} must be "HH:MM" (24-hour, ET), got {getattr(settings, name)!r}')
     return settings
 
 
 # Which alert categories go to the phone. Unusual volume is off: it can fire dozens of times a day.
 # "sources" is a data source going down (and coming back), so silence isn't mistaken for a calm market.
 DEFAULT_PHONE_ALERTS = {"price": True, "halts": True, "news": True, "filings": True, "unusual": False,
-                        "sources": True, "recap": True}
+                        "sources": True, "recap": True, "gaps": True}
 
 DEFAULT_ALERT_RULES = [
     {"id": "default-move", "symbol": "", "kind": "move", "value": 5.0},

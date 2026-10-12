@@ -54,6 +54,7 @@ log = logging.getLogger(__name__)
 FORMAT = "market-pulse-recording"
 SECRET_PARAM = re.compile(r"token|key|secret|pass|sig|auth", re.IGNORECASE)
 DEFAULT_PORT = 8001
+PER_SYMBOL_CALLS = ("fetch_quotes", "fetch_premarket")  # Yahoo calls returning one row per symbol
 START_AFTER_FIRST = 15  # seconds
 
 
@@ -369,19 +370,19 @@ class Player(LiveIO):
         return ReplayTransport(self)
 
     async def call(self, name: str, fn: Callable, *args):
-        if name == "fetch_quotes":
-            return self._quotes(args[0])
+        if name in PER_SYMBOL_CALLS:
+            return self._rows(name, args[0])
         entry = self.at(call_key(name, args))
         if entry is None:
             raise SourceError(f"{name}{list(args)} isn't in the recording at this time")
         return entry["r"]
 
-    def _quotes(self, symbols: list[str]) -> list[dict]:
-        """The latest recorded row for each symbol, so editing the watchlist mid-replay works
-        for any symbol the recording has."""
+    def _rows(self, name: str, symbols: list[str]) -> list[dict]:
+        """The latest recorded row for each symbol, from any call of `name`: the symbols asked
+        for change (the watchlist is edited, the gap scanner's candidates come and go)."""
         now, latest = clock.time(), {}
         for key, items in self._entries.items():
-            if key.startswith("call fetch_quotes "):
+            if key.startswith(f"call {name} "):
                 for t, entry in items:
                     if t <= now:
                         for row in entry["r"]:
