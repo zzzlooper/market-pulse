@@ -72,11 +72,13 @@ SECRET_ENV = ("sec_user_agent", "finnhub_api_key", "ntfy_topic", "ntfy_token", "
 RECAP_TIME = re.compile(r"^([01]\d|2[0-3]):[0-5]\d$")
 
 
-def load_settings(path: Path = CONFIG_PATH) -> Settings:
+def load_settings(path: Path = CONFIG_PATH, dashboard: dict | None = None) -> Settings:
+    """config.toml, then values saved from the dashboard (app/setup.py), then the environment."""
     raw = tomllib.loads(path.read_text()) if path.exists() else {}
     unknown = set(raw) - {f.name for f in fields(Settings)}
     if unknown:
         raise ValueError(f"Unknown settings in {path.name}: {', '.join(sorted(unknown))}")
+    raw.update(dashboard or {})
     for name in SECRET_ENV:
         if value := os.environ.get(name.upper()):
             raw[name] = value

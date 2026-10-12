@@ -40,6 +40,7 @@ def test_installs_a_unit_without_secrets_and_a_private_env_file(tmp_path):
     assert f"WorkingDirectory={ROOT}" in text
     assert f"ExecStart={ROOT}/.venv/bin/uvicorn app.main:app --host 127.0.0.1 --port 8000 --no-access-log" in text
     assert f"EnvironmentFile=-{env_file}" in text and "UMask=0077" in text
+    assert "Environment=MARKET_PULSE_SERVICE=1" in text
     assert stat.S_IMODE(env_file.stat().st_mode) == 0o600
     assert stat.S_IMODE(env_file.parent.stat().st_mode) == 0o700
     assert calls == ["--user daemon-reload"]  # installed, not started

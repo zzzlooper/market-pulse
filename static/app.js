@@ -350,7 +350,7 @@ function renderPhone() {
   const on = targets.length > 0;
   $("#phone-target").textContent = on
     ? `${targets.join(" + ")}${sent ? ` · last sent ${fmtTime(sent)}` : ""}`
-    : "not set up — add ntfy or Telegram in config.toml (see README)";
+    : "not set up — add ntfy or Telegram in Setup";
   $("#phone-test").disabled = !on;
   for (const box of document.querySelectorAll("[data-phone-cat]")) {
     box.checked = Boolean(state.phone_alerts?.[box.dataset.phoneCat]);
@@ -528,9 +528,10 @@ function handle({ type, data }) {
       renderHalts();  // first: other tables show HALTED badges
       renderKeywords(); renderWatchlist(); renderUnusual(); renderMovers(); renderSources(); renderNews();
       renderRules(); renderAlertLog(); renderPhone(); setHealth(data.health);
+      window.dispatchEvent(new Event("mp-snapshot"));
       break;
-    case "phone": state.phone = data; renderPhone(); break;
-    case "health": setHealth(data); break;
+    case "phone": state.phone = data; renderPhone(); window.dispatchEvent(new Event("mp-status")); break;
+    case "health": setHealth(data); window.dispatchEvent(new Event("mp-status")); break;
     case "halts":
       state.halts = data;
       refreshHalts();

@@ -235,7 +235,7 @@ def test_recap_time_must_be_hh_mm(tmp_path):
 @pytest.fixture
 def client(monkeypatch):
     monkeypatch.setattr(main.engine.settings, "access_token", "")
-    return TestClient(main.app)
+    return TestClient(main.app, base_url="http://localhost")
 
 
 def test_api_reports_reactions_and_previews_the_recap_without_sending(client, monkeypatch):

@@ -12,11 +12,30 @@ Requires Python 3.11+.
 python -m venv .venv
 source .venv/bin/activate        # fish: source .venv/bin/activate.fish
 pip install -r requirements.txt
-cp config.example.toml config.toml   # then set sec_user_agent to an app name + your email
 uvicorn app.main:app --reload
 ```
 
-Open http://localhost:8000 and click **Enable alerts** to get desktop notifications and a sound.
+Open http://localhost:8000. The **Setup** panel opens with a checklist: your contact email for
+SEC, phone alerts, the background service and the optional extras, each with a button to fix
+it. Then click **Enable alerts** to get desktop notifications and a sound.
+
+### Settings and privacy
+
+Most settings can be changed in **Setup**; the rest (intervals, feeds) live in `config.toml`
+(`cp config.example.toml config.toml`). Layers, lowest to highest: defaults, `config.toml`,
+the dashboard, environment variables. A setting that comes from an environment variable is
+shown locked in the dashboard.
+
+- Dashboard values are saved in `data/settings.json`, readable by you only, in a folder git
+  ignores.
+- Secrets (tokens, the ntfy topic, Telegram ids, your SEC email) are write-only: Setup shows
+  whether each is set and where from, with at most its last few characters, and never sends a
+  saved one back. *Generate* makes a strong access token or ntfy topic and shows it once, to
+  copy to your phone. No setting's value is ever logged.
+- Changes apply at once, except the Finnhub key, which needs a restart.
+- Without an access token the app answers only requests addressed to `localhost`/`127.0.0.1`,
+  and it always refuses changes sent from other websites. A page you visit can't change your
+  settings, even by pointing its own domain at your computer (DNS rebinding).
 
 Tests: `pip install pytest && pytest`
 
@@ -294,6 +313,7 @@ app/
   dilution.py dilution risk profile: filing history, cash runway, share growth
   reactions.py  catalyst reaction tracking: what's due, price at each horizon, medians
   recap.py    end-of-day recap message and its schedule
+  setup.py    dashboard settings (write-only secrets) and the first-run checklist
   sentiment.py  rule-based headline sentiment (finance lexicon + negation)
   alerts.py   price/move/RVOL alert rules (crossing + cooldown) and unusual-volume entries
   health.py   per-source health: last good update, errors, staleness, outage alerts
@@ -304,6 +324,7 @@ app/
 static/       single-page dashboard (vanilla JS, no build step)
   app.js      tables, news, alerts, halts, WebSocket client
   detail.js   ticker detail drawer and its canvas chart
+  setup.js    Setup drawer: checklist and settings form
 scripts/
   install-service.sh  systemd user service install/uninstall
 tests/        offline: a fixture blocks any network access, and they use a scratch

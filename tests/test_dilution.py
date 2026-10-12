@@ -220,7 +220,7 @@ def test_profile_without_the_ticker_map_explains_why():
 @pytest.fixture
 def client(monkeypatch):
     monkeypatch.setattr(main.engine.settings, "access_token", "")
-    return TestClient(main.app)
+    return TestClient(main.app, base_url="http://localhost")
 
 
 def test_api_returns_the_profile_or_explains_why_not(client, monkeypatch):

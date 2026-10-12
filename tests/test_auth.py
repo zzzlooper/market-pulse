@@ -12,13 +12,13 @@ def client(monkeypatch):
     monkeypatch.setattr(main.engine.settings, "access_token", TOKEN)
     monkeypatch.setattr(main, "LOGIN_FAIL_DELAY", 0)
     # Not used as a context manager, so the lifespan (and its network polling) never starts.
-    return TestClient(main.app)
+    return TestClient(main.app, base_url="http://localhost")
 
 
 def test_no_token_configured_means_open_access(client, monkeypatch):
     monkeypatch.setattr(main.engine.settings, "access_token", "")
     assert client.get("/api/snapshot").status_code == 200
-    with client.websocket_connect("/ws") as ws:
+    with client.websocket_connect("ws://localhost/ws") as ws:
         assert ws.receive_json()["type"] == "snapshot"
 
 
@@ -51,7 +51,7 @@ def test_login_sets_a_strict_httponly_cookie(client):
 
 
 def test_websocket_without_the_token_is_closed_with_4401(client):
-    with client.websocket_connect("/ws") as ws:
+    with client.websocket_connect("ws://localhost/ws") as ws:
         with pytest.raises(WebSocketDisconnect) as closed:
             ws.receive_json()
     assert closed.value.code == 4401
@@ -59,7 +59,7 @@ def test_websocket_without_the_token_is_closed_with_4401(client):
 
 def test_websocket_with_the_cookie_gets_the_snapshot(client):
     client.post("/api/login", json={"token": TOKEN})
-    with client.websocket_connect("/ws") as ws:
+    with client.websocket_connect("ws://localhost/ws") as ws:
         msg = ws.receive_json()
     assert msg["type"] == "snapshot"
     assert "health" in msg["data"]
@@ -67,9 +67,9 @@ def test_websocket_with_the_cookie_gets_the_snapshot(client):
 
 def test_websocket_from_another_site_is_refused_even_without_a_token(client, monkeypatch):
     monkeypatch.setattr(main.engine.settings, "access_token", "")
-    with client.websocket_connect("/ws", headers={"origin": "http://evil.example"}) as ws:
+    with client.websocket_connect("ws://localhost/ws", headers={"origin": "http://evil.example"}) as ws:
         with pytest.raises(WebSocketDisconnect) as closed:
             ws.receive_json()
     assert closed.value.code == 4403
-    with client.websocket_connect("/ws", headers={"origin": "http://testserver"}) as ws:
+    with client.websocket_connect("ws://localhost/ws", headers={"origin": "http://localhost"}) as ws:
         assert ws.receive_json()["type"] == "snapshot"

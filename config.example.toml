@@ -1,8 +1,9 @@
-# Copy to config.toml and edit. Every setting is optional.
+# Copy to config.toml and edit. Every setting is optional, and most can be set in the
+# dashboard's Setup panel instead (saved in data/settings.json; dashboard values win).
 
 # SEC requires automated clients to identify themselves: an app name and a contact email.
 # It's sent only to www.sec.gov. To keep it out of this file, set SEC_USER_AGENT instead.
-sec_user_agent = "market-pulse/0.5 you@example.com"
+sec_user_agent = "market-pulse/0.6 you@example.com"
 
 # Real-time watchlist prices. Free key at https://finnhub.io/register (or set FINNHUB_API_KEY).
 # Leave empty to use delayed Yahoo prices only.

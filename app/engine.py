@@ -36,6 +36,7 @@ from .reactions import (
 )
 from .recap import build_recap, next_run
 from .sec import SecClient
+from .setup import DashboardSettings, SettingsError, apply, validate
 
 log = logging.getLogger(__name__)
 
@@ -82,6 +83,7 @@ class Engine:
         self._wake_risk = asyncio.Event()
         # Catalyst reactions live next to the user state, in a file only the user can read.
         self.reactions = ReactionStore(state.path.parent / "reactions.db")
+        self.dashboard = DashboardSettings(state.path.parent / "settings.json")  # mode 600
         self._reaction_retry: dict[str, float] = {}  # event id -> monotonic time to try again
         self._risk_queue: asyncio.Queue[tuple[str, str]] = asyncio.Queue()  # offerings awaiting a risk level
         self.halts = HaltFeed()
@@ -457,6 +459,31 @@ class Engine:
                                self.state.phone_alerts)
         failing = self.filings.failing
         return f"EDGAR feeds failing: {', '.join(failing)}" if failing else None
+
+    # --- settings from the dashboard ----------------------------------------------------
+
+    async def update_settings(self, changes: dict[str, object]) -> dict:
+        """Validate, save to data/settings.json and apply what can be applied live. An empty
+        value removes the dashboard's value, falling back to config.toml or the default."""
+        stored = self.dashboard.load()
+        for name, value in changes.items():
+            if self.dashboard.source(name, stored) == "environment":
+                raise SettingsError(f"{name} is set by the environment variable {name.upper()}; change it there")
+            if value is None or value == "":
+                stored.pop(name, None)
+            else:
+                stored[name] = validate(name, value)
+        try:
+            fresh = self.dashboard.effective(stored)
+        except (TypeError, ValueError) as exc:
+            raise SettingsError(f"Not saved: {exc}") from None
+        self.dashboard.save(stored)
+        restart = apply(self.settings, fresh, list(changes))
+        if "sec_user_agent" in changes:
+            self.sec.set_user_agent(self.settings.sec_user_agent)
+        log.info("settings changed from the dashboard: %s", ", ".join(sorted(changes)))  # names only
+        await self.hub.broadcast({"type": "phone", "data": self.phone.status()})
+        return {"saved": sorted(changes), "restart_required": restart}
 
     # --- catalyst reactions --------------------------------------------------------------
 

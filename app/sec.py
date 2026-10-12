@@ -42,6 +42,9 @@ class SecClient:
     async def aclose(self) -> None:
         await self._client.aclose()
 
+    def set_user_agent(self, user_agent: str) -> None:
+        self._client.headers["User-Agent"] = user_agent
+
     async def get(self, url: str) -> httpx.Response:
         if not is_sec_url(url):
             raise ValueError("the SEC client only talks to SEC hosts")

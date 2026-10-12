@@ -103,6 +103,8 @@ Description=Market Pulse stock dashboard and alerts
 [Service]
 WorkingDirectory=$APP_DIR
 EnvironmentFile=-$ENV_FILE
+# Tells the dashboard's setup checklist it runs as this service.
+Environment=MARKET_PULSE_SERVICE=1
 ExecStart=$APP_DIR/.venv/bin/uvicorn app.main:app --host $HOST --port $PORT --no-access-log
 Restart=on-failure
 RestartSec=10

@@ -2,8 +2,10 @@
 from __future__ import annotations
 
 import asyncio
+import ipaddress
 import logging
 import math
+import os
 import re
 import secrets
 from contextlib import asynccontextmanager
@@ -17,15 +19,23 @@ from fastapi import (
     WebSocket,
     WebSocketDisconnect,
 )
-from fastapi.responses import JSONResponse
+from fastapi.responses import JSONResponse, PlainTextResponse
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
 
 from .alerts import KINDS
-from .config import DEFAULT_PHONE_ALERTS, ROOT, UserState, load_settings
+from .config import (
+    DEFAULT_PHONE_ALERTS,
+    DEFAULT_WATCHLIST,
+    ROOT,
+    STATE_PATH,
+    UserState,
+    load_settings,
+)
 from .engine import Engine, Hub
 from .health import SourceError, describe
 from .market import CHART_RANGES
+from .setup import EDITABLE, GENERATED, DashboardSettings, SettingsError, checklist
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(name)s: %(message)s")
 # httpx logs every request URL at INFO; Telegram bot URLs contain the bot token and ntfy URLs
@@ -42,7 +52,8 @@ TOKEN_COOKIE_DAYS = 365
 LOGIN_FAIL_DELAY = 1.0  # seconds; slows down guessing
 
 hub = Hub()
-engine = Engine(load_settings(), UserState(), hub)
+engine = Engine(load_settings(dashboard=DashboardSettings(STATE_PATH.parent / "settings.json").load()),
+                UserState(), hub)
 
 
 @asynccontextmanager
@@ -67,6 +78,33 @@ app = FastAPI(title="Market Pulse", lifespan=lifespan)
 # /api/login sets (browsers can't add headers to a WebSocket), or as "Authorization: Bearer".
 # The static page itself loads without it, so it can show the login prompt.
 
+def is_loopback(host: str | None) -> bool:
+    if not host:
+        return False
+    if host == "localhost":
+        return True
+    try:
+        return ipaddress.ip_address(host.strip("[]")).is_loopback
+    except ValueError:
+        return False
+
+
+def host_name(host_header: str | None) -> str:
+    """"localhost:8000" -> "localhost", "[::1]:8000" -> "::1"."""
+    host = (host_header or "").strip()
+    if host.startswith("["):
+        return host[1:host.find("]")] if "]" in host else host
+    return host.rsplit(":", 1)[0] if host.count(":") == 1 else host
+
+
+def host_allowed(host_header: str | None) -> bool:
+    """Without an access token, answer only to requests addressed to this computer by name.
+    That stops DNS rebinding: a website whose name resolves to 127.0.0.1 can't drive the app,
+    because its requests carry its own name in the Host header. With a token, its requests
+    lack the sign-in cookie instead."""
+    return bool(engine.settings.access_token) or is_loopback(host_name(host_header))
+
+
 def authorized(cookie: str | None, header: str | None) -> bool:
     expected = engine.settings.access_token
     if not expected:
@@ -78,6 +116,15 @@ def authorized(cookie: str | None, header: str | None) -> bool:
 
 @app.middleware("http")
 async def require_token(request: Request, call_next):
+    if not host_allowed(request.headers.get("host")):
+        return PlainTextResponse("Market Pulse only answers on localhost until an access token is set "
+                                 "(see README: Opening it from your phone).", status_code=403)
+    # Browsers send Origin with every cross-site POST/PUT/DELETE: refuse ones from other sites,
+    # so a page you visit can't change your watchlist or settings.
+    origin = request.headers.get("origin")
+    if (request.method not in ("GET", "HEAD", "OPTIONS") and origin
+            and urlparse(origin).netloc != request.headers.get("host")):
+        return JSONResponse({"detail": "Cross-site request refused"}, status_code=403)
     if (request.url.path.startswith("/api/") and request.url.path != "/api/login"
             and not authorized(request.cookies.get(TOKEN_COOKIE), request.headers.get("authorization"))):
         return JSONResponse({"detail": "Access token required"}, status_code=401)
@@ -133,6 +180,68 @@ MAX_RULES = 100
 @app.get("/api/snapshot")
 def snapshot():
     return engine.snapshot()
+
+
+class SettingsIn(BaseModel):
+    values: dict[str, str | float | int | None]
+
+
+class GenerateIn(BaseModel):
+    name: str
+
+
+NO_STORE = {"Cache-Control": "no-store"}
+
+
+def _settings_response(body: dict, request: Request) -> JSONResponse:
+    resp = JSONResponse(body, headers=NO_STORE)
+    # A new access token signs this browser in with it, so changing it doesn't lock you out.
+    if engine.settings.access_token and request.cookies.get(TOKEN_COOKIE) != engine.settings.access_token:
+        resp.set_cookie(TOKEN_COOKIE, engine.settings.access_token, max_age=TOKEN_COOKIE_DAYS * 86400,
+                        httponly=True, samesite="strict", secure=request.url.scheme == "https")
+    return resp
+
+
+@app.get("/api/settings")
+def get_settings():
+    return JSONResponse({"fields": engine.dashboard.describe(engine.settings)}, headers=NO_STORE)
+
+
+@app.put("/api/settings")
+async def put_settings(body: SettingsIn, request: Request):
+    try:
+        result = await engine.update_settings(body.values)
+    except SettingsError as exc:
+        raise HTTPException(422, str(exc)) from None
+    return _settings_response({**result, "fields": engine.dashboard.describe(engine.settings)}, request)
+
+
+@app.post("/api/settings/generate")
+async def generate_setting(body: GenerateIn, request: Request):
+    """Make a strong random access token or ntfy topic, save it, and return it this once."""
+    if body.name not in GENERATED:
+        raise HTTPException(422, f"Only {', '.join(GENERATED)} can be generated")
+    value = GENERATED[body.name]()
+    try:
+        result = await engine.update_settings({body.name: value})
+    except SettingsError as exc:
+        raise HTTPException(422, str(exc)) from None
+    return _settings_response({**result, "name": body.name, "value": value,
+                               "fields": engine.dashboard.describe(engine.settings)}, request)
+
+
+@app.get("/api/setup")
+def setup(request: Request):
+    server = request.scope.get("server") or ("", 0)
+    client = request.client.host if request.client else None
+    phone = engine.phone.status()
+    items = checklist(
+        engine.settings, channels=engine.phone.channels, phone_error=phone["last_error"],
+        health=engine.health.status(), watchlist=engine.state.watchlist, default_watchlist=DEFAULT_WATCHLIST,
+        recap_on=engine.state.phone_alerts.get("recap", False), local_client=is_loopback(client),
+        local_server=is_loopback(server[0]), https=request.url.scheme == "https",
+        under_systemd=os.environ.get("MARKET_PULSE_SERVICE") == "1")  # set by scripts/install-service.sh
+    return JSONResponse({"items": items, "editable": list(EDITABLE)}, headers=NO_STORE)
 
 
 @app.get("/api/reactions")
@@ -283,7 +392,7 @@ async def remove_keyword(keyword: str):
 @app.websocket("/ws")
 async def websocket(ws: WebSocket):
     await ws.accept()  # then close with a code the page can read: 4403 other site, 4401 no token
-    if not same_origin(ws):
+    if not same_origin(ws) or not host_allowed(ws.headers.get("host")):
         await ws.close(code=4403)
         return
     if not authorized(ws.cookies.get(TOKEN_COOKIE), ws.headers.get("authorization")):
