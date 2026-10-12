@@ -25,6 +25,10 @@ class Clock:
     def start_replay(self, at: float, speed: float = 1.0) -> None:
         self._virtual_start, self._real_start, self.speed = at, _time.monotonic(), speed
 
+    def freeze(self, at: float) -> None:
+        """Stop the clock at `at` (tests that step through a day)."""
+        self._virtual_start, self._real_start, self.speed = at, _time.monotonic(), 0.0
+
     def reset(self) -> None:
         self._virtual_start, self.speed = None, 1.0
 
@@ -40,8 +44,8 @@ class Clock:
         return self.now(tz).date()
 
     def real_seconds(self, seconds: float) -> float:
-        """How long `seconds` of clock time takes in real time."""
-        return seconds / self.speed
+        """How long `seconds` of clock time takes in real time (a frozen clock: no wait)."""
+        return seconds / self.speed if self.speed else 0.0
 
     async def sleep(self, seconds: float) -> None:
         await asyncio.sleep(max(0.0, self.real_seconds(seconds)))

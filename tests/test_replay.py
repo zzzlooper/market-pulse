@@ -269,10 +269,13 @@ def test_engine_replays_prices_and_filings_offline_without_phone_alerts(tmp_path
     entries = [quotes(T0, 3.0),
                {"t": T0, "k": "GET https://www.sec.gov/files/company_tickers.json", "s": 200, "ct": "application/json",
                 "b": json.dumps({"0": {"cik_str": 1, "ticker": "ACME", "title": "Acme Corp"}})}]
-    for t in ("424B", "S-1", "S-3", "F-1", "F-3", "4", "SCHEDULE%2013D", "8-K"):
+    from urllib.parse import quote
+
+    from app.filings import FEED_TYPES, FEED_URL
+    for t in FEED_TYPES:  # keys made the way the recorder makes them
         body = feed if t == "424B" else "<feed xmlns='http://www.w3.org/2005/Atom'></feed>"
-        entries.append({"t": T0, "k": f"GET https://www.sec.gov/cgi-bin/browse-edgar?action=getcurrent&type={t}"
-                                      f"&count=100&start=0&output=atom", "s": 200, "ct": "application/atom+xml", "b": body})
+        key = url_key(httpx.Request("GET", FEED_URL.format(type=quote(t), start=0)))
+        entries.append({"t": T0, "k": key, "s": 200, "ct": "application/atom+xml", "b": body})
     path = tmp_path / "day.jsonl.gz"
     write_recording(path, entries)
     player = Player(path)
@@ -302,6 +305,7 @@ def test_engine_replays_prices_and_filings_offline_without_phone_alerts(tmp_path
     fresh = asyncio.run(scenario())
     assert [q["symbol"] for q in engine.yahoo_quotes] == ["ACME", "ZZZ"]
     assert [i["title"] for i in fresh] == ["Acme Corp: offering from shelf (424B5)"]
+    assert engine.filings.failed == []  # every EDGAR feed was found in the recording
     assert engine.phone.channels == [] and sent == []
     assert engine.clock_info()["replay"] is True and engine.clock_info()["recording"] == "day.jsonl.gz"
 

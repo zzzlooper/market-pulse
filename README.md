@@ -37,7 +37,13 @@ shown locked in the dashboard.
   and it always refuses changes sent from other websites. A page you visit can't change your
   settings, even by pointing its own domain at your computer (DNS rebinding).
 
-Tests: `pip install pytest && pytest`
+Tests: `pip install pytest && pytest`. They never touch the network, your `config.toml` or
+your `data/` folder.
+
+`tests/test_scenarios.py` replays made-up trading days through the real engine and checks
+what would reach the browser and the phone, e.g. an offering on a top gainer gives exactly one
+phone alert with its dilution risk, and its drop by the close shows in the recap. Write new
+ones with `tests/scenario_kit.py`: invented companies, no people, nothing sent anywhere.
 
 ### Real-time prices (optional)
 
@@ -363,6 +369,7 @@ static/       single-page dashboard (vanilla JS, no build step)
   setup.js    Setup drawer: checklist and settings form
 scripts/
   install-service.sh  systemd user service install/uninstall
-tests/        offline: a fixture blocks any network access, and they use a scratch
+tests/        offline (a fixture blocks any network access); scenario_kit.py builds made-up days.
+              They use a scratch
               config (MARKET_PULSE_CONFIG) and data folder (MARKET_PULSE_DATA), never yours
 ```

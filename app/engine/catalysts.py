@@ -62,12 +62,14 @@ class CatalystsMixin:
         """Look up the dilution risk of each tracked offering, one at a time. The level is read
         just after the filing, so it already counts that filing."""
         while True:
-            event_id, symbol = await self._risk_queue.get()
-            try:
-                if summary := await self._risk_profile(symbol):
-                    self.reactions.update(event_id, {"risk": summary["level"]})
-            except Exception as exc:
-                log.info("no dilution risk for %s offering: %s", symbol, describe(exc))
+            await self._fill_one_offering_risk(*await self._risk_queue.get())
+
+    async def _fill_one_offering_risk(self, event_id: str, symbol: str) -> None:
+        try:
+            if summary := await self._risk_profile(symbol):
+                self.reactions.update(event_id, {"risk": summary["level"]})
+        except Exception as exc:
+            log.info("no dilution risk for %s offering: %s", symbol, describe(exc))
 
     async def _update_reactions(self) -> None:
         """Measure what's due: one chart download per symbol covers all its events."""
