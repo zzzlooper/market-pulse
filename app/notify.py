@@ -63,6 +63,30 @@ def from_news(item: dict) -> dict:
     }
 
 
+# filing kind -> (ntfy priority, ntfy tag/emoji)
+FILING_KINDS = {
+    "dilution": ("high", "warning"),
+    "insider_buy": ("default", "moneybag"),
+    "insider_sell": ("default", "outbox_tray"),
+    "stake": ("default", "dart"),
+}
+
+
+def from_filing(item: dict, public_url: str = "") -> dict:
+    """A news item from FilingsFeed. Says why it matters when the stock isn't on the watchlist."""
+    filing, symbol = item["filing"], item["tickers"][0]
+    priority, tag = FILING_KINDS.get(filing["kind"], ("default", "page_facing_up"))
+    why = f" ({filing['hot']})" if filing["hot"] not in (None, "watchlist") else ""
+    return {
+        "category": "filings",
+        "title": f"{symbol} · {filing['label']}",
+        "body": f"{item['title']}{why}",
+        "url": f"{public_url.rstrip('/')}/#ticker={symbol}" if public_url else item["url"] or None,
+        "priority": priority,
+        "tag": tag,
+    }
+
+
 def from_outage(event: dict) -> dict:
     """A source-health event from SourceHealth.outages()."""
     if event["kind"] == "down":

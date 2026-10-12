@@ -202,7 +202,7 @@ function updateDetailLists() {
 
   // Times in ET throughout the drawer, to line up with the chart axis and halt times.
   $("#detail-news").innerHTML = detailNews().slice(0, 40).map((n) => `
-    <li><div class="meta"><time>${fmtETShort(n.published)}</time> ${esc(n.source)} ${sentimentBadge(n.sentiment)}</div>
+    <li><div class="meta"><time>${fmtETShort(n.published)}</time> ${esc(n.source)} ${n.filing ? filingBadge(n.filing) : sentimentBadge(n.sentiment)}</div>
       <a href="${esc(safeUrl(n.url))}" target="_blank" rel="noopener noreferrer">${esc(n.title)}</a></li>`).join("")
     || `<li class="muted">No headlines for ${esc(sym)} since the app started</li>`;
 

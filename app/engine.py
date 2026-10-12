@@ -11,11 +11,12 @@ from fastapi import WebSocket
 from . import market
 from .alerts import AlertMonitor, new_rule
 from .config import Settings, UserState
+from .filings import FilingsFeed
 from .finnhub import FinnhubFeed
 from .halts import HaltFeed, halt_messages
 from .health import SourceError, SourceHealth, describe
 from .news import NewsFeed
-from .notify import PhoneNotifier, from_alert, from_news, from_outage
+from .notify import PhoneNotifier, from_alert, from_filing, from_news, from_outage
 
 log = logging.getLogger(__name__)
 
@@ -46,6 +47,7 @@ class Engine:
         self.state = state
         self.hub = hub
         self.news = NewsFeed(settings)
+        self.filings = FilingsFeed(settings, self.news.sec_tickers) if settings.sec_filings else None
         self.halts = HaltFeed()
         self.phone = PhoneNotifier(settings, on_status=self._phone_status)
         self._ticks = asyncio.Event()  # set by the Finnhub feed whenever a price changes
@@ -59,6 +61,8 @@ class Engine:
         self.health.register("movers", "Yahoo movers", settings.movers_interval)
         self.health.register("news", "News feeds", settings.news_interval)
         self.health.register("halts", "Nasdaq halts", settings.halts_interval)
+        if self.filings:
+            self.health.register("filings", "SEC filings", settings.filings_interval)
         if self.finnhub:
             self.health.register("finnhub", "Finnhub stream", HEALTH_CHECK_SECONDS)
         self._health_seen: list = []  # what the browsers were last told
@@ -81,7 +85,7 @@ class Engine:
             "quotes": self.quotes,
             "movers": self.movers,
             "unusual": self.unusual,
-            "news": self.news.latest(),
+            "news": self._latest_news(),
             "alerts": list(self.alerts.recent),
             "halts": self.halts.latest(),
             "phone": self.phone.status(),
@@ -100,6 +104,9 @@ class Engine:
             asyncio.create_task(self.phone.run()),
             asyncio.create_task(self._watch_health()),
         ]
+        if self.filings:
+            self._tasks.append(asyncio.create_task(
+                self._loop("filings", s.filings_interval, self._update_filings)))
         if self.finnhub:
             await self.finnhub.set_symbols(self.state.watchlist)
             self._tasks += [
@@ -114,6 +121,8 @@ class Engine:
             task.cancel()
         await asyncio.gather(*self._tasks, return_exceptions=True)
         await self.news.aclose()
+        if self.filings:
+            await self.filings.aclose()
         await self.halts.aclose()
         await self.phone.aclose()
         if self.finnhub:
@@ -356,3 +365,29 @@ class Engine:
         if total and len(self.news.failed) == total:
             raise SourceError(f"all {total} feeds failed")
         return f"{len(failing)} of {total} feeds failing: {', '.join(failing)}" if failing else None
+
+    def _latest_news(self, limit: int = 300) -> list[dict]:
+        items = self.news.latest(limit) + (self.filings.latest() if self.filings else [])
+        return sorted(items, key=lambda n: n["published"], reverse=True)[:limit]
+
+    def _movers_by_symbol(self) -> dict[str, str]:
+        """Symbols on today's movers lists, with why: a filing on one of them is worth an alert."""
+        names = {"gainers": "top gainer", "losers": "top loser", "active": "most active",
+                 "small_caps": "small-cap gainer"}
+        hot: dict[str, str] = {}
+        for key, rows in self.movers.items():
+            for row in rows:
+                pct = row.get("change_pct")
+                hot.setdefault(row["symbol"], names.get(key, key) + (f" {pct:+.0f}%" if pct is not None else ""))
+        for row in self.unusual:
+            hot.setdefault(row["symbol"], f"unusual volume {row['rvol']:.1f}×" if row.get("rvol") else "unusual volume")
+        return hot
+
+    async def _update_filings(self) -> str | None:
+        fresh = await self.filings.poll(list(self.state.watchlist), self._movers_by_symbol())
+        if fresh:
+            await self.hub.broadcast({"type": "news", "data": fresh})
+            self.phone.enqueue([from_filing(n, self.settings.public_url) for n in fresh if n["alert"]],
+                               self.state.phone_alerts)
+        failing = self.filings.failing
+        return f"EDGAR feeds failing: {', '.join(failing)}" if failing else None

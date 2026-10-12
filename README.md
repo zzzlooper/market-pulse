@@ -12,7 +12,7 @@ Requires Python 3.11+.
 python -m venv .venv
 source .venv/bin/activate        # fish: source .venv/bin/activate.fish
 pip install -r requirements.txt
-cp config.example.toml config.toml   # then set sec_user_agent to your name + email
+cp config.example.toml config.toml   # then set sec_user_agent to an app name + your email
 uvicorn app.main:app --reload
 ```
 
@@ -57,10 +57,11 @@ until one is configured. Then use **Send test** in the Alerts panel's *Phone* bo
 3. Set `telegram_bot_token` and `telegram_chat_id` in `config.toml`.
 
 Secrets can come from environment variables instead of `config.toml`: `NTFY_TOPIC`,
-`NTFY_TOKEN`, `TELEGRAM_BOT_TOKEN`, `TELEGRAM_CHAT_ID` (and `FINNHUB_API_KEY`, `ACCESS_TOKEN`).
+`NTFY_TOKEN`, `TELEGRAM_BOT_TOKEN`, `TELEGRAM_CHAT_ID` (and `FINNHUB_API_KEY`, `ACCESS_TOKEN`,
+and `SEC_USER_AGENT` for your contact address).
 
 - The *Phone* box has switches for which alerts go to the phone: price, halts, news (keyword
-  and watchlist headlines), unusual volume and data outages. Unusual volume is off by default,
+  and watchlist headlines), SEC filings, unusual volume and data outages. Unusual volume is off by default,
   since it can fire dozens of times a day.
 - *Data outages*: when a data source has been down for `source_alert_minutes` (default 5;
   0 turns it off), you get one message saying which alerts can't fire, and another when it's
@@ -102,6 +103,7 @@ uvicorn app.main:app --host 0.0.0.0
 | Top movers: gainers, losers, most active, small caps | Yahoo predefined screeners | 60 s |
 | Unusual volume | Watchlist plus every screener result with RVOL ≥ threshold | with the above |
 | News | SEC 8-K filings, GlobeNewswire, PR Newswire, Yahoo per-ticker RSS | 30 s |
+| SEC filings (in the news feed) | EDGAR current filings: offerings, Form 4, Schedule 13D | 30 s |
 
 - **RVOL** (relative volume) is today's volume divided by the 10-day average volume, scaled
   by how much of the 9:30–16:00 ET session has elapsed. Scaling linearly over-flags stocks
@@ -161,8 +163,29 @@ uvicorn app.main:app --host 0.0.0.0
   - It's a word-matching model, so it misses sarcasm and context ("growth" in a product
     name still counts as bullish). To tune it, edit `LEXICON_SOURCE` and add a case to
     `tests/test_sentiment.py`.
+- **SEC filings** (`app/filings.py`): filings that move small caps appear in the news feed
+  with a coloured badge, the form type and a one-line note on what the filing means.
+  - *Dilution* (red): offering registrations (S-1, F-1), shelf registrations (S-3, F-3),
+    priced offerings and shelf takedowns (424B1/B4/B5) and resale prospectuses (424B3/B7).
+    Only listed companies are shown. 424B2 is skipped: banks file thousands a day for
+    structured notes.
+  - *Insider buy* (green): open-market purchases on Form 4 worth at least `insider_min_value`
+    (default $50K), from any company, with the insider's role, size, average price and how much
+    the holding grew. Trades under a 10b5-1 plan are marked. *Insider sales* show only for
+    watchlist stocks. Awards, option exercises and tax withholding are ignored.
+  - *13D stake* (blue): an investor crossing 5% with an active intent, with the stake size.
+  - A filing alerts (log, desktop, phone) when the stock is on the watchlist **or on today's
+    movers or unusual-volume lists**. An offering right after a run-up is the classic case,
+    and the phone message says why, e.g. *ACME · offering from shelf (top gainer +45%)*.
+    Filings already in the feeds at startup don't alert.
+  - Privacy: Form 4 and 13D filings name insiders and individual investors, often with their
+    addresses. Only roles (CEO, Director), share counts, prices and stake sizes are read. A 13D
+    filer is named only when it is clearly a firm (LLC, LP, Ltd, Fund, Capital…), never a
+    person. Your `sec_user_agent` is sent only to www.sec.gov and never logged.
+  - `sec_filings = false` turns it off. EDGAR doesn't accept filings on weekends and federal
+    holidays, and insiders have two business days to file a Form 4.
 - **Data health**: the header shows whether every data source is delivering (Yahoo prices,
-  Yahoo movers, news feeds, Nasdaq halts, and the Finnhub stream when configured). Click it
+  Yahoo movers, news feeds, Nasdaq halts, SEC filings, and the Finnhub stream when configured). Click it
   for each source's last update and error.
   - A source is judged by the age of its last good update, not just by errors: a yfinance
     call that hangs never raises an error, so no data for 3 polling intervals (at least 60 s)
@@ -193,6 +216,7 @@ app/
   market.py   quotes, screeners, RVOL, unusual-volume filter
   finnhub.py  real-time trade stream + REST quotes, overlaid on Yahoo rows
   news.py     feed polling, ticker extraction, dedupe, keyword alerts
+  filings.py  SEC offerings, Form 4 insider trades and 13D stakes, as news items
   sentiment.py  rule-based headline sentiment (finance lexicon + negation)
   alerts.py   price/move/RVOL alert rules (crossing + cooldown) and unusual-volume entries
   health.py   per-source health: last good update, errors, staleness, outage alerts

@@ -1,7 +1,8 @@
 # Copy to config.toml and edit. Every setting is optional.
 
-# SEC requires automated clients to identify themselves. Put your own name/email here.
-sec_user_agent = "market-pulse/0.1 you@example.com"
+# SEC requires automated clients to identify themselves: an app name and a contact email.
+# It's sent only to www.sec.gov. To keep it out of this file, set SEC_USER_AGENT instead.
+sec_user_agent = "market-pulse/0.2 you@example.com"
 
 # Real-time watchlist prices. Free key at https://finnhub.io/register (or set FINNHUB_API_KEY).
 # Leave empty to use delayed Yahoo prices only.
@@ -34,6 +35,11 @@ min_volume = 300000
 
 news_history = 500
 ticker_news = true   # poll Yahoo's per-ticker RSS for every watchlist symbol
+
+# SEC filings in the news feed: offerings (dilution), Form 4 insider trades and 13D stakes.
+sec_filings = true
+filings_interval = 30
+insider_min_value = 50000   # smallest insider trade shown; insider sales only for the watchlist
 
 # Setting [feeds] replaces the default list entirely.
 # [feeds]

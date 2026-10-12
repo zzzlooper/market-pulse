@@ -48,11 +48,15 @@ class Settings:
     news_history: int = 500
     feeds: dict[str, str] = field(default_factory=lambda: dict(DEFAULT_FEEDS))
     ticker_news: bool = True  # also poll Yahoo's per-ticker RSS for each watchlist symbol
+    # SEC filings: offerings (dilution), insider buys/sells and 13D stakes. See app/filings.py.
+    sec_filings: bool = True
+    filings_interval: float = 30.0
+    insider_min_value: float = 50_000  # smallest insider trade shown; sales only for the watchlist
 
 
-# Settings that may come from same-named upper-case env vars (which win), so secrets can
-# stay out of config.toml.
-SECRET_ENV = ("finnhub_api_key", "ntfy_topic", "ntfy_token", "telegram_bot_token", "telegram_chat_id",
+# Settings that may come from same-named upper-case env vars (which win), so secrets and
+# your contact address can stay out of config.toml.
+SECRET_ENV = ("sec_user_agent", "finnhub_api_key", "ntfy_topic", "ntfy_token", "telegram_bot_token", "telegram_chat_id",
               "access_token")
 
 
@@ -71,7 +75,8 @@ def load_settings(path: Path = CONFIG_PATH) -> Settings:
 
 # Which alert categories go to the phone. Unusual volume is off: it can fire dozens of times a day.
 # "sources" is a data source going down (and coming back), so silence isn't mistaken for a calm market.
-DEFAULT_PHONE_ALERTS = {"price": True, "halts": True, "news": True, "unusual": False, "sources": True}
+DEFAULT_PHONE_ALERTS = {"price": True, "halts": True, "news": True, "filings": True, "unusual": False,
+                        "sources": True}
 
 DEFAULT_ALERT_RULES = [
     {"id": "default-move", "symbol": "", "kind": "move", "value": 5.0},

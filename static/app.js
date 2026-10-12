@@ -194,6 +194,7 @@ function keywordRegex() {
 }
 
 function isAlert(n, kwRe) {
+  if (n.filing) return Boolean(n.filing.hot);  // watchlist or a mover when it was filed
   if (n.tickers.some((t) => state.watchlist.includes(t))) return true;
   if (!kwRe) return false;
   kwRe.lastIndex = 0;
@@ -228,13 +229,18 @@ function renderNews(freshIds = new Set()) {
       <div class="meta">
         <time datetime="${esc(n.published)}">${fmtTime(n.published)}</time>
         <span>${esc(n.source)}</span>
-        ${sentimentBadge(n.sentiment)}
+        ${n.filing ? filingBadge(n.filing) : sentimentBadge(n.sentiment)}
         ${n.tags.map((t) => `<span class="tag">${esc(t)}</span>`).join("")}
         ${n.tickers.map((t) => `<a class="sym" data-sym="${esc(t)}">${esc(t)}</a>`).join("")}
+        ${n.filing?.hot && n.filing.hot !== "watchlist" ? `<span class="muted">${esc(n.filing.hot)}</span>` : ""}
       </div>
       <a class="title" href="${esc(safeUrl(n.url))}" target="_blank" rel="noopener noreferrer">${mark(n.title)}</a>
       ${n.summary ? `<p>${mark(n.summary)}</p>` : ""}
     </li>`).join("");
+}
+
+function filingBadge(f) {
+  return `<span class="filing ${esc(f.kind)}" title="SEC ${esc(f.form)}">${esc(f.label)}</span>`;
 }
 
 function renderSources() {
@@ -262,7 +268,8 @@ function addNews(items) {
   const alerts = fresh.filter((n) => n.alert);
   if (alerts.length) {
     notify(alerts.map((n) => ({
-      title: `${n.tickers.length ? `${n.tickers.join(" ")} · ` : ""}${n.source}`, body: n.title, tag: n.id,
+      title: `${n.tickers.length ? `${n.tickers.join(" ")} · ` : ""}${n.filing ? n.filing.label : n.source}`,
+      body: n.title, tag: n.id,
     })));
   }
 }

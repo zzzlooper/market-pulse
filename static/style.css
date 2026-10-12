@@ -128,6 +128,10 @@ td small { color: var(--muted); }
 .sentiment { border-radius: 3px; padding: 0 5px; font-weight: 600; cursor: help; }
 .sentiment.bullish { color: var(--up); background: #3fb9501f; }
 .sentiment.bearish { color: var(--down); background: #f851491f; }
+.filing { border-radius: 3px; padding: 0 5px; font-weight: 600; text-transform: uppercase; font-size: 0.85em; }
+.filing.dilution, .filing.insider_sell { color: var(--down); background: #f851491f; }
+.filing.insider_buy { color: var(--up); background: #3fb9501f; }
+.filing.stake { color: #58a6ff; background: #58a6ff1f; }
 .x { padding: 0 6px; border: none; color: var(--muted); background: none; }
 .x:hover { color: var(--down); }
 .empty td { text-align: center; color: var(--muted); padding: 16px; }

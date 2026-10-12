@@ -42,6 +42,8 @@ def run(engine, coro):
             return await coro
         finally:
             await engine.news.aclose()
+            if engine.filings:
+                await engine.filings.aclose()
             await engine.halts.aclose()
             await engine.phone.aclose()
     return asyncio.run(scenario())
@@ -167,12 +169,12 @@ def test_health_changes_are_broadcast_once_and_outages_reach_the_phone(tmp_path)
     run(engine, scenario())
     states = [{s["name"]: s["state"] for s in h["sources"]} for h in hub.of_type("health")]
     assert states[0]["quotes"] == "starting"
-    assert states[1] == {"quotes": "down", "movers": "down", "news": "down", "halts": "down"}
+    assert states[1] == {"quotes": "down", "movers": "down", "news": "down", "halts": "down", "filings": "down"}
     assert states[-1]["quotes"] == "ok"
     titles = [n["title"] for n in sent]
     assert titles == ["Market Pulse · Yahoo prices down", "Market Pulse · Yahoo movers down",
                       "Market Pulse · News feeds down", "Market Pulse · Nasdaq halts down",
-                      "Market Pulse · Yahoo prices back"]
+                      "Market Pulse · SEC filings down", "Market Pulse · Yahoo prices back"]
 
 
 def test_outage_alerts_respect_the_phone_toggle(tmp_path):
@@ -197,7 +199,7 @@ def test_the_snapshot_includes_health_with_the_server_clock(tmp_path):
     engine, _, clock = make_engine(tmp_path)
     snapshot = run(engine, asyncio.sleep(0, engine.snapshot()))
     assert snapshot["health"]["now"] == clock.t
-    assert [s["name"] for s in snapshot["health"]["sources"]] == ["quotes", "movers", "news", "halts"]
+    assert [s["name"] for s in snapshot["health"]["sources"]] == ["quotes", "movers", "news", "halts", "filings"]
 
 
 def test_a_feed_that_recovers_resets_its_failure_count():

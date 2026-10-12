@@ -40,6 +40,10 @@ async def lifespan(_: FastAPI):
     if engine.settings.public_url and not engine.settings.access_token:
         log.warning("public_url is set but access_token is empty: anyone who can reach this app "
                     "can change its watchlist, alert rules and phone alerts (see README)")
+    if "@example.com" in engine.settings.sec_user_agent:
+        # The value itself isn't logged: once set, it holds the user's contact address.
+        log.warning("sec_user_agent is still the example value; SEC may block news and filings. "
+                    "Set it in config.toml (or SEC_USER_AGENT) to an app name and your contact email")
     await engine.start()
     yield
     await engine.stop()

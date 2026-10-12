@@ -6,6 +6,7 @@ import hashlib
 import html
 import logging
 import re
+import time
 from calendar import timegm
 from collections import OrderedDict
 from datetime import datetime, timezone
@@ -24,6 +25,7 @@ SEC_TICKERS_URL = "https://www.sec.gov/files/company_tickers.json"
 BROWSER_UA = "Mozilla/5.0 (X11; Linux x86_64) market-pulse/0.1"
 MAX_SEEN = 20_000
 FAILING_AFTER = 3  # consecutive failed polls before a feed is reported; single misses are common
+TICKER_MAP_RETRY = 600  # seconds before retrying a failed SEC ticker-map download
 
 # "(NASDAQ: ABCD)", "NYSE American: XYZ", "(OTCQB:ABCD)", "NYSE: BRK.B"
 EXCHANGE_TICKER = re.compile(
@@ -69,7 +71,9 @@ class NewsFeed:
         self._items: OrderedDict[str, dict] = OrderedDict()
         self._seen: OrderedDict[str, None] = OrderedDict()  # outlives _items so trimmed news can't re-alert
         self._primed: set[str] = set()  # feeds fetched at least once; their backlog never alerts
-        self._cik_tickers: dict[str, str] | None = None
+        self._cik_tickers: dict[str, str] = {}
+        self._cik_tickers_at: float | None = None  # when the last download was tried
+        self._cik_tickers_lock = asyncio.Lock()  # news and filings both ask for it at startup
         self.failed: list[str] = []  # feeds that failed in the last poll
         self.source_count = 0         # feeds tried in the last poll
         self._fail_streak: dict[str, int] = {}
@@ -148,7 +152,7 @@ class NewsFeed:
             title, tags, key = f"{company} filed {form}", [form], url
             # EDGAR summaries are filing metadata followed by the 8-K items, e.g. "Item 2.02: ..."
             summary = summary[summary.find("Item "):] if "Item " in summary else ""
-            if ticker := (await self._sec_tickers()).get(cik):
+            if ticker := (await self.sec_tickers()).get(cik):
                 tickers.insert(0, ticker)
         if hint:
             tickers = list(dict.fromkeys([hint, *tickers]))
@@ -166,14 +170,24 @@ class NewsFeed:
             "sentiment": sentiment.score(title, summary),
         }
 
-    async def _sec_tickers(self) -> dict[str, str]:
-        if self._cik_tickers is None:
-            self._cik_tickers = {}
+    async def sec_tickers(self) -> dict[str, str]:
+        """SEC CIK -> ticker map, loaded once. After a failure it's retried every
+        TICKER_MAP_RETRY seconds; until then filings show without tickers."""
+        async with self._cik_tickers_lock:
+            await self._load_sec_tickers()
+        return self._cik_tickers
+
+    async def _load_sec_tickers(self) -> None:
+        due = self._cik_tickers_at is None or (
+            not self._cik_tickers and time.monotonic() - self._cik_tickers_at >= TICKER_MAP_RETRY)
+        if due:
+            self._cik_tickers_at = time.monotonic()
             try:
                 resp = await self._client.get(SEC_TICKERS_URL, headers={"User-Agent": self.settings.sec_user_agent})
                 resp.raise_for_status()
+                mapping: dict[str, str] = {}
                 for row in resp.json().values():
-                    self._cik_tickers.setdefault(f"{row['cik_str']:010d}", row["ticker"])
-            except Exception as exc:  # filings still show, just without tickers
+                    mapping.setdefault(f"{row['cik_str']:010d}", row["ticker"])
+                self._cik_tickers = mapping
+            except Exception as exc:
                 log.warning("could not load SEC ticker map: %s", exc)
-        return self._cik_tickers
