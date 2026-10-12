@@ -208,3 +208,13 @@ def test_checklist_covers_phone_service_data_and_extras():
     assert "recap is switched off" in ok["phone"]["detail"]
     assert "finnhub" not in ok and "watchlist" not in ok
     assert items(channels=["ntfy"], phone_error="ntfy: HTTP 403")["phone"]["state"] == "warn"
+
+
+def test_a_setting_written_under_feeds_is_refused_without_repeating_it(tmp_path):
+    from app.config import load_settings
+    secret = "mp-a-token-that-was-misplaced"
+    (tmp_path / "c.toml").write_text(f'[feeds]\n"Wire" = "https://wire.example.test/rss"\naccess_token = "{secret}"\n')
+    with pytest.raises(ValueError) as err:
+        load_settings(tmp_path / "c.toml")
+    assert "feeds.access_token" in str(err.value) and "before any [section]" in str(err.value)
+    assert secret not in str(err.value)

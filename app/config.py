@@ -93,6 +93,12 @@ def load_settings(path: Path = CONFIG_PATH, dashboard: dict | None = None) -> Se
     if "telegram_chat_id" in raw:
         raw["telegram_chat_id"] = str(raw["telegram_chat_id"])  # TOML may give an int
     settings = Settings(**raw)
+    for name, url in settings.feeds.items():
+        if not (isinstance(url, str) and re.match(r"^https?://\S+$", url)):
+            # Usually a top-level setting written after [feeds], which TOML files under it. The
+            # value isn't repeated: it may be a token.
+            raise ValueError(f"feeds.{name} in {path.name} isn't a web address. Settings written after "
+                             "[feeds] belong to it: put top-level settings before any [section]")
     for name in ("recap_time", "gap_brief_time"):
         if not RECAP_TIME.match(getattr(settings, name)):
             raise ValueError(f'{name} must be "HH:MM" (24-hour, ET), got {getattr(settings, name)!r}')

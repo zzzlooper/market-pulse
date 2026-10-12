@@ -39,6 +39,7 @@ const appNow = () => (appClock.base == null ? Date.now() : appClock.base + (Date
 function setClock(c) {
   if (!c) return;
   Object.assign(appClock, c.replay ? { base: c.now * 1000, at: Date.now(), speed: c.speed } : { base: null });
+  tick();  // show the (possibly replayed) time now, not at the next second
   const banner = $("#replay-banner");
   banner.hidden = !c.replay && !c.recording;
   banner.classList.toggle("recording", !c.replay);

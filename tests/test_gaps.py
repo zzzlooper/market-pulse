@@ -189,3 +189,39 @@ def test_new_catalysts_and_movers_wake_the_gap_scan(day):
         assert run.engine._wake_gaps.is_set()  # the gap loop rescans now instead of within a minute
     finally:
         run.close()
+
+
+def test_a_filing_on_a_premarket_gapper_alerts_with_the_gap_as_the_reason(day):
+    day.headline("06:00", "Acme Rocket Corp (NASDAQ: ACME) misses a launch window")  # makes it a candidate
+    day.premarket("07:00", ACME=(-22.0, 40))
+    day.filing("07:30", "424B5", "ACME")
+    day.profile("ACME", "high")
+    run = Run(day, watchlist=["BOLT"]).steps("04:05", "07:05", "07:31")
+    try:
+        assert run.phone_titles("filings") == ["ACME · offering from shelf"]
+        assert run.phone[0]["body"].endswith("(gapping -22% pre-market, dilution risk HIGH)")
+        assert run.engine.reactions_report(1)["recent"][0]["context"] == "mover"
+    finally:
+        run.close()
+
+
+def test_the_gap_beats_yesterdays_movers_list_as_the_reason(day):
+    day.movers("04:00", small_caps={"ACME": 30.0})  # yesterday's session
+    day.premarket("07:00", ACME=(-22.0, 40))
+    day.filing("07:30", "8-K", "ACME", items=[("3.02", "Unregistered Sales of Equity Securities")])
+    run = Run(day, watchlist=["BOLT"]).steps("04:05", "07:05", "07:31")
+    try:
+        assert run.phone[0]["body"].endswith("(gapping -22% pre-market)")
+    finally:
+        run.close()
+
+
+def test_gappers_stop_counting_as_movers_after_the_scan_window(day):
+    day.headline("06:00", "Acme Rocket Corp (NASDAQ: ACME) misses a launch window")
+    day.premarket("07:00", ACME=(-22.0, 40))
+    day.filing("10:30", "424B5", "ACME")
+    run = Run(day, watchlist=["BOLT"]).steps("04:05", "07:05", "10:31")
+    try:
+        assert run.phone_titles("filings") == []  # by 10:30 the movers lists are today's
+    finally:
+        run.close()

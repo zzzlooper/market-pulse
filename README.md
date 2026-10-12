@@ -24,7 +24,9 @@ it. Then click **Enable alerts** to get desktop notifications and a sound.
 Most settings can be changed in **Setup**; the rest (intervals, feeds) live in `config.toml`
 (`cp config.example.toml config.toml`). Layers, lowest to highest: defaults, `config.toml`,
 the dashboard, environment variables. A setting that comes from an environment variable is
-shown locked in the dashboard.
+shown locked in the dashboard. In `config.toml`, put top-level settings before any
+`[section]`: TOML files anything after `[feeds]` under it, so the app refuses a feed that
+isn't a web address rather than silently ignoring, say, a misplaced `access_token`.
 
 - Dashboard values are saved in `data/settings.json`, readable by you only, in a folder git
   ignores.
@@ -44,6 +46,13 @@ your `data/` folder.
 what would reach the browser and the phone, e.g. an offering on a top gainer gives exactly one
 phone alert with its dilution risk, and its drop by the close shows in the recap. Write new
 ones with `tests/scenario_kit.py`: invented companies, no people, nothing sent anywhere.
+
+`tests/test_browser.py` opens the dashboard in headless Chromium (skipped if it isn't
+installed) against the app replaying a made-up morning, and fails on any JavaScript error:
+panels fill, badges show, tabs switch, the ticker and Setup drawers work, a saved secret is
+never shown back, and an access token is asked for. The app gets a scrubbed environment and
+throwaway config and data; Chromium a throwaway profile with its background traffic off and
+every non-local request sent to a dead proxy (`tests/browser_kit.py`).
 
 ### Real-time prices (optional)
 
@@ -281,6 +290,8 @@ uvicorn app.main:app --host 0.0.0.0
     financials unreliable (4.02), bankruptcy (1.03), debt acceleration (2.04), change in
     control (5.01) and cybersecurity incident (1.05). Any watchlist 8-K alerts; for movers
     only the notable ones do.
+  - Before 10:00 ET a stock in the Gaps list counts as moving too, e.g. *ACME · offering from
+    shelf (gapping -22% pre-market, dilution risk HIGH)*.
   - A filing alerts (log, desktop, phone) when the stock is on the watchlist **or on today's
     movers or unusual-volume lists**. An offering right after a run-up is the classic case,
     and the phone message says why, with the dilution risk when it's high or medium, e.g.

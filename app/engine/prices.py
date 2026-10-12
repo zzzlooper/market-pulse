@@ -5,6 +5,8 @@ from __future__ import annotations
 import asyncio
 
 from .. import market
+from ..clock import clock
+from ..gaps import scanning
 from ..health import SourceError
 
 TICK_FLUSH_SECONDS = 0.5  # streamed trades are batched into at most 2 broadcasts per second
@@ -80,8 +82,14 @@ class PricesMixin:
             await self._publish_alerts(self.alerts.check_unusual(self.unusual, self.state.unusual_alerts))
 
     def _movers_by_symbol(self) -> dict[str, str]:
-        """Symbols on today's movers lists, with why: a filing on one of them is worth an alert."""
+        """Symbols on today's movers lists, with why: a filing on one of them is worth an alert.
+        Before 10:00 ET the pre-market gappers come first: the movers lists still hold
+        yesterday's session."""
         hot: dict[str, str] = {}
+        if scanning(clock.now(market.ET)):
+            for g in self.gaps:
+                where = "at the open" if g["at_open"] else "pre-market"
+                hot[g["symbol"]] = f"gapping {g['gap_pct']:+.0f}% {where}"
         for key, rows in self.movers.items():
             for row in rows:
                 pct = row.get("change_pct")
