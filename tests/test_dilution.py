@@ -84,6 +84,8 @@ def test_filing_history_finds_shelf_pending_offering_and_8k_signals():
 def test_a_priced_or_withdrawn_registration_is_not_pending():
     priced = submissions([("424B4", "2026-10-10"), ("S-1/A", "2026-10-01"), ("S-1", "2026-09-01")])
     withdrawn = submissions([("RW", "2026-10-10"), ("S-1", "2026-09-01")])
+    resale = submissions([("424B3", "2026-06-01"), ("EFFECT", "2026-05-30"), ("S-1", "2026-05-08")])
+    assert filing_history(resale, TODAY)["pending"] is None
     assert filing_history(priced, TODAY)["pending"] is None
     assert filing_history(withdrawn, TODAY)["pending"] is None
     assert filing_history(submissions([("S-3", "2026-01-01")]), TODAY)["shelf"]["effective"] is False
@@ -113,7 +115,7 @@ def test_a_serial_diluter_scores_high_with_every_reason_listed():
     result = assess(filing_history(DILUTER, TODAY), cash_runway(CASH, BURN, TODAY), share_growth(SHARES, TODAY))
     assert result["level"] == "high" and result["points"] == 11
     texts = [r["text"] for r in result["reasons"]]
-    assert texts[0] == "S-1 filed Oct 9, 2026, not priced yet: an offering is being prepared"
+    assert texts[0] == "S-1 filed Oct 9, 2026, not effective yet: an offering is being prepared"
     assert "About 1 month of cash left at the last reported burn rate" in texts
     assert ("Share count up 401% in about a year (counted Aug 10, 2026, before the Sep 21, 2026 "
             "shareholder-rights change; not split-adjusted)") in texts
@@ -254,3 +256,16 @@ def test_usd_is_preferred_and_burn_uses_the_cash_currency():
     assert r["currency"] == "USD" and r["cash"] == 100 and round(r["monthly_burn"], 2) == round(20 / (180 / 30.44), 2)
     only_twd = cash_runway({"units": {"TWD": cash["units"]["TWD"]}}, flow, TODAY)
     assert only_twd["currency"] == "TWD" and round(only_twd["monthly_burn"]) == round(600 / (180 / 30.44))
+
+
+def test_offerings_by_a_large_seasoned_issuer_count_only_through_its_share_count():
+    history = filing_history(submissions([("424B5", "2026-06-17"), ("424B5", "2026-02-01"),
+                                          ("S-3ASR", "2025-05-28")]), TODAY)
+    positive = concept("USD", [{"start": "2026-01-01", "end": "2026-06-30", "val": 9_000_000}])
+    flat = concept("shares", [{"end": "2025-08-01", "val": 1_000}, {"end": "2026-08-01", "val": 1_010}])
+    result = assess(history, cash_runway(CASH, positive, TODAY), share_growth(flat, TODAY))
+    assert result["level"] == "low"
+    assert any("(likely debt)" in r["text"] and r["points"] == 0 for r in result["reasons"])
+
+    issuing = concept("shares", [{"end": "2025-08-01", "val": 1_000}, {"end": "2026-08-01", "val": 1_600}])
+    assert assess(history, None, share_growth(issuing, TODAY))["level"] == "medium"  # +60% still counts

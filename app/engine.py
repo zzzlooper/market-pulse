@@ -12,6 +12,7 @@ from . import market
 from .alerts import AlertMonitor, new_rule
 from .config import Settings, UserState
 from .dilution import DilutionProfiles
+from .dilution import summary as risk_summary
 from .filings import FilingsFeed
 from .finnhub import FinnhubFeed
 from .halts import HaltFeed, halt_messages
@@ -24,6 +25,9 @@ log = logging.getLogger(__name__)
 
 TICK_FLUSH_SECONDS = 0.5  # streamed trades are batched into at most 2 broadcasts per second
 HEALTH_CHECK_SECONDS = 5.0
+RISK_INTERVAL = 60.0      # how often the risk loop looks for symbols without a fresh profile
+RISK_RETRY = 900.0        # after a failed profile, wait this long before trying the symbol again
+RISK_ALERT_WAIT = 8.0     # a filing alert waits at most this long for the stock's risk level
 
 
 class Hub:
@@ -52,6 +56,9 @@ class Engine:
         self.news = NewsFeed(settings, self.sec)
         self.filings = FilingsFeed(settings, self.sec) if settings.sec_filings else None
         self.dilution = DilutionProfiles(self.sec)
+        self.risk: dict[str, dict | None] = {}  # symbol -> dilution summary; None = not an SEC filer
+        self._risk_failed: dict[str, float] = {}  # symbol -> monotonic time of the last failure
+        self._wake_risk = asyncio.Event()
         self.halts = HaltFeed()
         self.phone = PhoneNotifier(settings, on_status=self._phone_status)
         self._ticks = asyncio.Event()  # set by the Finnhub feed whenever a price changes
@@ -96,6 +103,7 @@ class Engine:
             "rvol_threshold": self.settings.rvol_threshold,
             "price_source": "finnhub" if self.finnhub else "yahoo",
             "health": self._health(),
+            "risk": self.risk,
         }
 
     async def start(self) -> None:
@@ -107,6 +115,7 @@ class Engine:
             asyncio.create_task(self._loop("halts", s.halts_interval, self._update_halts)),
             asyncio.create_task(self.phone.run()),
             asyncio.create_task(self._watch_health()),
+            asyncio.create_task(self._loop("risk", RISK_INTERVAL, self._update_risk, self._wake_risk)),
         ]
         if self.filings:
             self._tasks.append(asyncio.create_task(
@@ -232,6 +241,7 @@ class Engine:
 
     async def _watchlist_changed(self) -> None:
         self._wake_quotes.set()
+        self._wake_risk.set()
         if self.finnhub:
             await self.finnhub.set_symbols(self.state.watchlist)
             self._wake_finnhub.set()
@@ -334,6 +344,7 @@ class Engine:
         if not fetched:
             raise SourceError("every Yahoo screener failed")
         self.movers.update(fetched)  # a failed screener keeps its previous list
+        self._wake_risk.set()  # new movers may need risk profiles
         await self.hub.broadcast({"type": "movers", "data": self.movers})
         await self._update_unusual()
         failed = [key for key in market.SCREENS if key not in fetched]
@@ -388,9 +399,67 @@ class Engine:
 
     async def _update_filings(self) -> str | None:
         fresh = await self.filings.poll(list(self.state.watchlist), self._movers_by_symbol())
+        alerting = list(dict.fromkeys(n["tickers"][0] for n in fresh if n["alert"]))
+        if alerting:
+            # An alert is more useful with the risk level, but shouldn't wait long for it.
+            levels = await asyncio.gather(*(self._risk_level(sym) for sym in alerting))
+            by_symbol = dict(zip(alerting, levels))
+            for n in fresh:
+                n["filing"]["risk"] = by_symbol.get(n["tickers"][0])
         if fresh:
             await self.hub.broadcast({"type": "news", "data": fresh})
             self.phone.enqueue([from_filing(n, self.settings.public_url) for n in fresh if n["alert"]],
                                self.state.phone_alerts)
         failing = self.filings.failing
         return f"EDGAR feeds failing: {', '.join(failing)}" if failing else None
+
+    # --- dilution risk ------------------------------------------------------------------
+
+    def _risk_symbols(self) -> list[str]:
+        """Watchlist first, then the movers lists where dilution matters most."""
+        symbols = list(self.state.watchlist)
+        for key in self.settings.risk_movers:
+            symbols += [row["symbol"] for row in self.movers.get(key, [])]
+        stocks = [s for s in dict.fromkeys(symbols) if not s.startswith("^") and "=" not in s]  # no indices/futures
+        return stocks[:self.settings.risk_max_symbols]
+
+    async def _risk_profile(self, symbol: str) -> dict | None:
+        """Fetch (or reuse) a profile and publish its summary if it changed. Raises on failure."""
+        try:
+            profile = await self.dilution.get(symbol)
+        except SourceError:
+            raise  # SEC is unavailable, not this symbol's fault
+        except Exception:
+            self._risk_failed[symbol] = asyncio.get_running_loop().time()
+            raise
+        self._risk_failed.pop(symbol, None)
+        summary = risk_summary(profile)
+        if symbol not in self.risk or self.risk[symbol] != summary:
+            self.risk[symbol] = summary
+            await self.hub.broadcast({"type": "risk", "data": {symbol: summary}})
+        return summary
+
+    async def _risk_level(self, symbol: str) -> str | None:
+        try:
+            summary = await asyncio.wait_for(self._risk_profile(symbol), RISK_ALERT_WAIT)
+        except Exception as exc:  # the alert goes out without it
+            log.info("no dilution risk for %s alert: %s", symbol, describe(exc))
+            return None
+        return summary["level"] if summary else None
+
+    async def _update_risk(self) -> None:
+        """Keep risk summaries fresh for the watched and moving stocks, one symbol at a time
+        so SEC requests for news and filings aren't held up."""
+        now = asyncio.get_running_loop().time()
+        for symbol in self._risk_symbols():
+            if self.dilution.is_fresh(symbol) and symbol in self.risk:
+                continue
+            if now - self._risk_failed.get(symbol, -RISK_RETRY) < RISK_RETRY:
+                continue
+            try:
+                await self._risk_profile(symbol)
+            except SourceError as exc:
+                log.warning("dilution risk paused: %s", exc)
+                return  # SEC itself is unavailable; the next round tries again
+            except Exception as exc:
+                log.info("dilution risk for %s failed: %s", symbol, describe(exc))

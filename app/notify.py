@@ -76,7 +76,10 @@ def from_filing(item: dict, public_url: str = "") -> dict:
     """A news item from FilingsFeed. Says why it matters when the stock isn't on the watchlist."""
     filing, symbol = item["filing"], item["tickers"][0]
     priority, tag = FILING_KINDS.get(filing["kind"], ("default", "page_facing_up"))
-    why = f" ({filing['hot']})" if filing["hot"] not in (None, "watchlist") else ""
+    notes = [filing["hot"]] if filing["hot"] not in (None, "watchlist") else []
+    if filing.get("risk") in ("high", "medium"):
+        notes.append(f"dilution risk {filing['risk'].upper()}")
+    why = f" ({', '.join(notes)})" if notes else ""
     return {
         "category": "filings",
         "title": f"{symbol} · {filing['label']}",

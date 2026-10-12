@@ -8,7 +8,8 @@ from dataclasses import dataclass, field, fields
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parent.parent
-CONFIG_PATH = ROOT / "config.toml"
+# MARKET_PULSE_CONFIG points elsewhere, e.g. for tests that must not read your real settings.
+CONFIG_PATH = Path(os.environ.get("MARKET_PULSE_CONFIG") or ROOT / "config.toml")
 STATE_PATH = ROOT / "data" / "state.json"
 
 # 8-K filings come through app/filings.py, which tags their items; this feed is used only
@@ -54,6 +55,9 @@ class Settings:
     sec_filings: bool = True
     filings_interval: float = 30.0
     insider_min_value: float = 50_000  # smallest insider trade shown; sales only for the watchlist
+    # Dilution risk badges: profiles are kept fresh for the watchlist and these movers lists.
+    risk_movers: list[str] = field(default_factory=lambda: ["gainers", "small_caps"])
+    risk_max_symbols: int = 60
 
 
 # Settings that may come from same-named upper-case env vars (which win), so secrets and

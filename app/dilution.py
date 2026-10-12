@@ -45,6 +45,9 @@ SHARES = (("dei", "EntityCommonStockSharesOutstanding"),)
 SHELF_FORMS = {"S-3", "S-3/A", "S-3ASR", "F-3", "F-3/A", "F-3ASR"}
 REGISTRATION_FORMS = {"S-1", "S-1/A", "F-1", "F-1/A"}
 PRICED_FORMS = {"424B1", "424B4"}
+# After any of these an S-1 is no longer "being prepared": it priced, went effective (a resale
+# registration gets a 424B3, not a 424B4), or was withdrawn.
+PAST_PENDING = PRICED_FORMS | {"424B3", "EFFECT", "RW"}
 OFFERING_FORMS = {"424B1", "424B4", "424B5"}
 SHELF_LIFE = timedelta(days=3 * 365)  # a shelf registration can be used for 3 years
 PENDING_WINDOW = timedelta(days=180)
@@ -92,8 +95,7 @@ def filing_history(submissions: dict, today: date) -> dict:
 
     pending = None
     registration = next((r for r in rows if r["form"] in REGISTRATION_FORMS and within(r, PENDING_WINDOW)), None)
-    if registration and not any(r["form"] in PRICED_FORMS | {"RW"} and r["filed"] >= registration["filed"]
-                                for r in rows):
+    if registration and not any(r["form"] in PAST_PENDING and r["filed"] >= registration["filed"] for r in rows):
         pending = {"form": registration["form"], "filed": registration["filed"]}
 
     offerings = sorted({r["filed"] for r in rows if r["form"] in OFFERING_FORMS and within(r, YEAR)}, reverse=True)
@@ -184,13 +186,20 @@ def assess(history: dict, runway: dict | None, shares: dict | None) -> dict:
     """Points for each warning sign; HIGH or more is high risk. Reasons come strongest first."""
     reasons: list[tuple[int, str]] = []
     if p := history["pending"]:
-        reasons.append((2, f"{p['form']} filed {_date(p['filed'])}, not priced yet: an offering is being prepared"))
+        reasons.append((2, f"{p['form']} filed {_date(p['filed'])}, not effective yet: an offering is being prepared"))
+    # Only large, well-known issuers can file an automatic shelf (S-3ASR). Their prospectus
+    # supplements are mostly debt, so for them the share count is the evidence that counts.
+    seasoned = bool(history["shelf"] and history["shelf"]["form"].endswith("ASR"))
     if s := history["shelf"]:
-        state = "effective" if s["effective"] else "filed, not yet effective"
-        reasons.append((1, f"Shelf registration ({s['form']}) {state}, usable until about {_date(s['expires'])}"))
+        if seasoned:
+            reasons.append((0, (f"Automatic shelf ({s['form']}): a large, well-known issuer that can sell "
+                                "shares any time; its offerings are usually debt, so see the share count")))
+        else:
+            state = "effective" if s["effective"] else "filed, not yet effective"
+            reasons.append((1, f"Shelf registration ({s['form']}) {state}, usable until about {_date(s['expires'])}"))
     if n := len(history["offerings_12m"]):
-        reasons.append((2 if n >= 2 else 1, (f"{n} offering{'s' * (n > 1)} in the last 12 months, "
-                                             f"latest {_date(history['offerings_12m'][0])}")))
+        text = f"{n} offering{'s' * (n > 1)} in the last 12 months, latest {_date(history['offerings_12m'][0])}"
+        reasons.append((0 if seasoned else 2 if n >= 2 else 1, text + (" (likely debt)" if seasoned else "")))
     if n := len(history["private_sales_12m"]):
         reasons.append((1, f"{n} private share sale{'s' * (n > 1)} (8-K item 3.02) in the last 12 months"))
     if d := history["delisting_notices_12m"]:
@@ -234,6 +243,10 @@ class DilutionProfiles:
         self.sec = sec
         self._cache: OrderedDict[str, tuple[float, dict | None]] = OrderedDict()
         self._loading: dict[str, asyncio.Future] = {}
+
+    def is_fresh(self, symbol: str) -> bool:
+        hit = self._cache.get(symbol.upper())
+        return hit is not None and time.monotonic() - hit[0] < CACHE_SECONDS
 
     async def get(self, symbol: str) -> dict | None:
         """None when the symbol has no SEC filer (ETFs, indices, many foreign stocks)."""
@@ -283,3 +296,11 @@ class DilutionProfiles:
                 if exc.response.status_code != 404:  # 404: the company doesn't report this one
                     raise
         return None
+
+
+def summary(profile: dict | None) -> dict | None:
+    """What tables and alerts show: the level and the top reasons. None for non-filers."""
+    if profile is None:
+        return None
+    top = [r["text"] for r in profile["reasons"] if r["points"] > 0][:3]
+    return {"level": profile["level"], "points": profile["points"], "reasons": top}

@@ -204,6 +204,10 @@ button:disabled { opacity: .5; cursor: default; border-color: var(--border); }
 .empty-log { padding: 12px 4px; }
 
 .pill.halted { color: #fff; background: var(--down); border: none; cursor: pointer; font-weight: 600; }
+.risk-badge { font-size: 9px; font-weight: 700; padding: 0 3px; border-radius: 2px; cursor: help;
+  vertical-align: 1px; letter-spacing: 0.03em; }
+.risk-badge.high { color: var(--down); border: 1px solid var(--down); }
+.risk-badge.medium { color: var(--hot); border: 1px solid var(--hot); }
 .halt-badge {
   font-size: 10px;
   font-weight: 700;

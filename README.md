@@ -74,6 +74,28 @@ and `SEC_USER_AGENT` for your contact address).
 - Delivery failures appear under *Phone* in red. Tokens and topics are kept out of error
   messages and logs.
 
+### Keep it running in the background
+
+Phone alerts only arrive while the app runs. To keep it running after you close the terminal,
+install it as a systemd user service:
+
+```sh
+sh scripts/install-service.sh --enable      # MP_HOST=0.0.0.0 / MP_PORT=8000 to change where it listens
+journalctl --user -u market-pulse -f         # logs
+loginctl enable-linger                       # optional: keep running while you're logged out
+sh scripts/install-service.sh --uninstall
+```
+
+- The script writes `~/.config/systemd/user/market-pulse.service`, which holds no secrets, and
+  creates `~/.config/market-pulse/env` (mode 600, only you can read it). Put your
+  `SEC_USER_AGENT` and any tokens there instead of in the project folder; `config.toml` works too.
+- It refuses `MP_HOST=0.0.0.0` until an access token is set (next section), and never prints
+  your settings' values.
+- Access logs are off, so the journal doesn't record which devices opened the dashboard. Files
+  the app writes (`data/state.json`) are readable by you only.
+- Rerun the script after changing `MP_HOST`/`MP_PORT`; after editing the env file or
+  `config.toml`, `systemctl --user restart market-pulse`.
+
 ### Opening it from your phone or another computer
 
 `uvicorn app.main:app` listens on `127.0.0.1`, so only this computer can open it. To reach it
@@ -136,6 +158,12 @@ uvicorn app.main:app --host 0.0.0.0
     - The financials lag by up to a quarter, and SEC share counts aren't split-adjusted: a
       count from before a reverse split is marked. It's a starting point for your own reading,
       not a verdict.
+    - Large, well-known issuers (an automatic S-3ASR shelf) mostly sell debt, so for them
+      offerings and the shelf score nothing and the share count is what counts.
+    - A **DIL** badge next to a ticker in every table marks high (red) or medium (amber) risk;
+      hover it for the reasons. Profiles are kept fresh (every 6 hours) for the watchlist and
+      the gainers and small-cap lists (`risk_movers`, at most `risk_max_symbols` = 60), fetched
+      one at a time so news and filings aren't held up.
   - *Add to watchlist*, *Filter news* (the old click behaviour), and the company description.
   - Esc or a click outside closes it. `http://localhost:8000/#ticker=AAPL` opens straight to
     a ticker. Times in the panel are ET, to match the chart.
@@ -197,7 +225,8 @@ uvicorn app.main:app --host 0.0.0.0
     only the notable ones do.
   - A filing alerts (log, desktop, phone) when the stock is on the watchlist **or on today's
     movers or unusual-volume lists**. An offering right after a run-up is the classic case,
-    and the phone message says why, e.g. *ACME · offering from shelf (top gainer +45%)*.
+    and the phone message says why, with the dilution risk when it's high or medium, e.g.
+    *ACME · offering from shelf (top gainer +45%, dilution risk HIGH)*.
     Filings already in the feeds at startup don't alert.
   - Privacy: Form 4 and 13D filings name insiders and individual investors, often with their
     addresses. Only roles (CEO, Director), share counts, prices and stake sizes are read. A 13D
@@ -252,5 +281,7 @@ app/
 static/       single-page dashboard (vanilla JS, no build step)
   app.js      tables, news, alerts, halts, WebSocket client
   detail.js   ticker detail drawer and its canvas chart
-tests/
+scripts/
+  install-service.sh  systemd user service install/uninstall
+tests/        offline: a fixture blocks any network access
 ```

@@ -351,6 +351,10 @@ def test_engine_sends_filings_to_the_news_feed_and_the_phone(tmp_path):
     engine.filings.poll = poll
     engine.phone.enqueue = lambda notes, categories: sent.extend(notes)
 
+    async def profile(symbol):  # no network in tests
+        return {"level": "high", "points": 6, "reasons": [{"points": 2, "text": "S-1 pending"}]}
+    engine.dilution.get = profile
+
     async def scenario():
         try:
             await engine._update_filings()
@@ -361,8 +365,11 @@ def test_engine_sends_filings_to_the_news_feed_and_the_phone(tmp_path):
             await engine.phone.aclose()
     asyncio.run(scenario())
     assert seen == {"ACME": "top gainer +45%"}
-    assert [m["type"] for m in hub.messages] == ["news"] and len(hub.messages[0]["data"]) == 2
+    assert [m["type"] for m in hub.messages] == ["risk", "news"]
+    assert hub.messages[0]["data"] == {"ACME": {"level": "high", "points": 6, "reasons": ["S-1 pending"]}}
+    assert len(hub.messages[1]["data"]) == 2 and hub.messages[1]["data"][0]["filing"]["risk"] == "high"
     assert [n["category"] for n in sent] == ["filings"]
+    assert sent[0]["body"].endswith("(top gainer +45%, dilution risk HIGH)")
     assert engine.state.phone_alerts["filings"] is True
 
 

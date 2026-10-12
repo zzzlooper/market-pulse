@@ -2,7 +2,7 @@
 
 # SEC requires automated clients to identify themselves: an app name and a contact email.
 # It's sent only to www.sec.gov. To keep it out of this file, set SEC_USER_AGENT instead.
-sec_user_agent = "market-pulse/0.3 you@example.com"
+sec_user_agent = "market-pulse/0.4 you@example.com"
 
 # Real-time watchlist prices. Free key at https://finnhub.io/register (or set FINNHUB_API_KEY).
 # Leave empty to use delayed Yahoo prices only.
@@ -41,6 +41,10 @@ ticker_news = true   # poll Yahoo's per-ticker RSS for every watchlist symbol
 sec_filings = true
 filings_interval = 30
 insider_min_value = 50000   # smallest insider trade shown; insider sales only for the watchlist
+
+# Dilution risk badges are kept fresh for the watchlist and these movers lists.
+risk_movers = ["gainers", "small_caps"]   # also: "losers", "active"
+risk_max_symbols = 60
 
 # Setting [feeds] replaces the default list entirely.
 # [feeds]

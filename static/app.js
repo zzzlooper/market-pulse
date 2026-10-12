@@ -5,6 +5,7 @@ const state = {
   alert_rules: [], unusual_alerts: true, alerts: [], halts: [], halt_alerts: "watchlist",
   rvol_threshold: 2, price_source: "yahoo", tab: "gainers", leftTab: "unusual",
   health: { now: 0, sources: [] },
+  risk: {},  // symbol -> { level, points, reasons } dilution summary; null = not an SEC filer
 };
 const lastPrice = new Map();   // symbol -> price, to flash changes
 const MAX_NEWS = 500;
@@ -54,7 +55,7 @@ function quoteRow(r, extra = "", flashable = false) {
     : "";
   const stale = r.stale ? ` class="stale" title="No fresh price from Yahoo; showing the last one received"` : "";
   return `<tr${stale}>
-    <td><a class="sym" data-sym="${esc(r.symbol)}" title="${esc(r.name)}">${esc(r.symbol)}</a>${haltBadge(r.symbol)}</td>
+    <td><a class="sym" data-sym="${esc(r.symbol)}" title="${esc(r.name)}">${esc(r.symbol)}</a>${haltBadge(r.symbol)}${riskBadge(r.symbol)}</td>
     <td class="${flash}">${live}${fmtPrice(r.price)}</td>
     <td class="${dir(r.change_pct)}">${fmtPct(r.change_pct)}</td>
     <td>${fmtVol(r.volume)}</td>
@@ -91,6 +92,15 @@ const isToday = (h) => h.halted_at.slice(0, 10) === etDate();  // halted_at carr
 const normSym = (s) => s.replace("-", ".");                    // Yahoo BRK-B is BRK.B at Nasdaq
 
 let activeHalts = new Map();  // symbol -> halt, for badges elsewhere
+
+// Only elevated risk gets a badge, so the tables don't fill with "low". Hover for the reasons;
+// the ticker drawer has the full breakdown.
+function riskBadge(sym) {
+  const r = state.risk[sym];
+  if (!r || (r.level !== "high" && r.level !== "medium")) return "";
+  const tip = `Dilution risk ${r.level} (${r.points} pts)${r.reasons.length ? `: ${r.reasons.join("; ")}` : ""}`;
+  return ` <span class="risk-badge ${r.level}" title="${esc(tip)}">DIL</span>`;
+}
 
 function haltBadge(sym) {
   const h = activeHalts.get(normSym(sym));
@@ -233,6 +243,7 @@ function renderNews(freshIds = new Set()) {
         ${n.tags.map((t) => `<span class="tag">${esc(t)}</span>`).join("")}
         ${n.tickers.map((t) => `<a class="sym" data-sym="${esc(t)}">${esc(t)}</a>`).join("")}
         ${n.filing?.hot && n.filing.hot !== "watchlist" ? `<span class="muted">${esc(n.filing.hot)}</span>` : ""}
+        ${n.filing ? riskBadge(n.tickers[0]) : ""}
       </div>
       <a class="title" href="${esc(safeUrl(n.url))}" target="_blank" rel="noopener noreferrer">${mark(n.title)}</a>
       ${n.summary ? `<p>${mark(n.summary)}</p>` : ""}
@@ -467,6 +478,8 @@ function toast(msg) {
   toast.timer = setTimeout(() => { el.hidden = true; }, 3500);
 }
 
+let riskRender = null;
+
 function handle({ type, data }) {
   switch (type) {
     case "snapshot":
@@ -490,6 +503,14 @@ function handle({ type, data }) {
     case "movers": state.movers = data; renderMovers(); break;
     case "unusual": state.unusual = data; renderUnusual(); break;
     case "news": addNews(data); break;
+    case "risk":
+      Object.assign(state.risk, data);
+      // Profiles arrive one symbol at a time after startup; redraw once per frame at most.
+      riskRender ??= requestAnimationFrame(() => {
+        riskRender = null;
+        renderWatchlist(); renderMovers(); renderUnusual(); renderNews();
+      });
+      break;
   }
   if (["quotes", "config", "news", "halts", "alerts"].includes(type)) refreshDetail(type);
 }
