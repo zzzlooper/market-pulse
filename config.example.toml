@@ -1,0 +1,42 @@
+# Copy to config.toml and edit. Every setting is optional.
+
+# SEC requires automated clients to identify themselves. Put your own name/email here.
+sec_user_agent = "market-pulse/0.1 you@example.com"
+
+# Real-time watchlist prices. Free key at https://finnhub.io/register (or set FINNHUB_API_KEY).
+# Leave empty to use delayed Yahoo prices only.
+finnhub_api_key = ""
+finnhub_quotes_interval = 300   # REST snapshot refresh; trades stream over WebSocket in between
+
+# Phone alerts (optional, see README). Set ntfy, Telegram, or both.
+# On public ntfy.sh anyone who knows the topic can read it: use a long random name.
+# ntfy_topic = "mp-change-me-to-something-random"
+# ntfy_server = "https://ntfy.sh"
+# ntfy_token = ""                 # protected topics / self-hosted servers only
+# telegram_bot_token = ""         # from @BotFather
+# telegram_chat_id = ""           # from https://api.telegram.org/bot<TOKEN>/getUpdates
+# public_url = "http://192.168.1.20:8000"   # so tapping an alert opens the ticker
+# source_alert_minutes = 5        # phone message when a data source is down this long; 0 = never
+
+# Needed before running with --host 0.0.0.0 (phone access): without it, anyone on your network
+# can change your settings. Generate one: python -c "import secrets; print(secrets.token_urlsafe(24))"
+# access_token = ""
+
+# Polling intervals in seconds. Yahoo data is ~15 min delayed anyway; don't hammer it.
+quotes_interval = 15
+movers_interval = 60
+news_interval = 30
+halts_interval = 20
+
+# Unusual volume: relative volume (time-of-day adjusted) and minimum shares traded.
+rvol_threshold = 2.0
+min_volume = 300000
+
+news_history = 500
+ticker_news = true   # poll Yahoo's per-ticker RSS for every watchlist symbol
+
+# Setting [feeds] replaces the default list entirely.
+# [feeds]
+# "SEC 8-K" = "https://www.sec.gov/cgi-bin/browse-edgar?action=getcurrent&type=8-K&count=40&output=atom"
+# "GlobeNewswire" = "https://www.globenewswire.com/RssFeed/orgclass/1/feedTitle/GlobeNewswire%20-%20News%20about%20Public%20Companies"
+# "PR Newswire" = "https://www.prnewswire.com/rss/news-releases-list.rss"
