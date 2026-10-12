@@ -103,7 +103,8 @@ uvicorn app.main:app --host 0.0.0.0
 | Top movers: gainers, losers, most active, small caps | Yahoo predefined screeners | 60 s |
 | Unusual volume | Watchlist plus every screener result with RVOL ≥ threshold | with the above |
 | News | SEC 8-K filings, GlobeNewswire, PR Newswire, Yahoo per-ticker RSS | 30 s |
-| SEC filings (in the news feed) | EDGAR current filings: offerings, Form 4, Schedule 13D | 30 s |
+| SEC filings (in the news feed) | EDGAR current filings: offerings, Form 4, Schedule 13D, 8-K | 30 s |
+| Dilution risk (ticker detail) | SEC filing history and XBRL financials (data.sec.gov) | on open, cached 6 h |
 
 - **RVOL** (relative volume) is today's volume divided by the 10-day average volume, scaled
   by how much of the 9:30–16:00 ET session has elapsed. Scaling linearly over-flags stocks
@@ -122,6 +123,19 @@ uvicorn app.main:app --host 0.0.0.0
     short % of float, days to cover, P/E, beta and next earnings date.
   - the ticker's news, halts, alert rules (add or remove them here) and fired alerts. These
     update live while the panel is open. Chart and stats refresh every 30 s.
+  - **Dilution risk**: *high*, *medium*, *low* or *unknown*, with every reason and its points,
+    from SEC data only (`app/dilution.py`):
+    - filing history: a pending S-1 (+2), an active shelf (+1), offerings in the last 12 months
+      (+1, or +2 for two or more), private share sales (8-K 3.02, +1), a delisting notice (+1);
+    - XBRL financials: cash, monthly operating burn and the months of cash left at that rate
+      (+2 under 6 months, +1 under 12; positive cash flow −1), and the share count against a
+      year earlier (+2 for 50% more, +1 for 20%).
+    - 4 points or more is *high*, 2–3 *medium*. Without recent financials (ETFs, trusts, many
+      foreign filers) a quiet history is *unknown*, not *low*. The dilution-related filings of
+      the last 2 years are listed with links.
+    - The financials lag by up to a quarter, and SEC share counts aren't split-adjusted: a
+      count from before a reverse split is marked. It's a starting point for your own reading,
+      not a verdict.
   - *Add to watchlist*, *Filter news* (the old click behaviour), and the company description.
   - Esc or a click outside closes it. `http://localhost:8000/#ticker=AAPL` opens straight to
     a ticker. Times in the panel are ET, to match the chart.
@@ -174,6 +188,13 @@ uvicorn app.main:app --host 0.0.0.0
     the holding grew. Trades under a 10b5-1 plan are marked. *Insider sales* show only for
     watchlist stocks. Awards, option exercises and tax withholding are ignored.
   - *13D stake* (blue): an investor crossing 5% with an active intent, with the stake size.
+  - *8-K events* (amber): every 8-K is labelled by its items (earnings, material agreement…).
+    The notable ones get an amber badge and a note on what they mean: delisting notice (3.01),
+    unregistered share sale (3.02, dilution that never shows up as a prospectus),
+    shareholder-rights change (3.03, usually a reverse split), auditor change (4.01),
+    financials unreliable (4.02), bankruptcy (1.03), debt acceleration (2.04), change in
+    control (5.01) and cybersecurity incident (1.05). Any watchlist 8-K alerts; for movers
+    only the notable ones do.
   - A filing alerts (log, desktop, phone) when the stock is on the watchlist **or on today's
     movers or unusual-volume lists**. An offering right after a run-up is the classic case,
     and the phone message says why, e.g. *ACME · offering from shelf (top gainer +45%)*.
@@ -181,8 +202,10 @@ uvicorn app.main:app --host 0.0.0.0
   - Privacy: Form 4 and 13D filings name insiders and individual investors, often with their
     addresses. Only roles (CEO, Director), share counts, prices and stake sizes are read. A 13D
     filer is named only when it is clearly a firm (LLC, LP, Ltd, Fund, Capital…), never a
-    person. Your `sec_user_agent` is sent only to www.sec.gov and never logged.
-  - `sec_filings = false` turns it off. EDGAR doesn't accept filings on weekends and federal
+    person. Your `sec_user_agent` is sent only to SEC hosts (www.sec.gov, data.sec.gov), by one
+    client that refuses redirects, and is never logged. The dilution panel passes on only the
+    figures it computes, none of the addresses or phone numbers in SEC's responses.
+  - `sec_filings = false` turns it off (8-Ks then show as plain news, as in v0.1). EDGAR doesn't accept filings on weekends and federal
     holidays, and insiders have two business days to file a Form 4.
 - **Data health**: the header shows whether every data source is delivering (Yahoo prices,
   Yahoo movers, news feeds, Nasdaq halts, SEC filings, and the Finnhub stream when configured). Click it
@@ -216,7 +239,9 @@ app/
   market.py   quotes, screeners, RVOL, unusual-volume filter
   finnhub.py  real-time trade stream + REST quotes, overlaid on Yahoo rows
   news.py     feed polling, ticker extraction, dedupe, keyword alerts
-  filings.py  SEC offerings, Form 4 insider trades and 13D stakes, as news items
+  sec.py      the one client for SEC hosts: rate limit, contact address, ticker map
+  filings.py  SEC offerings, Form 4 insider trades, 13D stakes and 8-K items, as news items
+  dilution.py dilution risk profile: filing history, cash runway, share growth
   sentiment.py  rule-based headline sentiment (finance lexicon + negation)
   alerts.py   price/move/RVOL alert rules (crossing + cooldown) and unusual-volume entries
   health.py   per-source health: last good update, errors, staleness, outage alerts

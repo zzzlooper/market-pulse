@@ -9,7 +9,14 @@ import secrets
 from contextlib import asynccontextmanager
 from urllib.parse import urlparse
 
-from fastapi import FastAPI, HTTPException, Request, Response, WebSocket, WebSocketDisconnect
+from fastapi import (
+    FastAPI,
+    HTTPException,
+    Request,
+    Response,
+    WebSocket,
+    WebSocketDisconnect,
+)
 from fastapi.responses import JSONResponse
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
@@ -17,6 +24,7 @@ from pydantic import BaseModel
 from .alerts import KINDS
 from .config import DEFAULT_PHONE_ALERTS, ROOT, UserState, load_settings
 from .engine import Engine, Hub
+from .health import SourceError, describe
 from .market import CHART_RANGES
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(name)s: %(message)s")
@@ -123,6 +131,23 @@ MAX_RULES = 100
 @app.get("/api/snapshot")
 def snapshot():
     return engine.snapshot()
+
+
+@app.get("/api/dilution/{symbol}")
+async def dilution(symbol: str):
+    symbol = symbol.strip().upper()
+    if not SYMBOL_RE.match(symbol):
+        raise HTTPException(422, "Invalid ticker symbol")
+    try:
+        profile = await engine.dilution.get(symbol)
+    except SourceError as exc:
+        raise HTTPException(502, str(exc)) from exc
+    except Exception as exc:
+        log.warning("dilution profile for %s failed: %s", symbol, describe(exc))
+        raise HTTPException(502, "SEC data is unavailable right now") from exc
+    if profile is None:
+        raise HTTPException(404, f"{symbol} doesn't file with the SEC (ETFs, indices and many foreign stocks don't)")
+    return profile
 
 
 @app.get("/api/ticker/{symbol}")

@@ -11,12 +11,14 @@ from fastapi import WebSocket
 from . import market
 from .alerts import AlertMonitor, new_rule
 from .config import Settings, UserState
+from .dilution import DilutionProfiles
 from .filings import FilingsFeed
 from .finnhub import FinnhubFeed
 from .halts import HaltFeed, halt_messages
 from .health import SourceError, SourceHealth, describe
 from .news import NewsFeed
 from .notify import PhoneNotifier, from_alert, from_filing, from_news, from_outage
+from .sec import SecClient
 
 log = logging.getLogger(__name__)
 
@@ -46,8 +48,10 @@ class Engine:
         self.settings = settings
         self.state = state
         self.hub = hub
-        self.news = NewsFeed(settings)
-        self.filings = FilingsFeed(settings, self.news.sec_tickers) if settings.sec_filings else None
+        self.sec = SecClient(settings.sec_user_agent)  # the only client that carries the contact address
+        self.news = NewsFeed(settings, self.sec)
+        self.filings = FilingsFeed(settings, self.sec) if settings.sec_filings else None
+        self.dilution = DilutionProfiles(self.sec)
         self.halts = HaltFeed()
         self.phone = PhoneNotifier(settings, on_status=self._phone_status)
         self._ticks = asyncio.Event()  # set by the Finnhub feed whenever a price changes
@@ -121,8 +125,7 @@ class Engine:
             task.cancel()
         await asyncio.gather(*self._tasks, return_exceptions=True)
         await self.news.aclose()
-        if self.filings:
-            await self.filings.aclose()
+        await self.sec.aclose()
         await self.halts.aclose()
         await self.phone.aclose()
         if self.finnhub:

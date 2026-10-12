@@ -11,8 +11,10 @@ ROOT = Path(__file__).resolve().parent.parent
 CONFIG_PATH = ROOT / "config.toml"
 STATE_PATH = ROOT / "data" / "state.json"
 
+# 8-K filings come through app/filings.py, which tags their items; this feed is used only
+# when sec_filings is off.
+SEC_8K_FEED = "https://www.sec.gov/cgi-bin/browse-edgar?action=getcurrent&type=8-K&count=40&output=atom"
 DEFAULT_FEEDS = {
-    "SEC 8-K": "https://www.sec.gov/cgi-bin/browse-edgar?action=getcurrent&type=8-K&count=40&output=atom",
     "GlobeNewswire": "https://www.globenewswire.com/RssFeed/orgclass/1/feedTitle/GlobeNewswire%20-%20News%20about%20Public%20Companies",
     "PR Newswire": "https://www.prnewswire.com/rss/news-releases-list.rss",
 }

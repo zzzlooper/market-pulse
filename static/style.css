@@ -132,6 +132,8 @@ td small { color: var(--muted); }
 .filing.dilution, .filing.insider_sell { color: var(--down); background: #f851491f; }
 .filing.insider_buy { color: var(--up); background: #3fb9501f; }
 .filing.stake { color: #58a6ff; background: #58a6ff1f; }
+.filing.event { color: var(--hot); background: #d299221f; }
+.filing.report { color: var(--muted); background: #ffffff0f; }
 .x { padding: 0 6px; border: none; color: var(--muted); background: none; }
 .x:hover { color: var(--down); }
 .empty td { text-align: center; color: var(--muted); padding: 16px; }
@@ -283,6 +285,24 @@ button:disabled { opacity: .5; cursor: default; border-color: var(--border); }
 .stats span { color: var(--muted); font-size: 11px; }
 .stats b { font-weight: 600; font-variant-numeric: tabular-nums; }
 
+.dilution { margin: 14px 0; }
+.dilution h3 { display: flex; gap: 8px; align-items: center; margin: 0 0 6px; font-size: 12px;
+  text-transform: uppercase; letter-spacing: 0.04em; color: var(--muted); }
+.dilution h3 small { margin-left: auto; text-transform: none; letter-spacing: 0; }
+.dilution h3 a { color: var(--muted); }
+.risk { border-radius: 3px; padding: 1px 6px; font-weight: 700; letter-spacing: 0.04em; }
+.risk.high { color: var(--down); background: #f851492a; }
+.risk.medium { color: var(--hot); background: #d299222a; }
+.risk.low { color: var(--up); background: #3fb9502a; }
+.risk.unknown { color: var(--muted); background: #ffffff14; }
+.risk-reasons { list-style: none; margin: 0 0 8px; padding: 0; font-size: 12px; }
+.risk-reasons li { padding: 2px 0; }
+.risk-reasons .pts { display: inline-block; min-width: 22px; color: var(--muted); font-variant-numeric: tabular-nums; }
+.risk-reasons .pts.bad { color: var(--down); }
+.risk-reasons .pts.good { color: var(--up); }
+.dilution-events { margin-top: 8px; font-size: 12px; }
+.dilution-events summary { cursor: pointer; color: var(--muted); }
+.dilution .fine { font-size: 11px; margin: 6px 0 0; }
 .detail-cols { display: grid; grid-template-columns: 3fr 2fr; gap: 18px; }
 @media (max-width: 700px) { .detail-cols { grid-template-columns: 1fr; } }
 .detail-cols h3 {

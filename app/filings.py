@@ -1,5 +1,6 @@
-"""SEC filings that move stocks: offerings (dilution), insider buys and sells (Form 4) and
-activist stakes (Schedule 13D), from EDGAR's current-filings feeds.
+"""SEC filings that move stocks: offerings (dilution), insider buys and sells (Form 4),
+activist stakes (Schedule 13D) and 8-K events such as delisting notices, from EDGAR's
+current-filings feeds.
 
 They become news items, so they show in the news panel and the ticker detail. They alert
 when the company is on the watchlist or on today's movers lists: an offering filed right
@@ -16,35 +17,33 @@ import asyncio
 import hashlib
 import logging
 import re
-import time
 import xml.etree.ElementTree as ET
 from collections import OrderedDict
-from collections.abc import Awaitable, Callable
 from dataclasses import dataclass
-from urllib.parse import quote, urlparse
+from urllib.parse import quote
 
 import feedparser
-import httpx
 
 from . import sentiment
 from .config import Settings
 from .health import SourceError
-from .news import FAILING_AFTER, _published
+from .news import FAILING_AFTER, _clean, _published
+from .sec import SecClient
 
 log = logging.getLogger(__name__)
 
 SOURCE = "SEC filings"
 FEED_URL = "https://www.sec.gov/cgi-bin/browse-edgar?action=getcurrent&type={type}&count=100&start={start}&output=atom"
 # EDGAR's type filter matches form families: "424B" returns 424B1…424B8, "4" returns 4 and 4/A.
-FEED_TYPES = ("424B", "S-1", "S-3", "F-1", "F-3", "4", "SCHEDULE 13D")
+FEED_TYPES = ("424B", "S-1", "S-3", "F-1", "F-3", "4", "SCHEDULE 13D", "8-K")
 MAX_PAGES = 3          # a page that is all new may mean a burst; read up to this many
-MIN_REQUEST_GAP = 0.125  # SEC's fair-access limit is 10 requests/s; stay under it
 MAX_ATTEMPTS = 3       # a filing whose document keeps failing to download is skipped after this
 MAX_SEEN = 20_000
 
 # "4 - Acme Corp (0000123456) (Issuer)", "SCHEDULE 13D/A - Some Fund LP (0000654321) (Filed by)"
 TITLE = re.compile(r"^(?P<form>.+?) - (?P<name>.+?) \((?P<cik>\d{10})\) \((?P<role>[^)]+)\)$")
 ACCESSION = re.compile(r"accession-number=([\d-]+)")
+ITEM = re.compile(r"Item (\d\.\d\d)")
 EMBEDDED_XML = re.compile(r"<XML>\s*(.*?)\s*</XML>", re.DOTALL)
 TICKER = re.compile(r"^[A-Z]{1,5}(?:[.-][A-Z]{1,2})?$")
 # A 13D filer is named only if its name looks like a firm. The declared reporting-person type
@@ -87,6 +86,57 @@ PLAN_NOTE = " Made under a pre-arranged 10b5-1 trading plan, so it says less abo
 STAKE = FormInfo("13D stake", "Schedule 13D: an investor with more than 5% who may push for changes "
                  "such as board seats or a sale of the company.", 0.0)
 STAKE_UPDATE = FormInfo("13D update", "Amended Schedule 13D: the holder's stake or plans changed.", 0.0)
+
+
+
+@dataclass(frozen=True)
+class ItemInfo:
+    label: str
+    score: float
+    notable: bool = False  # alerts for movers, not only the watchlist
+    explain: str = ""
+
+
+# 8-K items. The notable ones are what small-cap traders watch for: delisting notices,
+# private share sales (dilution that never shows up as a 424B), reverse splits.
+ITEMS_8K = {
+    "1.01": ItemInfo("material agreement", 0.0),
+    "1.02": ItemInfo("agreement terminated", 0.0),
+    "1.03": ItemInfo("bankruptcy", -0.9, True, "Bankruptcy or receivership."),
+    "1.05": ItemInfo("cybersecurity incident", -0.35, True, "A material cybersecurity incident."),
+    "2.01": ItemInfo("acquisition completed", 0.0),
+    "2.02": ItemInfo("earnings", 0.0),
+    "2.03": ItemInfo("new debt", 0.0),
+    "2.04": ItemInfo("debt acceleration", -0.6, True, "Something made the company's debt due early."),
+    "2.05": ItemInfo("restructuring", -0.35),
+    "2.06": ItemInfo("impairment", -0.35),
+    "3.01": ItemInfo("delisting notice", -0.6, True,
+                     "The exchange says the company breaks a listing rule, often a share price under $1. "
+                     "A reverse split or an offering often follows."),
+    "3.02": ItemInfo("unregistered share sale", -0.5, True,
+                     "Shares or warrants sold privately, outside a registered offering: dilution that "
+                     "doesn't show up as a prospectus."),
+    "3.03": ItemInfo("shareholder rights change", -0.35, True,
+                     "Changes to shareholders' rights, most often a reverse stock split."),
+    "4.01": ItemInfo("auditor change", -0.35, True, "The company changed auditors. Check whether the auditor resigned."),
+    "4.02": ItemInfo("financials unreliable", -0.8, True,
+                     "Previously issued financial statements should no longer be relied on."),
+    "5.01": ItemInfo("change in control", 0.0, True, "Control of the company changed hands."),
+    "5.02": ItemInfo("officer or director change", 0.0),
+    "5.03": ItemInfo("charter amendment", 0.0),
+    "5.07": ItemInfo("shareholder vote", 0.0),
+    "7.01": ItemInfo("Reg FD disclosure", 0.0),
+    "8.01": ItemInfo("other events", 0.0),
+}
+
+
+def describe_8k(items: list[str]) -> tuple[ItemInfo, list[ItemInfo]]:
+    """The item to headline an 8-K with (notable first, then most negative), and all known items."""
+    known = [ITEMS_8K[i] for i in items if i in ITEMS_8K]  # 9.01 (exhibits) says nothing on its own
+    if not known:
+        return ItemInfo("8-K", 0.0), []
+    return min(known, key=lambda i: (not i.notable, i.score)), known
+
 
 TITLE_ABBREVIATIONS = {
     "chief executive officer": "CEO", "chief financial officer": "CFO", "chief operating officer": "COO",
@@ -263,9 +313,9 @@ def insider_item(trade: dict, side: str) -> tuple[FormInfo, str, str]:
 class FilingsFeed:
     """Polls EDGAR's current-filings feeds and turns relevant filings into news items."""
 
-    def __init__(self, settings: Settings, ticker_map: Callable[[], Awaitable[dict[str, str]]]):
+    def __init__(self, settings: Settings, sec: SecClient):
         self.settings = settings
-        self._ticker_map = ticker_map
+        self.sec = sec
         self._items: OrderedDict[str, dict] = OrderedDict()
         self._seen: OrderedDict[str, None] = OrderedDict()  # accession numbers already handled
         self._attempts: dict[str, int] = {}
@@ -273,15 +323,6 @@ class FilingsFeed:
         self._primed: set[str] = set()  # feed types fetched once; their backlog never alerts
         self.failed: list[str] = []
         self._fail_streak: dict[str, int] = {}
-        self._gate = asyncio.Lock()
-        self._next_request = 0.0
-        # Only ever used for www.sec.gov, the one place the contact address in the User-Agent
-        # should go. No redirects, so it can't be carried to another host.
-        self._client = httpx.AsyncClient(timeout=15, follow_redirects=False,
-                                         headers={"User-Agent": settings.sec_user_agent})
-
-    async def aclose(self) -> None:
-        await self._client.aclose()
 
     def latest(self) -> list[dict]:
         return list(self._items.values())
@@ -293,10 +334,8 @@ class FilingsFeed:
     async def poll(self, watchlist: list[str], movers: dict[str, str]) -> list[dict]:
         """Fetch every feed once and return the new filings worth showing, newest first.
         movers maps a symbol on today's movers lists to why it's there, e.g. "top gainer +45%"."""
-        tickers = await self._ticker_map()
-        if not tickers:
-            # Without it every offering would look unlisted and be dropped for good.
-            raise SourceError("SEC ticker map unavailable, retrying")
+        # Without the ticker map every offering would look unlisted and be dropped for good.
+        tickers = await self.sec.require_tickers()
         results = await asyncio.gather(*(self._entries(t) for t in FEED_TYPES), return_exceptions=True)
         self.failed = []
         groups: dict[str, list[tuple[str, str, str, str, dict]]] = {}
@@ -335,11 +374,12 @@ class FilingsFeed:
             self._seen[accession] = None
             if item is None:
                 continue
-            ticker = item["tickers"][0]
+            ticker, kind = item["tickers"][0], item["filing"]["kind"]
             # Insider sales are routine; only the watchlist's are worth a line.
-            if item["filing"]["kind"] == "insider_sell" and ticker not in watch:
+            if kind == "insider_sell" and ticker not in watch:
                 continue
-            hot = "watchlist" if ticker in watch else movers.get(ticker)
+            # Every watchlist 8-K alerts, as it did as a news item; for movers only notable ones.
+            hot = "watchlist" if ticker in watch else None if kind == "report" else movers.get(ticker)
             item["filing"]["hot"] = hot
             item["alert"] = primed[accession] and hot is not None
             self._items[item["id"]] = item
@@ -351,28 +391,13 @@ class FilingsFeed:
             self._seen.popitem(last=False)
         return sorted(fresh, key=lambda n: n["published"], reverse=True)
 
-    async def _get(self, url: str) -> httpx.Response:
-        if urlparse(url).hostname != "www.sec.gov":
-            raise ValueError("filings client only talks to www.sec.gov")
-        async with self._gate:  # space request starts out under SEC's rate limit
-            wait = self._next_request - time.monotonic()
-            if wait > 0:
-                await asyncio.sleep(wait)
-            self._next_request = time.monotonic() + MIN_REQUEST_GAP
-        resp = await self._client.get(url)
-        if resp.status_code == 403:
-            raise SourceError("SEC refused the request (403). Set sec_user_agent in config.toml "
-                              "to an app name and contact email")
-        resp.raise_for_status()
-        return resp
-
     async def _entries(self, feed_type: str) -> list:
         """Newest entries of one feed. When a whole page is new (a burst of filings since the
         last poll), keep reading pages so none are skipped."""
         entries: list = []
         for page in range(MAX_PAGES):
             url = FEED_URL.format(type=quote(feed_type), start=page * 100)
-            batch = feedparser.parse((await self._get(url)).content).entries
+            batch = feedparser.parse((await self.sec.get(url)).content).entries
             entries += batch
             if (len(batch) < 100 or feed_type not in self._primed
                     or any(_accession(e) in self._seen for e in batch)):
@@ -421,7 +446,22 @@ class FilingsFeed:
             short_form = form.replace("SCHEDULE ", "")
             return self._item(accession, entry, ticker, "stake", info, short_form,
                               f"{who} {verb} {issuer}{size}", info.explain)
-        return None  # 424B2, 4/A and other forms the feeds also return
+        if form == "8-K":
+            listed = next(((name, cik) for _, name, cik, _, _ in rows if cik in tickers), None)
+            if listed is None:
+                return None
+            name, cik = listed
+            # EDGAR lists the items in the entry summary: "Item 3.01: Notice of Delisting ..."
+            text = _clean(entry.get("summary", ""))
+            items = list(dict.fromkeys(ITEM.findall(text)))
+            lead, known = describe_8k(items)
+            labels = list(dict.fromkeys(i.label for i in known)) or ["8-K"]
+            details = text[text.find("Item "):] if "Item " in text else ""
+            summary = f"{lead.explain} {details}".strip()[:400]
+            info = FormInfo(lead.label, summary, min((i.score for i in known), default=0.0))
+            return self._item(accession, entry, tickers[cik], "event" if lead.notable else "report", info,
+                              form, f"{name}: {', '.join(labels[:3])}", summary)
+        return None  # 424B2, 4/A, 8-K/A and other forms the feeds also return
 
     async def _document(self, entry) -> str:
         # ".../0001234567-26-000001-index.htm" -> ".../0001234567-26-000001.txt", the whole
@@ -429,7 +469,7 @@ class FilingsFeed:
         link = entry.get("link", "")
         if not link.endswith("-index.htm"):
             raise ValueError(f"unexpected filing link {link!r}")
-        return (await self._get(link.removesuffix("-index.htm") + ".txt")).text
+        return (await self.sec.get(link.removesuffix("-index.htm") + ".txt")).text
 
     def _item(self, accession: str, entry, ticker: str, kind: str, info: FormInfo, form: str,
               title: str, summary: str) -> dict:

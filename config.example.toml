@@ -2,7 +2,7 @@
 
 # SEC requires automated clients to identify themselves: an app name and a contact email.
 # It's sent only to www.sec.gov. To keep it out of this file, set SEC_USER_AGENT instead.
-sec_user_agent = "market-pulse/0.2 you@example.com"
+sec_user_agent = "market-pulse/0.3 you@example.com"
 
 # Real-time watchlist prices. Free key at https://finnhub.io/register (or set FINNHUB_API_KEY).
 # Leave empty to use delayed Yahoo prices only.
@@ -36,13 +36,13 @@ min_volume = 300000
 news_history = 500
 ticker_news = true   # poll Yahoo's per-ticker RSS for every watchlist symbol
 
-# SEC filings in the news feed: offerings (dilution), Form 4 insider trades and 13D stakes.
+# SEC filings in the news feed: offerings (dilution), Form 4 insider trades, 13D stakes and
+# 8-K items. With this off, 8-Ks show as plain news instead.
 sec_filings = true
 filings_interval = 30
 insider_min_value = 50000   # smallest insider trade shown; insider sales only for the watchlist
 
 # Setting [feeds] replaces the default list entirely.
 # [feeds]
-# "SEC 8-K" = "https://www.sec.gov/cgi-bin/browse-edgar?action=getcurrent&type=8-K&count=40&output=atom"
 # "GlobeNewswire" = "https://www.globenewswire.com/RssFeed/orgclass/1/feedTitle/GlobeNewswire%20-%20News%20about%20Public%20Companies"
 # "PR Newswire" = "https://www.prnewswire.com/rss/news-releases-list.rss"

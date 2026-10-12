@@ -42,8 +42,7 @@ def run(engine, coro):
             return await coro
         finally:
             await engine.news.aclose()
-            if engine.filings:
-                await engine.filings.aclose()
+            await engine.sec.aclose()
             await engine.halts.aclose()
             await engine.phone.aclose()
     return asyncio.run(scenario())

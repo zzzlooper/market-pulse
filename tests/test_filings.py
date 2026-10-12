@@ -5,7 +5,7 @@ from urllib.parse import parse_qs, urlparse
 import httpx
 import pytest
 
-from app import filings
+from app import sec as sec_module
 from app.config import Settings, load_settings
 from app.engine import Engine
 from app.filings import (
@@ -17,8 +17,8 @@ from app.filings import (
     parse_form4,
 )
 from app.health import SourceError
-from app.news import NewsFeed
 from app.notify import from_filing
+from app.sec import SecClient
 
 # Everything below is made up. These strings stand in for the personal details real filings
 # carry, and must never reach an item, a title or the phone.
@@ -97,10 +97,14 @@ class FakeSec:
         self.feeds: dict[str, list[str]] = {}   # feed type -> entries, newest first
         self.docs: dict[str, str | int] = {}    # accession -> submission text, or an HTTP status
         self.requests: list[httpx.Request] = []
+        self.tickers_status = 200
 
     def handler(self, request: httpx.Request) -> httpx.Response:
         self.requests.append(request)
         url = urlparse(str(request.url))
+        if url.path == "/files/company_tickers.json":
+            rows = {str(n): {"cik_str": int(cik), "ticker": t, "title": t} for n, (cik, t) in enumerate(TICKERS.items())}
+            return httpx.Response(self.tickers_status, json=rows)
         if url.path == "/cgi-bin/browse-edgar":
             q = parse_qs(url.query)
             start = int(q["start"][0])
@@ -110,17 +114,21 @@ class FakeSec:
         return httpx.Response(doc, text="") if isinstance(doc, int) else httpx.Response(200, text=doc)
 
 
-def make_feed(sec, **settings):
-    async def ticker_map():
-        return TICKERS
-    feed_ = FilingsFeed(Settings(sec_user_agent=AGENT, **settings), ticker_map)
-    feed_._client = httpx.AsyncClient(headers=feed_._client.headers, transport=httpx.MockTransport(sec.handler))
-    return feed_
+def make_sec(handler):
+    client = SecClient(AGENT)
+    client._client = httpx.AsyncClient(headers=client._client.headers, follow_redirects=False,
+                                       transport=httpx.MockTransport(handler))
+    return client
+
+
+def make_feed(fake, **settings):
+    # A lambda, so a test can swap fake.handler after the feed is made.
+    return FilingsFeed(Settings(sec_user_agent=AGENT, **settings), make_sec(lambda r: fake.handler(r)))
 
 
 @pytest.fixture(autouse=True)
 def no_rate_limit(monkeypatch):
-    monkeypatch.setattr(filings, "MIN_REQUEST_GAP", 0)
+    monkeypatch.setattr(sec_module, "MIN_REQUEST_GAP", 0)
 
 
 def run(feed_, *polls):
@@ -129,7 +137,7 @@ def run(feed_, *polls):
         try:
             return [await feed_.poll(w, m) for w, m in polls]
         finally:
-            await feed_.aclose()
+            await feed_.sec.aclose()
     return asyncio.run(scenario())
 
 
@@ -216,7 +224,7 @@ def test_first_poll_is_a_baseline_and_later_filings_alert_for_watchlist_and_move
             second = await feed_.poll(["AAPL"], {"ACME": "top gainer +45%"})
             return first, second
         finally:
-            await feed_.aclose()
+            await feed_.sec.aclose()
     first, second = asyncio.run(scenario())
 
     assert [(i["title"], i["alert"]) for i in first] == [("Acme Corp: offering from shelf (424B5)", False)]
@@ -248,14 +256,14 @@ def test_the_contact_address_only_goes_to_sec_gov():
     run(feed_, (["AAPL"], {}))
     assert sec.requests and all(r.url.host == "www.sec.gov" for r in sec.requests)
     assert all(r.headers["User-Agent"] == AGENT for r in sec.requests)
-    assert feed_._client.follow_redirects is False
+    assert feed_.sec._client.follow_redirects is False
 
     async def elsewhere():
         f = make_feed(FakeSec())
         try:
-            await f._get("https://example.org/anything")
+            await f.sec.get("https://example.org/anything")
         finally:
-            await f.aclose()
+            await f.sec.aclose()
     with pytest.raises(ValueError):
         asyncio.run(elsewhere())
 
@@ -281,7 +289,7 @@ def test_a_document_that_fails_is_retried_and_a_backlog_filing_still_does_not_al
             sec.docs["0000000002-26-000001"] = form4("AAPL", "Apple Inc", "0000000002", [("P", 1_000, 250.0, 2_000)])
             return first, await feed_.poll(["AAPL"], {})
         finally:
-            await feed_.aclose()
+            await feed_.sec.aclose()
     first, second = asyncio.run(scenario())
     assert first == []
     assert [(i["tickers"], i["alert"]) for i in second] == [(["AAPL"], False)]
@@ -300,7 +308,7 @@ def test_a_burst_bigger_than_a_page_is_read_from_the_next_page():
                                  for n in range(150)] + [old]
             return await feed_.poll([], {})
         finally:
-            await feed_.aclose()
+            await feed_.sec.aclose()
     assert len(asyncio.run(scenario())) == 150
 
 
@@ -348,7 +356,7 @@ def test_engine_sends_filings_to_the_news_feed_and_the_phone(tmp_path):
             await engine._update_filings()
         finally:
             await engine.news.aclose()
-            await engine.filings.aclose()
+            await engine.sec.aclose()
             await engine.halts.aclose()
             await engine.phone.aclose()
     asyncio.run(scenario())
@@ -369,68 +377,71 @@ def test_sec_user_agent_can_come_from_the_environment(tmp_path, monkeypatch):
     assert load_settings(tmp_path / "missing.toml").sec_user_agent == AGENT
 
 
-def test_ticker_map_is_retried_after_a_failure(monkeypatch):
-    calls = []
-    clock = [1_000.0]
-    monkeypatch.setattr("app.news.time.monotonic", lambda: clock[0])
-
-    def handler(request):
-        calls.append(request)
-        if len(calls) == 1:
-            return httpx.Response(503)
-        return httpx.Response(200, json={"0": {"cik_str": 1, "ticker": "ACME", "title": "Acme"}})
-
-    news = NewsFeed(Settings(sec_user_agent=AGENT))
-    news._client = httpx.AsyncClient(transport=httpx.MockTransport(handler))
-
-    async def scenario():
-        try:
-            first = await news.sec_tickers()
-            again = await news.sec_tickers()   # too soon to retry
-            clock[0] += 601
-            later = await news.sec_tickers()
-            return first, again, later
-        finally:
-            await news.aclose()
-    assert asyncio.run(scenario()) == ({}, {}, {"0000000001": "ACME"})
-    assert len(calls) == 2 and calls[0].headers["User-Agent"] == AGENT
-
-
-def test_nothing_is_marked_seen_while_the_ticker_map_is_missing():
+def test_nothing_is_marked_seen_while_the_ticker_map_is_missing(monkeypatch):
+    monkeypatch.setattr(sec_module, "TICKER_MAP_RETRY", 0)
     sec = FakeSec()
     sec.feeds["424B"] = [entry("424B5", "Acme Corp", "0000000001", "Filer", "0000000001-26-000001")]
-    maps = iter([{}, TICKERS])
-
-    async def ticker_map():
-        return next(maps)
+    sec.tickers_status = 503
+    feed_ = make_feed(sec)
 
     async def scenario():
-        feed_ = FilingsFeed(Settings(sec_user_agent=AGENT), ticker_map)
-        feed_._client = httpx.AsyncClient(transport=httpx.MockTransport(sec.handler))
         try:
-            with pytest.raises(SourceError, match="ticker map"):
+            with pytest.raises(SourceError, match="ticker map unavailable"):
                 await feed_.poll([], {})
+            sec.tickers_status = 200
             return await feed_.poll([], {})
         finally:
-            await feed_.aclose()
+            await feed_.sec.aclose()
     assert [i["tickers"] for i in asyncio.run(scenario())] == [["ACME"]]
 
 
-def test_concurrent_callers_share_one_ticker_map_download():
-    calls = []
+# --- 8-K items ----------------------------------------------------------------------------
 
-    async def handler(request):
-        calls.append(request)
-        await asyncio.sleep(0.01)
-        return httpx.Response(200, json={"0": {"cik_str": 1, "ticker": "ACME", "title": "Acme"}})
+def eight_k(name, cik, acc, items):
+    """An 8-K feed entry; EDGAR lists the items in the summary."""
+    text = "".join(f"&lt;br&gt;Item {i}: {desc}" for i, desc in items)
+    return entry("8-K", name, cik, "Filer", acc).replace(
+        "<summary type=\"html\">Filed</summary>",
+        f"<summary type=\"html\">&lt;b&gt;Filed:&lt;/b&gt; 2026-10-12{text}</summary>")
 
-    news = NewsFeed(Settings(sec_user_agent=AGENT))
-    news._client = httpx.AsyncClient(transport=httpx.MockTransport(handler))
+
+def test_8k_items_are_labelled_and_notable_ones_alert_for_movers():
+    sec = FakeSec()
+    feed_ = make_feed(sec)
 
     async def scenario():
         try:
-            return await asyncio.gather(news.sec_tickers(), news.sec_tickers())
+            await feed_.poll([], {})  # baseline
+            sec.feeds["8-K"] = [
+                eight_k("Acme Corp", "0000000001", "0000000001-26-000010",
+                        [("3.01", "Notice of Delisting or Failure to Satisfy a Continued Listing Rule"),
+                         ("9.01", "Financial Statements and Exhibits")]),
+                eight_k("Zzz Inc", "0000000003", "0000000003-26-000010",
+                        [("2.02", "Results of Operations and Financial Condition"), ("9.01", "Exhibits")]),
+                eight_k("Apple Inc", "0000000002", "0000000002-26-000010", [("7.01", "Regulation FD Disclosure")]),
+                eight_k("Private Co", "0000000077", "0000000077-26-000010", [("3.02", "Unregistered Sales")]),
+            ]
+            return await feed_.poll(["AAPL"], {"ACME": "top loser -30%", "ZZZ": "top gainer +12%"})
         finally:
-            await news.aclose()
-    assert asyncio.run(scenario()) == [{"0000000001": "ACME"}] * 2
-    assert len(calls) == 1
+            await feed_.sec.aclose()
+    items = {i["tickers"][0]: i for i in asyncio.run(scenario())}
+
+    assert set(items) == {"ACME", "ZZZ", "AAPL"}  # the unlisted filer is skipped
+    acme = items["ACME"]
+    assert acme["title"] == "Acme Corp: delisting notice"
+    assert acme["filing"] == {"kind": "event", "form": "8-K", "label": "delisting notice", "hot": "top loser -30%"}
+    assert acme["alert"] and acme["sentiment"]["label"] == "bearish"
+    assert acme["summary"].startswith("The exchange says the company breaks a listing rule")
+    assert "Item 3.01: Notice of Delisting" in acme["summary"]
+    # A routine 8-K on a mover doesn't alert; on the watchlist it does, as before.
+    assert items["ZZZ"]["title"] == "Zzz Inc: earnings" and not items["ZZZ"]["alert"]
+    assert items["ZZZ"]["filing"]["kind"] == "report" and items["ZZZ"]["filing"]["hot"] is None
+    assert items["AAPL"]["alert"] and items["AAPL"]["filing"]["hot"] == "watchlist"
+
+
+def test_describe_8k_prefers_notable_then_most_negative_items():
+    from app.filings import describe_8k
+    lead, known = describe_8k(["1.01", "3.02", "3.03", "9.01"])
+    assert lead.label == "unregistered share sale"
+    assert [i.label for i in known] == ["material agreement", "unregistered share sale", "shareholder rights change"]
+    assert describe_8k(["9.01"])[0].label == "8-K"

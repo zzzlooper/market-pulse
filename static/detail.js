@@ -3,7 +3,10 @@
 // news, halts and alerts. Profile and bars come from /api/ticker; everything else is read
 // from the live `state` in app.js, so the drawer updates as new data streams in.
 
-const detail = { symbol: null, range: "1d", data: null, error: null, timer: null, seq: 0, hover: null, geom: null };
+const detail = {
+  symbol: null, range: "1d", data: null, error: null, timer: null, seq: 0, hover: null, geom: null,
+  dilution: null, dilutionError: null,  // from /api/dilution, loaded once per open (cached 6h server-side)
+};
 const DETAIL_REFRESH_MS = 30_000;
 
 const etFormat = new Intl.DateTimeFormat("en-US", {
@@ -30,8 +33,9 @@ function fmtBig(v, prefix = "") {
 
 async function openDetail(symbol) {
   if (symbol !== detail.symbol) {
-    Object.assign(detail, { symbol, data: null, error: null, hover: null });
+    Object.assign(detail, { symbol, data: null, error: null, hover: null, dilution: null, dilutionError: null });
     renderDetail();
+    loadDilution(symbol);
   }
   $("#detail").hidden = $("#detail-backdrop").hidden = false;
   clearInterval(detail.timer);
@@ -61,6 +65,18 @@ async function loadDetail() {
     detail.error = err.message;
     if (!detail.data) renderDetail();
   }
+}
+
+async function loadDilution(symbol) {
+  try {
+    const data = await api("GET", `/api/dilution/${encodeURIComponent(symbol)}`);
+    if (symbol !== detail.symbol) return;
+    Object.assign(detail, { dilution: data, dilutionError: null });
+  } catch (err) {
+    if (symbol !== detail.symbol) return;
+    detail.dilutionError = err.message;
+  }
+  renderDilution();
 }
 
 // Precompute ET labels once per load; the chart redraws on every mouse move.
@@ -109,6 +125,7 @@ function renderDetail() {
       <span><i class="band ext"></i>pre/post-market</span>
     </div>
     <div id="detail-stats" class="stats"></div>
+    <section id="detail-dilution" class="dilution"></section>
     <div class="detail-cols">
       <section><h3>News <small>times ET</small></h3><ul id="detail-news" class="detail-list"></ul></section>
       <section>
@@ -126,8 +143,66 @@ function renderDetail() {
   }
   updateDetailPrice();
   updateDetailStats();
+  renderDilution();
   updateDetailLists();
   drawDetailChart();
+}
+
+// --- dilution risk ------------------------------------------------------------------------
+
+// "2026-06-30" -> "Jun 30, 2026". Dates from SEC have no time, so format them as UTC.
+const fmtDay = (iso) => (iso ? new Date(`${iso}T00:00:00Z`).toLocaleDateString([], {
+  month: "short", day: "numeric", year: "numeric", timeZone: "UTC" }) : "–");
+
+function renderDilution() {
+  const el = $("#detail-dilution");
+  if (!el) return;
+  const d = detail.dilution;
+  const head = (extra = "") => `<h3>Dilution risk ${extra}</h3>`;
+  if (detail.dilutionError) {
+    el.innerHTML = head() + `<p class="muted">${esc(detail.dilutionError)}</p>`;
+    return;
+  }
+  if (!d) {
+    el.innerHTML = head() + `<p class="muted">Reading SEC filings…</p>`;
+    return;
+  }
+  const c = d.cash, s = d.shares, h = d.history;
+  const money = (v) => (c.currency === "USD" ? fmtBig(v, "$") : `${fmtBig(v)} ${esc(c.currency)}`);
+  const stat = (label, value, cls = "", tip = "") =>
+    `<div title="${esc(tip)}"><span>${label}</span><b class="${cls}">${value}</b></div>`;
+  let left = "–";
+  if (c?.months_left != null) left = c.months_left <= 0 ? "out?" : `~${c.months_left.toFixed(1)} mo`;
+  else if (c?.monthly_burn === 0) left = "no burn";
+  const pct = s?.change_pct;
+  el.innerHTML = head(`<span class="risk ${esc(d.level)}">${esc(d.level)}</span>
+      <small><a href="${esc(safeUrl(d.sec_url))}" target="_blank" rel="noopener noreferrer">SEC filings ↗</a></small>`) + `
+    <ul class="risk-reasons">${d.reasons.map((r) => `
+      <li><b class="pts ${r.points > 0 ? "bad" : r.points < 0 ? "good" : ""}">${r.points > 0 ? "+" : ""}${r.points}</b>
+        ${esc(r.text)}</li>`).join("") || `<li class="muted">No warning signs in the filings</li>`}</ul>
+    <div class="stats">
+      ${stat("Cash", c ? money(c.cash) : "–", "", c ? `As of ${fmtDay(c.as_of)}` : "No XBRL cash figure")}
+      ${stat("Monthly burn", c?.monthly_burn != null ? money(c.monthly_burn) : "–", "",
+        c?.burn_months ? `Operating cash flow over ${c.burn_months} months` : "")}
+      ${stat("Cash left", left, c?.months_left != null && c.months_left < 6 ? "down" : "",
+        "Cash at the last report minus the burn since, at the reported rate")}
+      ${stat("Shares out", s ? fmtBig(s.shares) + (s.before_split ? "*" : "") : "–", "",
+        s ? `As of ${fmtDay(s.as_of)}` + (s.before_split
+          ? `, before the ${fmtDay(s.before_split)} shareholder-rights change (likely a reverse split); not split-adjusted` : "") : "")}
+      ${stat("Shares 1y", pct != null ? `${pct > 0 ? "+" : ""}${pct.toFixed(0)}%` : "–", pct >= 20 ? "down" : "",
+        s?.year_ago ? `${fmtBig(s.year_ago)} a year earlier` : "")}
+      ${stat("Shelf", h.shelf ? `${h.shelf.effective ? "effective" : "filed"}` : "none",
+        h.shelf ? "hot" : "", h.shelf ? `${h.shelf.form} filed ${fmtDay(h.shelf.filed)}, usable to ~${fmtDay(h.shelf.expires)}` : "")}
+      ${stat("Offerings 12m", String(h.offerings_12m.length), h.offerings_12m.length ? "hot" : "",
+        h.offerings_12m.map(fmtDay).join(", "))}
+    </div>
+    ${h.events.length ? `<details class="dilution-events"><summary>Dilution-related filings (${h.events.length})</summary>
+      <ul class="detail-list">${h.events.map((e) => `
+        <li><div class="meta">${fmtDay(e.filed)} · ${esc(e.form)}</div>
+          <a href="${esc(safeUrl(e.url))}" target="_blank" rel="noopener noreferrer">${esc(e.label)}</a></li>`).join("")}
+      </ul></details>` : ""}
+    <p class="muted fine">From SEC filings and XBRL financials, which lag by up to a quarter. Filings since
+      ${fmtDay(h.covered_since)}.</p>`;
 }
 
 function detailQuote() {

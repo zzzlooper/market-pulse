@@ -6,26 +6,23 @@ import hashlib
 import html
 import logging
 import re
-import time
 from calendar import timegm
 from collections import OrderedDict
 from datetime import datetime, timezone
-from urllib.parse import urlparse
 
 import feedparser
 import httpx
 
 from . import sentiment
-from .config import Settings
+from .config import SEC_8K_FEED, Settings
+from .sec import SecClient, is_sec_url
 
 log = logging.getLogger(__name__)
 
 YAHOO_TICKER_FEED = "https://feeds.finance.yahoo.com/rss/2.0/headline?s={symbol}&region=US&lang=en-US"
-SEC_TICKERS_URL = "https://www.sec.gov/files/company_tickers.json"
 BROWSER_UA = "Mozilla/5.0 (X11; Linux x86_64) market-pulse/0.1"
 MAX_SEEN = 20_000
 FAILING_AFTER = 3  # consecutive failed polls before a feed is reported; single misses are common
-TICKER_MAP_RETRY = 600  # seconds before retrying a failed SEC ticker-map download
 
 # "(NASDAQ: ABCD)", "NYSE American: XYZ", "(OTCQB:ABCD)", "NYSE: BRK.B"
 EXCHANGE_TICKER = re.compile(
@@ -66,14 +63,13 @@ def _published(entry) -> str:
 class NewsFeed:
     """Polls feeds, tags tickers, dedupes by headline and keeps a bounded history."""
 
-    def __init__(self, settings: Settings):
+    def __init__(self, settings: Settings, sec: SecClient | None = None):
         self.settings = settings
+        self._own_sec = sec is None
+        self.sec = sec or SecClient(settings.sec_user_agent)
         self._items: OrderedDict[str, dict] = OrderedDict()
         self._seen: OrderedDict[str, None] = OrderedDict()  # outlives _items so trimmed news can't re-alert
         self._primed: set[str] = set()  # feeds fetched at least once; their backlog never alerts
-        self._cik_tickers: dict[str, str] = {}
-        self._cik_tickers_at: float | None = None  # when the last download was tried
-        self._cik_tickers_lock = asyncio.Lock()  # news and filings both ask for it at startup
         self.failed: list[str] = []  # feeds that failed in the last poll
         self.source_count = 0         # feeds tried in the last poll
         self._fail_streak: dict[str, int] = {}
@@ -81,6 +77,8 @@ class NewsFeed:
 
     async def aclose(self) -> None:
         await self._client.aclose()
+        if self._own_sec:
+            await self.sec.aclose()
 
     def latest(self, limit: int = 300) -> list[dict]:
         return sorted(self._items.values(), key=lambda n: n["published"], reverse=True)[:limit]
@@ -88,6 +86,8 @@ class NewsFeed:
     async def poll(self, watchlist: list[str], keywords: list[str]) -> list[dict]:
         """Fetch every source once and return the items not seen before, newest first."""
         sources = [(label, url, None) for label, url in self.settings.feeds.items()]
+        if not self.settings.sec_filings:  # otherwise FilingsFeed covers 8-Ks, with item alerts
+            sources.append(("SEC 8-K", SEC_8K_FEED, None))
         if self.settings.ticker_news:
             sources += [("Yahoo Finance", YAHOO_TICKER_FEED.format(symbol=s), s) for s in watchlist]
         results = await asyncio.gather(*(self._fetch(url) for _, url, _ in sources), return_exceptions=True)
@@ -131,9 +131,8 @@ class NewsFeed:
         return [name for name, streak in self._fail_streak.items() if streak >= FAILING_AFTER]
 
     async def _fetch(self, url: str) -> list:
-        is_sec = (urlparse(url).hostname or "").endswith("sec.gov")
-        headers = {"User-Agent": self.settings.sec_user_agent} if is_sec else None
-        resp = await self._client.get(url, headers=headers)
+        # SEC feeds go through the SEC client: it alone carries the contact address.
+        resp = await self.sec.get(url) if is_sec_url(url) else await self._client.get(url)
         resp.raise_for_status()
         return feedparser.parse(resp.content).entries
 
@@ -152,7 +151,7 @@ class NewsFeed:
             title, tags, key = f"{company} filed {form}", [form], url
             # EDGAR summaries are filing metadata followed by the 8-K items, e.g. "Item 2.02: ..."
             summary = summary[summary.find("Item "):] if "Item " in summary else ""
-            if ticker := (await self.sec_tickers()).get(cik):
+            if ticker := (await self.sec.tickers()).get(cik):
                 tickers.insert(0, ticker)
         if hint:
             tickers = list(dict.fromkeys([hint, *tickers]))
@@ -169,25 +168,3 @@ class NewsFeed:
             "tags": tags,
             "sentiment": sentiment.score(title, summary),
         }
-
-    async def sec_tickers(self) -> dict[str, str]:
-        """SEC CIK -> ticker map, loaded once. After a failure it's retried every
-        TICKER_MAP_RETRY seconds; until then filings show without tickers."""
-        async with self._cik_tickers_lock:
-            await self._load_sec_tickers()
-        return self._cik_tickers
-
-    async def _load_sec_tickers(self) -> None:
-        due = self._cik_tickers_at is None or (
-            not self._cik_tickers and time.monotonic() - self._cik_tickers_at >= TICKER_MAP_RETRY)
-        if due:
-            self._cik_tickers_at = time.monotonic()
-            try:
-                resp = await self._client.get(SEC_TICKERS_URL, headers={"User-Agent": self.settings.sec_user_agent})
-                resp.raise_for_status()
-                mapping: dict[str, str] = {}
-                for row in resp.json().values():
-                    mapping.setdefault(f"{row['cik_str']:010d}", row["ticker"])
-                self._cik_tickers = mapping
-            except Exception as exc:
-                log.warning("could not load SEC ticker map: %s", exc)
