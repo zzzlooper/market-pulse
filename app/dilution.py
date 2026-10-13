@@ -25,12 +25,16 @@ from .clock import clock
 from .filings import DILUTION, ITEMS_8K
 from .market import ET
 from .sec import SecClient
+from .warrants import HEAD_BYTES, describe_sold, detect
 
 log = logging.getLogger(__name__)
 
 SUBMISSIONS_URL = "https://data.sec.gov/submissions/CIK{cik}.json"
 CONCEPT_URL = "https://data.sec.gov/api/xbrl/companyconcept/CIK{cik}/{taxonomy}/{concept}.json"
 INDEX_URL = "https://www.sec.gov/Archives/edgar/data/{cik}/{folder}/{accession}-index.htm"
+DOC_URL = "https://www.sec.gov/Archives/edgar/data/{cik}/{folder}/{doc}"
+WARRANT_FILINGS = 3          # newest offering-type filings read for warrants, per profile
+WARRANT_OVERHANG_PCT = 10.0  # outstanding warrant shares at least this share of the float scores
 COMPANY_URL = "https://www.sec.gov/cgi-bin/browse-edgar?action=getcompany&CIK={cik}&owner=include&count=40"
 CACHE_SECONDS = 6 * 3600  # filings and financials change a few times a quarter
 CACHE_SIZE = 200
@@ -64,13 +68,17 @@ def _rows(submissions: dict) -> list[dict]:
     recent = submissions["filings"]["recent"]
     cik = int(submissions["cik"])
     rows = []
-    for form, filed, items, accession in zip(recent["form"], recent["filingDate"], recent["items"],
-                                             recent["accessionNumber"]):
+    docs = recent.get("primaryDocument") or [""] * len(recent["form"])
+    for form, filed, items, accession, doc in zip(recent["form"], recent["filingDate"], recent["items"],
+                                                  recent["accessionNumber"], docs):
+        folder = accession.replace("-", "")
         rows.append({
             "form": form,
             "filed": date.fromisoformat(filed),
             "items": [i for i in items.split(",") if i],
-            "url": INDEX_URL.format(cik=cik, folder=accession.replace("-", ""), accession=accession),
+            "accession": accession,
+            "url": INDEX_URL.format(cik=cik, folder=folder, accession=accession),
+            "doc": DOC_URL.format(cik=cik, folder=folder, doc=doc) if doc else None,
         })
     return sorted(rows, key=lambda r: r["filed"], reverse=True)
 
@@ -123,6 +131,12 @@ def filing_history(submissions: dict, today: date) -> dict:
         "delisting_notices_12m": [r["filed"] for r in with_item("3.01", YEAR)],
         "rights_changes_24m": [r["filed"] for r in with_item("3.03", 2 * YEAR)],
         "events": events[:15],
+        # Offerings and private sales of the last year whose first pages may state warrants.
+        "warrant_candidates": [
+            {"form": r["form"], "filed": r["filed"], "accession": r["accession"], "doc": r["doc"]}
+            for r in rows if r["doc"] and within(r, YEAR)
+            and (r["form"] in OFFERING_FORMS | REGISTRATION_FORMS | {"424B3", "424B7"}
+                 or (r["form"] == "8-K" and "3.02" in r["items"]))][:WARRANT_FILINGS],
     }
 
 
@@ -184,7 +198,21 @@ def _date(d: date) -> str:
     return f"{d:%b} {d.day}, {d.year}"
 
 
-def assess(history: dict, runway: dict | None, shares: dict | None) -> dict:
+def warrant_summary(checked: list[tuple[dict, dict | None]]) -> dict:
+    """From (candidate filing, warrant facts) pairs, newest first."""
+    sold = [(c, f) for c, f in checked if f and f["sold"]]
+    outstanding = next(({**f["outstanding"], "as_of": c["filed"], "form": c["form"]}
+                        for c, f in checked if f and f["outstanding"]), None)
+    return {
+        "checked": len(checked),
+        "offerings_with_warrants": len(sold),
+        "latest_sold": {"filed": sold[0][0]["filed"], "form": sold[0][0]["form"], "text": describe_sold(sold[0][1])}
+        if sold else None,
+        "outstanding": outstanding,
+    }
+
+
+def assess(history: dict, runway: dict | None, shares: dict | None, warrants: dict | None = None) -> dict:
     """Points for each warning sign; HIGH or more is high risk. Reasons come strongest first."""
     reasons: list[tuple[int, str]] = []
     if p := history["pending"]:
@@ -223,6 +251,17 @@ def assess(history: dict, runway: dict | None, shares: dict | None) -> dict:
             reasons.append((2 if pct >= 50 else 1, f"Share count up {pct:.0f}% in about a year{caveat}"))
         elif pct <= -50:
             reasons.append((0, f"Share count down {-pct:.0f}% in about a year, likely a reverse split"))
+    if warrants and (n := warrants["offerings_with_warrants"]):
+        latest = warrants["latest_sold"]
+        reasons.append((1, (f"Warrants sold with {n} offering{'s' * (n > 1)} in the last 12 months; latest "
+                            f"{latest['form']} on {_date(latest['filed'])}: {latest['text']}")))
+    if warrants and (out := warrants["outstanding"]):
+        pct = out["shares"] / shares["shares"] * 100 if shares and shares["shares"] else None
+        share = f" ({pct:.0f}% of shares)" if pct is not None else ""
+        price = f", average exercise price ${out['exercise_price']:,.2f}" if out["exercise_price"] else ""
+        reasons.append((1 if pct is not None and pct >= WARRANT_OVERHANG_PCT else 0,
+                        (f"Warrants for {out['shares']:,} shares outstanding{share}{price}, "
+                         f"per the {out['form']} of {_date(out['as_of'])}")))
     if r := history["rights_changes_24m"]:
         reasons.append((0, f"Shareholder-rights change (8-K item 3.03, usually a reverse split) on {_date(r[0])}"))
 
@@ -245,6 +284,7 @@ class DilutionProfiles:
         self.sec = sec
         self._cache: OrderedDict[str, tuple[float, dict | None]] = OrderedDict()
         self._loading: dict[str, asyncio.Future] = {}
+        self._warrants: dict[str, dict | None] = {}  # accession -> warrant facts
 
     def is_fresh(self, symbol: str) -> bool:
         hit = self._cache.get(symbol.upper())
@@ -281,14 +321,30 @@ class DilutionProfiles:
         history = filing_history(submissions.json(), today)
         runway = cash_runway(cash, operating, today)
         growth = share_growth(shares, today)
+        candidates = history.pop("warrant_candidates")
+        warrants = warrant_summary([(c, await self._warrant_facts(c)) for c in candidates])
         return {
             "symbol": symbol,
             "sec_url": COMPANY_URL.format(cik=int(cik)),
-            **assess(history, runway, growth),
+            **assess(history, runway, growth, warrants),
             "history": history,
             "cash": runway,
             "shares": growth,
+            "warrants": warrants,
         }
+
+    async def _warrant_facts(self, candidate: dict) -> dict | None:
+        """A filing's warrant facts, read once: filings don't change."""
+        key = candidate["accession"]
+        if key not in self._warrants:
+            try:
+                self._warrants[key] = detect(await self.sec.get_head(candidate["doc"], HEAD_BYTES))
+            except Exception as exc:  # unreadable now: try again with the next profile
+                log.info("warrants in %s %s unknown: %s", candidate["form"], candidate["filed"], exc)
+                return None
+            while len(self._warrants) > 2000:
+                self._warrants.pop(next(iter(self._warrants)))
+        return self._warrants[key]
 
     async def _concept(self, cik: str, candidates: tuple[tuple[str, str], ...]) -> dict | None:
         for taxonomy, concept in candidates:

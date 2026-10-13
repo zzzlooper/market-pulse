@@ -129,7 +129,8 @@ def test_other_sec_responses_keep_only_what_is_used():
         "filings": {"recent": {"form": ["4"], "filingDate": ["2026-10-13"], "items": [""],
                                "accessionNumber": ["x"], "primaryDocument": ["d.htm"]}}}).encode()))
     assert subs == {"cik": "1", "filings": {"recent": {"form": ["4"], "filingDate": ["2026-10-13"], "items": [""],
-                                                       "accessionNumber": ["x"]}, "files": []}}
+                                                       "accessionNumber": ["x"], "primaryDocument": ["d.htm"]},
+                                            "files": []}}
     assert sanitize("https://www.sec.gov/cgi-bin/own-disp?action=getowner", b"names") == b""
     assert sanitize("https://www.globenewswire.com/rss", b"<rss/>") == b"<rss/>"  # public: as is
 
@@ -387,3 +388,16 @@ def test_a_replay_never_uses_the_real_data_folder(tmp_path, monkeypatch):
         asyncio.run(close())
         import shutil
         shutil.rmtree(engine.state.path.parent, ignore_errors=True)
+
+
+
+def test_other_filing_documents_keep_only_their_warrant_facts():
+    from app.warrants import detect
+    cover = ("<p>Acme Rocket Corp. Signed: JANE Q EXAMPLE, Chief Executive Officer, 1 PRIVATE LANE.</p>"
+             "<p>Up to 1,000,000 Shares of Common Stock underlying the Series A Warrants, exercise price of $1.25</p>")
+    kept = sanitize("https://www.sec.gov/Archives/edgar/data/1/000000000126000001/acme-424b5.htm", cover.encode()).decode()
+    assert "JANE" not in kept and "PRIVATE" not in kept and "Acme" not in kept
+    assert detect(kept) == detect(cover)  # a replay sees the same warrants
+    plain = sanitize("https://www.sec.gov/Archives/edgar/data/1/000000000126000002/0001-26-2.txt",
+                     b"<p>An 8-K about a new office lease, signed by JANE Q EXAMPLE.</p>").decode()
+    assert "JANE" not in plain and detect(plain) is None

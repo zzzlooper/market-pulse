@@ -29,6 +29,7 @@ from .config import Settings
 from .health import SourceError
 from .news import FAILING_AFTER, _clean, _published
 from .sec import SecClient
+from .warrants import HEAD_BYTES, describe_outstanding, describe_sold, detect
 
 log = logging.getLogger(__name__)
 
@@ -415,8 +416,9 @@ class FilingsFeed:
                 return None  # not a listed company, e.g. an IPO
             name, cik = listed
             info = DILUTION[form]
-            return self._item(accession, entry, tickers[cik], "dilution", info, form,
+            item = self._item(accession, entry, tickers[cik], "dilution", info, form,
                               f"{name}: {info.label} ({form})", info.explain)
+            return await self._with_warrants(item, entry)
         if form == "4":
             doc = embedded_xml(await self._document(entry))
             trade = parse_form4(doc) if doc is not None else None
@@ -459,17 +461,40 @@ class FilingsFeed:
             details = text[text.find("Item "):] if "Item " in text else ""
             summary = f"{lead.explain} {details}".strip()[:400]
             info = FormInfo(lead.label, summary, min((i.score for i in known), default=0.0))
-            return self._item(accession, entry, tickers[cik], "event" if lead.notable else "report", info,
+            item = self._item(accession, entry, tickers[cik], "event" if lead.notable else "report", info,
                               form, f"{name}: {', '.join(labels[:3])}", summary)
+            # A private share sale (item 3.02) often comes with warrants; say so if it does.
+            return await self._with_warrants(item, entry) if "3.02" in items else item
         return None  # 424B2, 4/A, 8-K/A and other forms the feeds also return
 
-    async def _document(self, entry) -> str:
+    @staticmethod
+    def _submission_url(entry) -> str:
         # ".../0001234567-26-000001-index.htm" -> ".../0001234567-26-000001.txt", the whole
-        # submission in one request.
+        # submission in one request (the main document comes first).
         link = entry.get("link", "")
         if not link.endswith("-index.htm"):
             raise ValueError(f"unexpected filing link {link!r}")
-        return (await self.sec.get(link.removesuffix("-index.htm") + ".txt")).text
+        return link.removesuffix("-index.htm") + ".txt"
+
+    async def _document(self, entry) -> str:
+        return (await self.sec.get(self._submission_url(entry))).text
+
+    async def _with_warrants(self, item: dict, entry) -> dict:
+        """Add what the filing's first pages say about warrants (see app/warrants.py). A filing
+        whose document can't be read still goes out, just without this."""
+        try:
+            facts = detect(await self.sec.get_head(self._submission_url(entry), HEAD_BYTES))
+        except Exception as exc:
+            log.info("warrants for %s unknown: %s", item["tickers"][0], exc)
+            facts = None
+        item["filing"]["warrants"] = facts
+        if sold := describe_sold(facts):
+            item["title"] += " · with warrants"
+            item["summary"] = f"Includes {sold}. {item['summary']}"
+            item["tags"].append("warrants")
+        elif outstanding := describe_outstanding(facts):
+            item["summary"] += f" Already outstanding: {outstanding}."
+        return item
 
     def _item(self, accession: str, entry, ticker: str, kind: str, info: FormInfo, form: str,
               title: str, summary: str) -> dict:

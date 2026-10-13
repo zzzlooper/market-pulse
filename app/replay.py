@@ -48,6 +48,7 @@ from .clock import clock
 from .filings import EMBEDDED_XML, ENTITY_NAME, _find, _local, _text
 from .health import SourceError
 from .market import ET as ET_ZONE
+from .warrants import digest as warrant_digest
 
 log = logging.getLogger(__name__)
 
@@ -185,12 +186,16 @@ def sanitize(url: str, body: bytes) -> bytes:
     if path == "/cgi-bin/browse-edgar":
         # Feed entries name the insider or investor filing ("4 - DOE JANE (…) (Reporting)").
         return FEED_TITLE.sub(r"\1[redacted]\3", text).encode()
-    if path.startswith("/Archives/") and path.endswith(".txt"):
-        return minimal_submission(text).encode()
+    if path.startswith("/Archives/"):
+        # Insider and 13D filings: the fields the app reads. Any other filing document (an
+        # offering, an 8-K): only the warrant facts found in it, never its text.
+        if path.endswith(".txt") and (kept := minimal_submission(text)):
+            return kept.encode()
+        return warrant_digest(text).encode()
     if path.startswith("/submissions/"):
         data = json.loads(text)
         recent = data.get("filings", {}).get("recent", {})
-        keep = {k: recent.get(k, []) for k in ("form", "filingDate", "items", "accessionNumber")}
+        keep = {k: recent.get(k, []) for k in ("form", "filingDate", "items", "accessionNumber", "primaryDocument")}
         return json.dumps({"cik": data.get("cik"), "filings": {"recent": keep, "files": []}}).encode()
     if "/api/xbrl/companyconcept/" in path:
         return json.dumps({"units": json.loads(text).get("units", {})}).encode()

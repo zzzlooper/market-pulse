@@ -149,9 +149,10 @@ class Day:
     # --- SEC ----------------------------------------------------------------------------------
 
     def filing(self, hhmm: str, form: str, ticker: str, items: list[tuple[str, str]] = (),
-               document: str | None = None) -> str:
+               document: str | None = None, text: str | None = None) -> str:
         """A filing by an invented company appearing in EDGAR's feed at hhmm. Returns its
-        accession number. document: the XML of a Form 4 / 13D, served as its .txt."""
+        accession number. document: the XML of a Form 4 / 13D, served as its .txt; text: an
+        offering's or 8-K's own words (its first pages), served as its .txt."""
         name, cik = COMPANIES[ticker]
         self._accessions += 1
         acc = f"{cik}-26-{self._accessions:06d}"
@@ -165,9 +166,10 @@ class Day:
                  f'<id>urn:tag:sec.gov,2008:accession-number={acc}</id></entry>')
         feed_type = next(t for t in FEED_TYPES if form.startswith(t)) if form != "4" else "4"
         self._feeds[feed_type].append((ts(hhmm), entry))
-        if document is not None:
+        if document is not None or text is not None:
+            body = f"<XML>\n{document}\n</XML>" if document is not None else text
             self.record(hhmm, get(f"https://www.sec.gov/Archives/edgar/data/{int(cik)}/{folder}/{acc}.txt"),
-                        {"s": 200, "ct": "text/plain", "b": f"<XML>\n{document}\n</XML>"})
+                        {"s": 200, "ct": "text/plain", "b": body})
         return acc
 
     def insider_trade(self, hhmm: str, ticker: str, code: str, shares: int, price: float, owned_after: int,

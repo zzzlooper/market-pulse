@@ -171,6 +171,22 @@ function renderDetail() {
 const fmtDay = (iso) => (iso ? new Date(`${iso}T00:00:00Z`).toLocaleDateString([], {
   month: "short", day: "numeric", year: "numeric", timeZone: "UTC" }) : "–");
 
+// Warrants as the company's own filings state them (best effort: read from their first pages).
+function warrantStat(w, stat) {
+  if (!w || !w.checked) return stat("Warrants", "–", "", "No offering in the last 12 months to read them from");
+  const out = w.outstanding;
+  if (out) {
+    const price = out.exercise_price != null ? ` @ $${out.exercise_price.toFixed(2)}` : "";
+    return stat("Warrants", `${fmtBig(out.shares)}${price}`, w.offerings_with_warrants ? "hot" : "",
+      `Outstanding per the ${out.form} of ${fmtDay(out.as_of)}` +
+      (w.latest_sold ? `; latest sold: ${w.latest_sold.text}` : ""));
+  }
+  if (w.offerings_with_warrants) {
+    return stat("Warrants", `sold ×${w.offerings_with_warrants}`, "hot", w.latest_sold.text);
+  }
+  return stat("Warrants", "none found", "", `Not mentioned on the first pages of ${w.checked} recent filing(s)`);
+}
+
 function renderDilution() {
   const el = $("#detail-dilution");
   if (!el) return;
@@ -212,6 +228,7 @@ function renderDilution() {
         h.shelf ? "hot" : "", h.shelf ? `${h.shelf.form} filed ${fmtDay(h.shelf.filed)}, usable to ~${fmtDay(h.shelf.expires)}` : "")}
       ${stat("Offerings 12m", String(h.offerings_12m.length), h.offerings_12m.length ? "hot" : "",
         h.offerings_12m.map(fmtDay).join(", "))}
+      ${warrantStat(d.warrants, stat)}
     </div>
     ${h.events.length ? `<details class="dilution-events"><summary>Dilution-related filings (${h.events.length})</summary>
       <ul class="detail-list">${h.events.map((e) => `

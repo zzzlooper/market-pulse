@@ -47,7 +47,8 @@ class SecClient:
     def set_user_agent(self, user_agent: str) -> None:
         self._client.headers["User-Agent"] = user_agent
 
-    async def get(self, url: str) -> httpx.Response:
+    async def _turn(self, url: str) -> None:
+        """Only SEC hosts; and wait for this request's slot under the rate limit."""
         if not is_sec_url(url):
             raise ValueError("the SEC client only talks to SEC hosts")
         async with self._gate:
@@ -55,12 +56,33 @@ class SecClient:
             if wait > 0:
                 await asyncio.sleep(wait)
             self._next_request = time.monotonic() + MIN_REQUEST_GAP
-        resp = await self._client.get(url)
+
+    @staticmethod
+    def _check(resp: httpx.Response) -> None:
         if resp.status_code == 403:
             raise SourceError("SEC refused the request (403). Set sec_user_agent in config.toml "
                               "to an app name and contact email")
         resp.raise_for_status()
+
+    async def get(self, url: str) -> httpx.Response:
+        await self._turn(url)
+        resp = await self._client.get(url)
+        self._check(resp)
         return resp
+
+    async def get_head(self, url: str, limit: int) -> str:
+        """The first `limit` bytes of a document, as text. SEC ignores Range requests, so the
+        download is streamed and stopped once there's enough."""
+        await self._turn(url)
+        chunks, size = [], 0
+        async with self._client.stream("GET", url) as resp:
+            self._check(resp)
+            async for chunk in resp.aiter_bytes():
+                chunks.append(chunk)
+                size += len(chunk)
+                if size >= limit:
+                    break
+        return b"".join(chunks)[:limit].decode("utf-8", "replace")
 
     async def tickers(self) -> dict[str, str]:
         """CIK -> ticker for every listed company, loaded once. After a failure it's retried

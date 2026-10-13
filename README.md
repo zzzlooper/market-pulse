@@ -276,6 +276,10 @@ There's deliberately no offline cache: nothing from the dashboard is stored on t
     from SEC data only (`app/dilution.py`):
     - filing history: a pending S-1 (+2), an active shelf (+1), offerings in the last 12 months
       (+1, or +2 for two or more), private share sales (8-K 3.02, +1), a delisting notice (+1);
+    - warrants, from the first pages of the 3 newest offerings and private sales of the past
+      year: sold with an offering (+1), and outstanding warrants worth 10% or more of the shares
+      (+1; smaller overhangs are noted without points). The panel's *Warrants* figure shows the
+      outstanding shares and their average exercise price, with the filing it came from;
     - XBRL financials: cash, monthly operating burn and the months of cash left at that rate
       (+2 under 6 months, +1 under 12; positive cash flow −1), and the share count against a
       year earlier (+2 for 50% more, +1 for 20%).
@@ -343,6 +347,13 @@ There's deliberately no offline cache: nothing from the dashboard is stored on t
     the holding grew. Trades under a 10b5-1 plan are marked. *Insider sales* show only for
     watchlist stocks. Awards, option exercises and tax withholding are ignored.
   - *13D stake* (blue): an investor crossing 5% with an active intent, with the stake size.
+  - **Warrants**: for offerings and private share sales (8-K 3.02), the first pages of the
+    filing are read for warrants (`app/warrants.py`). If the offering sells them, the alert and
+    news item say *· with warrants* and give what the cover states, e.g. *pre-funded warrants for
+    400K shares, warrants for 43.6M shares (Series D) at $0.66*. Warrants already outstanding go
+    into the item's description. Shelf boilerplate ("we may offer… warrants") doesn't count. Best
+    effort: wording varies, so a miss means "not on the first pages", not "none". Only the
+    numbers are kept; no text from the filing, which can name people.
   - *8-K events* (amber): every 8-K is labelled by its items (earnings, material agreement…).
     The notable ones get an amber badge and a note on what they mean: delisting notice (3.01),
     unregistered share sale (3.02, dilution that never shows up as a prospectus),
@@ -446,6 +457,7 @@ app/
   recap.py    end-of-day recap message and its schedule
   setup.py    dashboard settings (write-only secrets) and the first-run checklist
   tls.py      HTTPS: a name-constrained local CA and the server certificate it signs
+  warrants.py warrant overhang signals from a filing's first pages (sold, outstanding)
   serve.py    python -m app.serve [--https]: starts the app, as the background service does
   clock.py    the market clock: real time, or a replayed day's time and speed
   replay.py   record what the data sources answer, and replay it offline (python -m app.replay)

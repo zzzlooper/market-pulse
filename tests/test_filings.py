@@ -237,7 +237,8 @@ def test_first_poll_is_a_baseline_and_later_filings_alert_for_watchlist_and_move
     }  # no 424B2, unlisted S-1, tiny buy, or sale outside the watchlist
     offering = by_title["Acme Corp: offering from shelf (424B5)"]
     assert offering["alert"] and offering["filing"] == {
-        "kind": "dilution", "form": "424B5", "label": "offering from shelf", "hot": "top gainer +45%"}
+        "kind": "dilution", "form": "424B5", "label": "offering from shelf", "hot": "top gainer +45%",
+        "warrants": None}
     assert offering["sentiment"]["label"] == "bearish" and offering["tickers"] == ["ACME"]
     assert by_title["Apple Inc: CEO sold 1,000 shares at $250.00 ($250K)"]["filing"]["hot"] == "watchlist"
     assert not by_title["Zzz Inc: CEO bought 20,000 shares at $3.00 ($60K)"]["alert"]  # not watched, not moving
@@ -246,7 +247,7 @@ def test_first_poll_is_a_baseline_and_later_filings_alert_for_watchlist_and_move
 
     # Each Form 4 is fetched once although it appears under both the issuer and the insider.
     docs = [r.url.path for r in sec.requests if r.url.path.endswith(".txt")]
-    assert len(docs) == len(set(docs)) == 5
+    assert len(docs) == len(set(docs)) == 7  # 5 insider/13D documents + the 2 offerings' first pages (warrants)
 
 
 def test_the_contact_address_only_goes_to_sec_gov():
