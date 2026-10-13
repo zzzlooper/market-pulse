@@ -13,6 +13,7 @@ ROOT = Path(__file__).resolve().parent.parent
 CONFIG_PATH = Path(os.environ.get("MARKET_PULSE_CONFIG") or ROOT / "config.toml")
 # MARKET_PULSE_DATA moves the data folder (watchlist state, reaction history), e.g. for tests.
 STATE_PATH = Path(os.environ.get("MARKET_PULSE_DATA") or ROOT / "data") / "state.json"
+TLS_DIR = STATE_PATH.parent / "tls"  # HTTPS certificates (app/tls.py), also used during a replay
 
 # 8-K filings come through app/filings.py, which tags their items; this feed is used only
 # when sec_filings is off.

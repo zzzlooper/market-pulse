@@ -38,7 +38,7 @@ def test_installs_a_unit_without_secrets_and_a_private_env_file(tmp_path):
     assert result.returncode == 0, result.stderr
     text = unit.read_text()
     assert f"WorkingDirectory={ROOT}" in text
-    assert f"ExecStart={ROOT}/.venv/bin/uvicorn app.main:app --host 127.0.0.1 --port 8000 --no-access-log" in text
+    assert f"ExecStart={ROOT}/.venv/bin/python -m app.serve --host 127.0.0.1 --port 8000\n" in text
     assert f"EnvironmentFile=-{env_file}" in text and "UMask=0077" in text
     assert "Environment=MARKET_PULSE_SERVICE=1" in text
     assert stat.S_IMODE(env_file.stat().st_mode) == 0o600
@@ -57,7 +57,7 @@ def test_values_in_the_env_file_are_used_but_never_printed_or_copied(tmp_path):
     assert SECRET_AGENT not in output and SECRET_TOKEN not in output
     assert "still the example" not in output
     assert SECRET_TOKEN not in unit.read_text() and SECRET_AGENT not in unit.read_text()
-    assert "--host 0.0.0.0 --port 8123" in unit.read_text()
+    assert "--host 0.0.0.0 --port 8123\n" in unit.read_text()
     assert calls[-2:] == ["--user enable --now market-pulse.service", "--user restart market-pulse.service"]
     assert stat.S_IMODE(env_file.stat().st_mode) == 0o600
 
@@ -80,3 +80,14 @@ def test_uninstall_removes_the_unit_and_keeps_settings(tmp_path):
     unit, env_file = paths(tmp_path)
     assert result.returncode == 0 and not unit.exists() and env_file.exists()
     assert "--user disable --now market-pulse.service" in calls
+
+
+def test_https_is_switched_on_with_mp_https(tmp_path):
+    install(tmp_path)
+    unit, env_file = paths(tmp_path)
+    env_file.write_text(f"ACCESS_TOKEN={SECRET_TOKEN}\n")
+    result, _ = install(tmp_path, MP_HOST="0.0.0.0", MP_HTTPS="1")
+    assert result.returncode == 0, result.stderr
+    assert "--host 0.0.0.0 --port 8000 --https\n" in unit.read_text()
+    bad, _ = install(tmp_path, MP_HTTPS="yes")
+    assert bad.returncode == 1 and "MP_HTTPS must be 0 or 1" in bad.stderr

@@ -194,8 +194,42 @@ uvicorn app.main:app --host 0.0.0.0
 - The WebSocket refuses pages served by other websites, token or not, so a site you visit
   can't read your dashboard through `localhost`.
 - The app logs a warning at startup if `public_url` is set without a token.
-- It's plain HTTP: anyone who can watch your Wi-Fi traffic can see the token. Use it on a home
-  network, or put it behind HTTPS (a reverse proxy, or Tailscale) to go further.
+- Over plain HTTP, anyone who can watch your network traffic can see the token and the
+  dashboard. That's fine on your own password-protected home Wi-Fi, never on public or shared
+  Wi-Fi. To encrypt it, use HTTPS (next section); Setup's checklist says which one you're on.
+
+### HTTPS with Market Pulse's own certificate
+
+```sh
+MP_HOST=0.0.0.0 MP_HTTPS=1 sh scripts/install-service.sh --enable   # or: python -m app.serve --host 0.0.0.0 --https
+```
+
+Market Pulse creates a small certificate authority (CA) of its own, once, and with it a server
+certificate for this computer's private addresses (`data/tls/`). Install the CA certificate on
+your phone once; after that the dashboard opens with no warnings, also after renewals or when
+the computer gets a new address.
+
+1. On the phone, open `https://<computer's address>:8000/market-pulse-ca.crt`. The first time
+   the browser warns that it doesn't trust the connection yet: continue, just for this.
+2. iPhone: Settings › General › VPN & Device Management › install the "Market Pulse local CA"
+   profile, then Settings › General › About › Certificate Trust Settings › turn on full trust.
+   Android: Settings › Security › Encryption & credentials › Install a certificate › CA
+   certificate, and pick the downloaded file.
+3. Compare the fingerprint the phone shows with the one in Setup (*Secure phone access*).
+
+Safety:
+- The CA is name-constrained to `localhost` and private network addresses (192.168.x.x,
+  10.x.x.x, 172.16–31.x.x, 100.64.x.x, fc00::/7). Even if its key leaked, it couldn't vouch for
+  any public website on your phone: browsers reject such certificates (a test forges one for
+  `bank.example` with the CA's key and checks it's refused).
+- Both private keys stay in `data/tls/`, readable by you only, and are never shown or sent;
+  only the CA certificate, which is public, can be downloaded. The sign-in cookie becomes
+  HTTPS-only.
+- The server certificate lists addresses only, not this computer's name: anyone who connects
+  sees the certificate, and computer names often contain a person's name. So open the dashboard
+  by address (`https://192.168.1.20:8000`).
+- The server certificate lasts 397 days (what phones accept) and is renewed, along with any new
+  address, every time Market Pulse starts; Setup warns when a restart is due.
 
 On a phone the dashboard is one column: watchlist, news, the tabs (unusual volume, halts,
 gaps, reactions), movers, then alert settings. A tapped alert opens the ticker full-screen,
@@ -411,6 +445,8 @@ app/
   earnings.py next earnings dates: before the open / after the close, brief and recap lines
   recap.py    end-of-day recap message and its schedule
   setup.py    dashboard settings (write-only secrets) and the first-run checklist
+  tls.py      HTTPS: a name-constrained local CA and the server certificate it signs
+  serve.py    python -m app.serve [--https]: starts the app, as the background service does
   clock.py    the market clock: real time, or a replayed day's time and speed
   replay.py   record what the data sources answer, and replay it offline (python -m app.replay)
   sentiment.py  rule-based headline sentiment (finance lexicon + negation)

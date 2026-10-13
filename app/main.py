@@ -34,6 +34,7 @@ from .config import (
     DEFAULT_WATCHLIST,
     ROOT,
     STATE_PATH,
+    TLS_DIR,
     UserState,
     load_settings,
 )
@@ -43,6 +44,8 @@ from .market import CHART_RANGES
 from .market import ET as market_ET
 from .replay import Player, Recorder, replay_settings
 from .setup import EDITABLE, GENERATED, DashboardSettings, SettingsError, checklist
+from .tls import ca_der
+from .tls import status as tls_status
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(name)s: %(message)s")
 # httpx logs every request URL at INFO; Telegram bot URLs contain the bot token and ntfy URLs
@@ -285,7 +288,8 @@ def setup(request: Request):
         health=engine.health.status(), watchlist=engine.state.watchlist, default_watchlist=DEFAULT_WATCHLIST,
         recap_on=engine.state.phone_alerts.get("recap", False), local_client=is_loopback(client),
         local_server=is_loopback(server[0]), https=request.url.scheme == "https",
-        under_systemd=os.environ.get("MARKET_PULSE_SERVICE") == "1")  # set by scripts/install-service.sh
+        under_systemd=os.environ.get("MARKET_PULSE_SERVICE") == "1",  # set by scripts/install-service.sh
+        tls=tls_status(TLS_DIR))
     if REPLAY:
         items.insert(0, {"id": "replay", "state": "info", "title": "This is a replay",
                          "detail": "Settings changed here apply to this replay only, and nothing is sent anywhere.",
@@ -298,6 +302,24 @@ def reactions(days: int = 30):
     if not 1 <= days <= 365:
         raise HTTPException(422, "days must be between 1 and 365")
     return engine.reactions_report(days)
+
+
+@app.get("/market-pulse-ca.crt")
+def ca_certificate():
+    """The public CA certificate, for installing on a phone. Never a key. Served without the
+    token so a phone can fetch it before trusting the dashboard; it reveals nothing private."""
+    der = ca_der(TLS_DIR)
+    if der is None:
+        raise HTTPException(404, "HTTPS isn't set up: start Market Pulse with --https first")
+    return Response(der, media_type="application/x-x509-ca-cert",
+                    headers={"Content-Disposition": 'attachment; filename="market-pulse-ca.crt"'})
+
+
+@app.get("/api/tls")
+def tls_info(request: Request):
+    """Public facts for Setup: fingerprint, covered addresses, renewal date. No keys."""
+    return JSONResponse({**tls_status(TLS_DIR), "https": request.url.scheme == "https"},
+                        headers=NO_STORE)
 
 
 class DeleteDataIn(BaseModel):

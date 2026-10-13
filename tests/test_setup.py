@@ -193,8 +193,22 @@ def test_checklist_flags_an_exposed_dashboard_without_a_token():
     assert items(local_client=False)["access"]["state"] == "warn"
     assert items(local_server=False)["access"]["state"] == "warn"
     assert items()["access"]["state"] == "info"
-    lan = items(local_client=False, settings={"access_token": TOKEN})["access"]
-    assert lan["state"] == "info" and "plain HTTP" in lan["detail"]
+    lan = items(local_client=False, settings={"access_token": TOKEN})
+    assert lan["access"]["state"] == "ok"
+
+
+def test_checklist_says_whether_the_connection_is_encrypted():
+    token = {"access_token": TOKEN}
+    plain = items(local_client=False, settings=token)["https"]
+    assert plain["state"] == "warn" and "isn't encrypted" in plain["title"]
+    assert "home Wi-Fi" in plain["detail"] and "MP_HTTPS=1" in plain["fix"]["command"]
+    tls = {"exists": True, "server_expires": "2027-11-14", "renew_soon": False}
+    ok = items(local_client=False, https=True, settings=token, tls=tls)["https"]
+    assert ok["state"] == "ok" and "2027-11-14" in ok["detail"]
+    due = items(local_client=False, https=True, settings=token, tls={**tls, "renew_soon": True})["https"]
+    assert due["state"] == "warn" and "restart" in due["fix"]["command"]
+    assert items(settings=token)["https"]["state"] == "info"  # local, with a token: offered, not pushed
+    assert "https" not in items()  # no token, this computer only: not mentioned
 
 
 def test_checklist_covers_phone_service_data_and_extras():

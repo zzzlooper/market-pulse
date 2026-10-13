@@ -275,10 +275,10 @@ def test_on_a_phone_back_closes_setup_and_the_close_button_does_too(page, world)
 def test_setup_lists_your_data_and_deletes_the_reaction_history_after_confirming(page, world):
     on_a_phone(page, world)
     page.click("#setup-btn")
-    page.wait("document.querySelectorAll('.data-list li').length >= 6")
+    page.wait("document.querySelectorAll('.data-list li').length >= 7")
     rows = page.eval("[...document.querySelectorAll('.data-list li b')].map(b => b.textContent)")
     assert rows == ["Watchlist, keywords and alert rules", "Settings saved in Setup", "Catalyst reaction history",
-                    "Recordings for replay", "Log", "This browser"]
+                    "Recordings for replay", "HTTPS certificates", "Log", "This browser"]
     html = page.eval("document.querySelector('#setup').innerHTML")
     assert "/home/" not in html and "/tmp/" not in html  # paths are shown relative, never in full
     assert page.eval(OFF_SCREEN.replace("SCOPE", "#setup *")) == []

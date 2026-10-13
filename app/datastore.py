@@ -96,6 +96,19 @@ def recordings_item(folder: Path, keep: int, active: Path | None) -> dict:
     }
 
 
+def tls_item(folder: Path, status: dict) -> dict:
+    if not status.get("exists"):
+        detail = "Not set up (start with --https to create them)"
+    else:
+        detail = (f"Market Pulse's own CA and server certificate, renews before {status['server_expires']}; "
+                  f"CA fingerprint {status['fingerprint'][:23]}…")
+    return {
+        "id": "tls", "label": "HTTPS certificates", "path": shown_path(folder),
+        "size": _size(folder) if folder.is_dir() else 0, "deletable": False, "detail": detail,
+        "note": "The private keys are readable by you only and never shown or sent; only the CA certificate is public.",
+    }
+
+
 def log_item() -> dict:
     return {
         "id": "log", "label": "Log", "path": None, "size": None, "deletable": False,

@@ -221,11 +221,12 @@ def apply(live: Settings, fresh: Settings, names: list[str]) -> list[str]:
 
 
 SERVICE_COMMAND = "sh scripts/install-service.sh --enable"
+HTTPS_COMMAND = "MP_HOST=0.0.0.0 MP_HTTPS=1 sh scripts/install-service.sh --enable"
 
 
 def checklist(settings: Settings, *, channels: list[str], phone_error: str | None, health: list[dict],
               watchlist: list[str], default_watchlist: list[str], recap_on: bool, local_client: bool,
-              local_server: bool, https: bool, under_systemd: bool) -> list[dict]:
+              local_server: bool, https: bool, under_systemd: bool, tls: dict | None = None) -> list[dict]:
     """First-run checklist. state: todo (needed), warn (something's wrong), ok, or info (optional)."""
     items = []
 
@@ -245,14 +246,31 @@ def checklist(settings: Settings, *, channels: list[str], phone_error: str | Non
             "Market Pulse is reachable from other devices without an access token. Generate one.",
             {"field": "access_token"})
     elif settings.access_token:
-        detail = "Every device signs in once with it."
-        if exposed and not https:
-            detail += " This connection is plain HTTP: use it on a home network you trust."
-        add("access", "ok" if https or not exposed else "info", "Access token set", detail)
+        add("access", "ok", "Access token set", "Every device signs in once with it.")
     else:
         add("access", "info", "Open it from your phone (optional)",
             "Generate an access token first, then start it with MP_HOST=0.0.0.0 (see README).",
             {"field": "access_token"})
+
+    # Encryption: only worth a line once the dashboard is (or is meant to be) used from elsewhere.
+    tls = tls or {}
+    if https:
+        detail = f"Encrypted with Market Pulse's own certificate; it renews before {tls.get('server_expires', '?')}."
+        if tls.get("renew_soon"):
+            add("https", "warn", "HTTPS certificate due for renewal",
+                "Restart Market Pulse to renew it (the service does this on every start).",
+                {"command": "systemctl --user restart market-pulse"})
+        else:
+            add("https", "ok", "Connection encrypted (HTTPS)", detail)
+    elif exposed:
+        add("https", "warn", "This connection isn't encrypted",
+            "Anyone who can watch this network could read the access token and the dashboard. Fine on your "
+            "own home Wi-Fi; never on public or shared Wi-Fi. To encrypt it, start Market Pulse with HTTPS:",
+            {"command": HTTPS_COMMAND})
+    elif settings.access_token:
+        add("https", "info", "Encrypt phone access (optional)",
+            "Serve HTTPS with Market Pulse's own certificate, then install that certificate on your phone once:",
+            {"command": HTTPS_COMMAND})
 
     if not channels:
         add("phone", "todo", "Set up phone alerts",

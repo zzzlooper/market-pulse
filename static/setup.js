@@ -4,7 +4,7 @@
 // most) and never sends one back, except a value it has just generated, shown once below so
 // you can copy it to your phone. Secret inputs are always empty and never pre-filled.
 
-const setup = { open: false, items: [], fields: [], generated: null, data: [] };
+const setup = { open: false, items: [], fields: [], generated: null, data: [], tls: {} };
 const SETUP_SEEN = "mp-setup-seen-v1";  // per browser: the checklist opened itself once
 const SETUP_GROUPS = [
   ["SEC contact", ["sec_user_agent"]],
@@ -25,8 +25,9 @@ const isLocalPage = () => ["localhost", "127.0.0.1", "[::1]"].includes(location.
 
 async function loadSetup(autoOpen = false) {
   try {
-    const [s, f, d] = await Promise.all([api("GET", "/api/setup"), api("GET", "/api/settings"), api("GET", "/api/data")]);
-    Object.assign(setup, { items: s.items, fields: f.fields, data: d.stores });
+    const [s, f, d, t] = await Promise.all([api("GET", "/api/setup"), api("GET", "/api/settings"),
+                                            api("GET", "/api/data"), api("GET", "/api/tls")]);
+    Object.assign(setup, { items: s.items, fields: f.fields, data: d.stores, tls: t });
   } catch {
     return;  // signed out or offline: the login prompt or connection pill says so
   }
@@ -104,6 +105,32 @@ function fieldRow(f) {
   </div>`;
 }
 
+// Installing Market Pulse's own CA certificate on a phone: once, then HTTPS just works.
+function httpsBox() {
+  const t = setup.tls;
+  if (!t?.exists) return "";
+  const port = location.port || (location.protocol === "https:" ? "443" : "80");
+  const urls = t.addresses.filter((a) => !a.includes(":")).map((a) => `https://${a}:${port}`);
+  return `<div class="https-box">
+    <b>Secure phone access</b>${t.https ? " <small class=\"up\">· this connection is encrypted</small>" : ""}
+    <p>Certificate fingerprint (SHA-256), to compare on the phone:<br><code class="fp">${esc(t.fingerprint)}</code></p>
+    <p class="muted">Covers ${esc(urls.join(", ") || "this computer only")}; renews before ${esc(t.server_expires)}.
+      It can only vouch for private addresses, never for a public website.</p>
+    <details><summary>Install it on your phone (once)</summary>
+      <ol>
+        <li>On the phone, open <code>${esc(urls[0] ?? "https://<this computer's address>:" + port)}/market-pulse-ca.crt</code>.
+          The first time, the browser warns that the connection isn't trusted yet: continue anyway, just for this.</li>
+        <li><b>iPhone:</b> Settings › General › VPN & Device Management › install the "Market Pulse local CA" profile,
+          then Settings › General › About › Certificate Trust Settings › turn on full trust for it.</li>
+        <li><b>Android:</b> Settings › Security › Encryption & credentials › Install a certificate › CA certificate,
+          and pick the downloaded file.</li>
+        <li>Check the fingerprint the phone shows against the one above, then reopen the dashboard: no more warnings.</li>
+      </ol>
+      <a class="button-link" href="/market-pulse-ca.crt" download>Download the certificate here</a>
+    </details>
+  </div>`;
+}
+
 function fmtBytes(n) {
   if (n == null) return "";
   if (n < 1024) return `${n} B`;
@@ -145,6 +172,7 @@ function renderSetup() {
       unencrypted. Prefer setting secrets on the computer running Market Pulse.</p>` : ""}
     <p class="muted fine">Saved in data/settings.json, readable by you only. Secrets are never shown again
       after saving; type a new value to replace one. config.toml and environment variables still work.</p>
+    ${httpsBox()}
     ${yourData()}
     ${SETUP_GROUPS.map(([title, names]) => `
       <form class="set-group" data-group>

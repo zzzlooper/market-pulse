@@ -8,6 +8,7 @@
 #
 # Listening address: MP_HOST (default 127.0.0.1, this computer only) and MP_PORT (default 8000).
 # MP_HOST=0.0.0.0 for phone access is refused unless an access token is set.
+# MP_HTTPS=1 serves HTTPS with Market Pulse's own certificates (app/tls.py), renewed at each start.
 #
 # Privacy: the unit file holds no secrets. Your SEC contact address and any tokens go in an
 # environment file only you can read (~/.config/market-pulse/env, mode 600), or in config.toml,
@@ -23,6 +24,7 @@ ENV_DIR=$CONFIG_HOME/market-pulse
 ENV_FILE=$ENV_DIR/env
 HOST=${MP_HOST:-127.0.0.1}
 PORT=${MP_PORT:-8000}
+HTTPS=${MP_HTTPS:-0}
 SYSTEMCTL=${SYSTEMCTL:-systemctl}  # tests point this at a stub
 
 case "${1:-}" in
@@ -44,6 +46,10 @@ case $HOST in
 esac
 case $PORT in
   ''|*[!0-9]*) echo "MP_PORT must be a number" >&2; exit 1 ;;
+esac
+case $HTTPS in
+  0|1) ;;
+  *) echo "MP_HTTPS must be 0 or 1" >&2; exit 1 ;;
 esac
 if [ ! -x "$APP_DIR/.venv/bin/uvicorn" ]; then
   echo "No virtualenv with uvicorn in $APP_DIR/.venv: set it up first (see README, Run)." >&2
@@ -105,7 +111,7 @@ WorkingDirectory=$APP_DIR
 EnvironmentFile=-$ENV_FILE
 # Tells the dashboard's setup checklist it runs as this service.
 Environment=MARKET_PULSE_SERVICE=1
-ExecStart=$APP_DIR/.venv/bin/uvicorn app.main:app --host $HOST --port $PORT --no-access-log
+ExecStart=$APP_DIR/.venv/bin/python -m app.serve --host $HOST --port $PORT$( [ "$HTTPS" = 1 ] && printf ' --https' )
 Restart=on-failure
 RestartSec=10
 # data/state.json and anything else the app writes is readable by you only.
@@ -121,7 +127,9 @@ echo "Installed $UNIT (listening on $HOST:$PORT)."
 if [ "${1:-}" = "--enable" ]; then
   "$SYSTEMCTL" --user enable --now market-pulse.service
   "$SYSTEMCTL" --user restart market-pulse.service  # pick up a changed unit or settings
-  echo "Running. Open http://localhost:$PORT  ·  logs: journalctl --user -u market-pulse -f"
+  SCHEME=http; [ "$HTTPS" = 1 ] && SCHEME=https
+  echo "Running. Open $SCHEME://localhost:$PORT  ·  logs: journalctl --user -u market-pulse -f"
+  [ "$HTTPS" = 1 ] && echo "On your phone: open Setup there, or $SCHEME://<this computer's address>:$PORT/market-pulse-ca.crt, and install the certificate once (README: HTTPS)." || true
 else
   echo "Start it with: systemctl --user enable --now market-pulse"
 fi

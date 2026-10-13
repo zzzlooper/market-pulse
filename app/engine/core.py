@@ -13,7 +13,7 @@ from fastapi import WebSocket
 from .. import market
 from ..alerts import AlertMonitor, new_rule
 from ..clock import clock
-from ..config import Settings, UserState
+from ..config import TLS_DIR, Settings, UserState
 from ..datastore import (
     DELETABLE,
     delete_recordings,
@@ -22,6 +22,7 @@ from ..datastore import (
     recordings_item,
     settings_item,
     state_item,
+    tls_item,
 )
 from ..dilution import DilutionProfiles
 from ..filings import FilingsFeed
@@ -33,6 +34,7 @@ from ..notify import PhoneNotifier, from_alert, from_outage
 from ..replay import LiveIO, Recorder
 from ..sec import SecClient
 from ..setup import EDITABLE, DashboardSettings, SettingsError, apply, validate
+from ..tls import status as tls_status
 from .catalysts import REACTIONS_INTERVAL, CatalystsMixin
 from .daily import DailyMixin
 from .earnings import EARNINGS_INTERVAL, EarningsMixin
@@ -368,6 +370,7 @@ class Engine(PricesMixin, FeedsMixin, RiskMixin, CatalystsMixin, DailyMixin, Gap
             settings_item(self.dashboard.path),
             reactions_item(self.reactions.path, self.reactions.stats(), self.settings.reactions_keep_days),
             recordings_item(folder, self.settings.record_keep, active),
+            tls_item(TLS_DIR, tls_status(TLS_DIR)),
             log_item(),
         ]
 

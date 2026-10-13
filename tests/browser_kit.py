@@ -16,6 +16,7 @@ import json
 import os
 import shutil
 import socket
+import ssl
 import subprocess
 import sys
 import time
@@ -57,23 +58,38 @@ def wait_for(check, timeout: float, what: str):
 
 
 class ReplayServer:
-    """The app replaying `recording` from `start` (HH:MM ET), on a free local port."""
+    """The app replaying `recording` from `start` (HH:MM ET), on a free local port. With
+    https=True it starts the way the background service does (python -m app.serve --https),
+    with its own certificates in the throwaway data folder."""
 
-    def __init__(self, recording: Path, folder: Path, start: str, config: str = ""):
+    def __init__(self, recording: Path, folder: Path, start: str, config: str = "", https: bool = False):
         self.port = free_port()
-        self.url = f"http://127.0.0.1:{self.port}"
+        self.url = f"{'https' if https else 'http'}://127.0.0.1:{self.port}"
+        self.data = folder / "data"
         folder.mkdir(parents=True, exist_ok=True)
         (folder / "config.toml").write_text(config)
         env = {"PATH": os.environ.get("PATH", ""), "HOME": str(folder), "LANG": "C.UTF-8",
-               "MARKET_PULSE_CONFIG": str(folder / "config.toml"), "MARKET_PULSE_DATA": str(folder / "data")}
+               "MARKET_PULSE_CONFIG": str(folder / "config.toml"), "MARKET_PULSE_DATA": str(self.data)}
+        if https:
+            env |= {"MARKET_PULSE_REPLAY": str(recording), "MARKET_PULSE_REPLAY_FROM": start}
+            command = [sys.executable, "-m", "app.serve", "--https", "--port", str(self.port)]
+        else:
+            command = [sys.executable, "-m", "app.replay", "play", str(recording), "--from", start, "--port", str(self.port)]
+        self._ca = self.data / "tls" / "ca.crt" if https else None
         self._log = open(folder / "server.log", "w")  # noqa: SIM115 - the server's output for its lifetime; closed in stop()
-        self._proc = subprocess.Popen(
-            [sys.executable, "-m", "app.replay", "play", str(recording), "--from", start, "--port", str(self.port)],
-            cwd=ROOT, env=env, stdout=self._log, stderr=subprocess.STDOUT)
-        wait_for(lambda: httpx.get(f"{self.url}/", timeout=1).status_code in (200, 401), 30, "the replay server")
+        self._proc = subprocess.Popen(command, cwd=ROOT, env=env, stdout=self._log, stderr=subprocess.STDOUT)
+        wait_for(lambda: httpx.get(f"{self.url}/", timeout=1, verify=self.verify).status_code in (200, 401), 30,
+                 "the replay server")
+
+    @property
+    def verify(self):
+        """What httpx should trust: this server's own CA when it serves HTTPS."""
+        if self._ca is None:
+            return True
+        return ssl.create_default_context(cafile=str(self._ca)) if self._ca.exists() else False
 
     def get(self, path: str, **kw) -> httpx.Response:
-        return httpx.get(self.url + path, timeout=5, **kw)
+        return httpx.get(self.url + path, timeout=5, verify=self.verify, **kw)
 
     def stop(self) -> None:
         self._proc.terminate()
@@ -85,13 +101,15 @@ class ReplayServer:
 
 
 class Browser:
-    def __init__(self, folder: Path):
+    def __init__(self, folder: Path, extra_args: list[str] = ()):
         self.port = free_port()
         self.profile = folder / "chromium-profile"
+        # A throwaway HOME too, so Chromium doesn't even read your certificate store (~/.pki).
+        env = {"PATH": os.environ.get("PATH", ""), "HOME": str(self.profile), "LANG": "C.UTF-8"}
         self._proc = subprocess.Popen(
-            [CHROMIUM, *QUIET_CHROMIUM, f"--remote-debugging-port={self.port}", f"--user-data-dir={self.profile}",
-             "about:blank"],
-            stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+            [CHROMIUM, *QUIET_CHROMIUM, *extra_args, f"--remote-debugging-port={self.port}",
+             f"--user-data-dir={self.profile}", "about:blank"],
+            env=env, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
         wait_for(lambda: httpx.get(f"http://127.0.0.1:{self.port}/json/version", timeout=1).status_code == 200,
                  30, "Chromium")
 
