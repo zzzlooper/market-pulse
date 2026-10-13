@@ -94,6 +94,8 @@
           <option value="90">Last 90 days</option>
         </select>
         <small class="muted" id="reactions-note"></small>
+        <a id="reactions-csv" class="button-link" href="/api/reactions.csv?days=30" download
+           title="Tracked catalysts and their moves, as a spreadsheet file">Download CSV</a>
       </div>
       <h3 class="sub">By catalyst <small>median move from the event price</small></h3>
       <table>
@@ -220,6 +222,13 @@
     <button>Sign in</button>
   </form>
 </dialog>
+<!-- Plain scripts sharing globals, no build step. Order matters: each uses those above it. -->
+<script src="core.js"></script>
+<script src="tables.js"></script>
+<script src="tabs.js"></script>
+<script src="news.js"></script>
+<script src="alerts.js"></script>
+<script src="header.js"></script>
 <script src="app.js"></script>
 <script src="detail.js"></script>
 <script src="setup.js"></script>

@@ -195,3 +195,32 @@ def due(event: dict, now: int) -> bool:
 
 def now_ts() -> int:
     return int(clock.time())
+
+
+CSV_COLUMNS = ("time_et", "symbol", "type", "catalyst", "context", "dilution_risk",
+               "move_5m_pct", "move_30m_pct", "move_close_pct", "close_day", "headline")
+FORMULA_START = ("=", "+", "-", "@", "\t", "\r")
+
+
+def _text_cell(value) -> str:
+    """Text as a spreadsheet will show it. Headlines come from outside feeds, and a cell starting
+    with = + - @ could run as a formula when the file is opened, so it gets a leading '."""
+    text = "" if value is None else str(value)
+    return "'" + text if text.startswith(FORMULA_START) else text
+
+
+def to_csv(rows: list[dict]) -> str:
+    """Tracked catalysts and their moves, newest first. Market data only."""
+    import csv
+    import io
+
+    out = io.StringIO()
+    writer = csv.writer(out, lineterminator="\n")
+    writer.writerow(CSV_COLUMNS)
+    for row in rows:
+        r = returns(row)
+        moves = [f"{r[h]:.2f}" if r[h] is not None else "" for h in ("5m", "30m", "close")]
+        when = datetime.fromtimestamp(row["at"], ET).strftime("%Y-%m-%d %H:%M")
+        writer.writerow([when, *(_text_cell(row[k]) for k in ("symbol", "kind", "label", "context", "risk")),
+                         *moves, row["close_day"] or "", _text_cell(row["title"])])
+    return out.getvalue()

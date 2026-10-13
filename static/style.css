@@ -99,6 +99,9 @@ input, select, button {
   font: inherit;
 }
 button { cursor: pointer; }
+.button-link { border: 1px solid var(--border); border-radius: 4px; padding: 4px 8px; color: var(--text);
+  text-decoration: none; margin-left: auto; }
+.button-link:hover { border-color: var(--accent); }
 button:hover { border-color: var(--accent); }
 
 .inline-form { display: flex; gap: 6px; margin-bottom: 8px; }
@@ -456,6 +459,7 @@ tr.stale td { opacity: .45; }
 
   /* Fingers, not mouse pointers: ~40px targets, and 16px text so focusing a field doesn't zoom. */
   button, select, input:not([type=checkbox]) { min-height: 40px; font-size: 16px; }
+  .button-link { display: inline-flex; align-items: center; min-height: 40px; }
   input[type=checkbox] { width: 20px; height: 20px; }
   .filters label, .phone-cats label { min-height: 36px; }
   a.sym { display: inline-block; padding: 8px 2px; margin: -8px 0; }

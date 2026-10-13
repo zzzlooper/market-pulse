@@ -147,6 +147,21 @@ def test_reactions_tab_loads_its_report_and_the_recap_preview(page, world):
     assert page.wait("document.querySelector('#recap-preview').textContent.startsWith('Market Pulse · close recap')")
 
 
+def test_reactions_can_be_downloaded_as_a_csv_file(page, world):
+    open_dashboard(page, world)
+    page.click("[data-left-tab=reactions]")
+    page.wait("document.querySelector('#reactions-note').textContent.includes('tracked')")
+    page.eval("document.querySelector('#reactions-days').value = '7';"
+              " document.querySelector('#reactions-days').dispatchEvent(new Event('input'))")
+    href = page.wait("document.querySelector('#reactions-csv').href.endsWith('days=7')"
+                     " && document.querySelector('#reactions-csv').getAttribute('href')")
+    assert href == "/api/reactions.csv?days=7"
+    text = page.eval(f"fetch({json.dumps(href)}).then(r => r.text())")
+    lines = text.splitlines()
+    assert lines[0].startswith("time_et,symbol,type,catalyst")
+    assert any(",ACME,dilution,offering from shelf," in line for line in lines[1:])
+
+
 def test_setup_saves_a_secret_but_never_shows_it_back(page, world):
     open_dashboard(page, world)
     page.click("#setup-btn")

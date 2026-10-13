@@ -294,3 +294,45 @@ def test_offerings_without_a_risk_level_get_one_looked_up(tmp_path, monkeypatch)
     asyncio.run(scenario())
     assert engine.reactions.pending()[0]["risk"] == "high"
     close_engine(engine)
+
+
+def test_csv_export_has_market_data_only_and_defuses_formula_headlines(tmp_path, monkeypatch):
+    import csv
+    import io
+
+    from app.reactions import CSV_COLUMNS, to_csv
+    rows = [
+        event(AT, id="a", symbol="ACME", base=10.0, p5m=9.95, p30m=9.7, pclose=8.6, close_day="2026-10-13",
+              title="Acme Rocket Corp: offering from shelf (424B5)", m5m=1, m30m=1),
+        event(AT, id="b", symbol="EVIL", kind="headline", label="headline (neutral)", risk=None, context="other",
+              title='=HYPERLINK("http://bad.example","click")'),
+        event(AT, id="c", symbol="MINUS", title="-5% guidance cut", risk=None),
+    ]
+    table = list(csv.reader(io.StringIO(to_csv(rows))))
+    assert tuple(table[0]) == CSV_COLUMNS
+    acme = dict(zip(CSV_COLUMNS, table[1]))
+    assert acme == {"time_et": "2026-10-13 10:00", "symbol": "ACME", "type": "dilution", "catalyst": "offering from shelf",
+                    "context": "mover", "dilution_risk": "high", "move_5m_pct": "-0.50", "move_30m_pct": "-3.00",
+                    "move_close_pct": "-14.00", "close_day": "2026-10-13",
+                    "headline": "Acme Rocket Corp: offering from shelf (424B5)"}
+    assert table[2][-1] == "'" + '=HYPERLINK("http://bad.example","click")'  # shown as text, never run
+    assert table[3][-1] == "'-5% guidance cut"
+    assert table[2][6:9] == ["", "", ""]  # not measured yet
+
+
+@pytest.fixture
+def csv_client(monkeypatch):
+    monkeypatch.setattr(main.engine.settings, "access_token", "")
+    return TestClient(main.app, base_url="http://localhost")
+
+
+def test_csv_download_is_an_attachment_and_validates_days(csv_client, monkeypatch):
+    monkeypatch.setattr(main.engine, "reactions_csv", lambda days: f"time_et,symbol\n# {days} days\n")
+    resp = csv_client.get("/api/reactions.csv?days=30")
+    assert resp.status_code == 200 and resp.text == "time_et,symbol\n# 30 days\n"
+    assert resp.headers["content-type"].startswith("text/csv")
+    assert resp.headers["content-disposition"].startswith('attachment; filename="market-pulse-reactions-')
+    assert resp.headers["cache-control"] == "no-store"
+    assert csv_client.get("/api/reactions.csv?days=0").status_code == 422
+    monkeypatch.setattr(main.engine.settings, "access_token", "mp-test-token-c5v")
+    assert csv_client.get("/api/reactions.csv").status_code == 401  # private like the rest of the API

@@ -40,6 +40,7 @@ from .config import (
 from .engine import Engine, Hub
 from .health import SourceError, describe
 from .market import CHART_RANGES
+from .market import ET as market_ET
 from .replay import Player, Recorder, replay_settings
 from .setup import EDITABLE, GENERATED, DashboardSettings, SettingsError, checklist
 
@@ -289,6 +290,17 @@ def reactions(days: int = 30):
     if not 1 <= days <= 365:
         raise HTTPException(422, "days must be between 1 and 365")
     return engine.reactions_report(days)
+
+
+@app.get("/api/reactions.csv")
+def reactions_csv(days: int = 90):
+    """The reaction history as a spreadsheet file, for your own analysis. Market data only."""
+    if not 1 <= days <= 3650:
+        raise HTTPException(422, "days must be between 1 and 3650")
+    day = clock.now(market_ET).strftime("%Y-%m-%d")  # the replayed day during a replay
+    return Response(engine.reactions_csv(days), media_type="text/csv; charset=utf-8", headers={
+        "Content-Disposition": f'attachment; filename="market-pulse-reactions-{day}.csv"',
+        "Cache-Control": "no-store"})
 
 
 @app.get("/api/recap")

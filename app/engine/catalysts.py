@@ -21,6 +21,7 @@ from ..reactions import (
     price_at,
     returns,
     summarize,
+    to_csv,
 )
 
 log = logging.getLogger(__name__)
@@ -102,6 +103,9 @@ class CatalystsMixin:
                     self._reaction_retry.pop(e["id"], None)
                 else:  # e.g. a weekend before the next close: don't download again every round
                     self._reaction_retry[e["id"]] = mono + REACTION_BACKOFF
+
+    def reactions_csv(self, days: int) -> str:
+        return to_csv(self.reactions.since(now_ts() - days * 86400))
 
     def reactions_report(self, days: int) -> dict:
         rows = self.reactions.since(now_ts() - days * 86400)

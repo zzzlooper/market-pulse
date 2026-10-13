@@ -353,6 +353,10 @@ There's deliberately no offline cache: nothing from the dashboard is stored on t
     the next close. Bars come one chart per stock per round, at most 20 a round.
   - Stored in `data/reactions.db` (SQLite, readable by you only): tickers, event types,
     headlines, times and prices. Nothing about you.
+  - *Download CSV* saves the tracked catalysts and their moves for the chosen period, for your
+    own spreadsheet: time, ticker, catalyst, context, dilution risk, the 5m/30m/close moves and
+    the headline. Headlines come from outside feeds, so any starting with = + - @ get a leading
+    apostrophe and open as text, never as a formula.
   - *n* is small for weeks; a median of 3 says little.
 - **Data health**: the header shows whether every data source is delivering (Yahoo prices,
   Yahoo movers, news feeds, Nasdaq halts, SEC filings, and the Finnhub stream when configured). Click it
@@ -411,8 +415,14 @@ app/
     gaps.py       the pre-market gap scanner and its brief
     earnings.py   the watchlist's next earnings dates
   main.py     FastAPI routes, access token and /ws endpoint
-static/       single-page dashboard (vanilla JS, no build step)
-  app.js      tables, news, alerts, halts, WebSocket client
+static/       single-page dashboard: plain scripts sharing globals, no build step, loaded in this order
+  core.js     state, formatting, the market clock, server calls
+  tables.js   table rows and badges (HALTED, DIL, ER, sentiment): watchlist, movers, unusual
+  tabs.js     left-panel tabs: halts, pre-market gaps, catalyst reactions
+  news.js     news feed, filters, keyword highlighting
+  alerts.js   alert rules and log, the Phone box, desktop notifications and sound
+  header.js   data-source health and the session clock
+  app.js      server messages, the live connection, sign-in, events, startup
   detail.js   ticker detail drawer and its canvas chart
   setup.js    Setup drawer: checklist and settings form
 scripts/
