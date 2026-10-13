@@ -268,3 +268,38 @@ def test_on_a_phone_back_closes_setup_and_the_close_button_does_too(page, world)
     page.wait("document.querySelector('#setup').hidden")
     # The × went back through history too, so no stale entry is left for the next Back.
     assert page.eval("history.state?.drawer ?? null") is None
+
+
+# --- your data (last: it deletes the replay's reaction history) -------------------------------------
+
+def test_setup_lists_your_data_and_deletes_the_reaction_history_after_confirming(page, world):
+    on_a_phone(page, world)
+    page.click("#setup-btn")
+    page.wait("document.querySelectorAll('.data-list li').length >= 6")
+    rows = page.eval("[...document.querySelectorAll('.data-list li b')].map(b => b.textContent)")
+    assert rows == ["Watchlist, keywords and alert rules", "Settings saved in Setup", "Catalyst reaction history",
+                    "Recordings for replay", "Log", "This browser"]
+    html = page.eval("document.querySelector('#setup').innerHTML")
+    assert "/home/" not in html and "/tmp/" not in html  # paths are shown relative, never in full
+    assert page.eval(OFF_SCREEN.replace("SCOPE", "#setup *")) == []
+    before = page.eval("[...document.querySelectorAll('.data-list li')].find(li => li.textContent.includes('reaction history')).innerText")
+    assert " 0 catalysts" not in before
+    page.eval("window.confirm = () => false")  # cancelling keeps everything
+    page.click("[data-delete-data=reactions]")
+    assert page.eval("!!document.querySelector('[data-delete-data=reactions]')")
+    page.eval("window.confirm = () => true")
+    page.click("[data-delete-data=reactions]")
+    page.wait("[...document.querySelectorAll('.data-list li')].find(li => li.textContent.includes('reaction history'))"
+              ".innerText.includes('0 catalysts')")
+    assert not page.eval("!!document.querySelector('[data-delete-data=reactions]')")  # nothing left to delete
+    assert world[0].get("/api/reactions?days=30").json()["tracked"] == 0
+
+
+def test_forgetting_this_browser_clears_what_it_stored(page, world):
+    open_dashboard(page, world)
+    page.click("#setup-btn")
+    page.wait("localStorage.getItem('mp-setup-seen-v1') === '1' && !!document.querySelector('[data-forget-browser]')")
+    page.eval("window.confirm = () => true")
+    page.click("[data-forget-browser]")
+    page.wait("document.readyState === 'complete' && localStorage.getItem('mp-setup-seen-v1') === null"
+              " && document.querySelectorAll('#watchlist tr:not(.empty)').length === 2")

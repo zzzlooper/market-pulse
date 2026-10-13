@@ -4,7 +4,7 @@
 // most) and never sends one back, except a value it has just generated, shown once below so
 // you can copy it to your phone. Secret inputs are always empty and never pre-filled.
 
-const setup = { open: false, items: [], fields: [], generated: null };
+const setup = { open: false, items: [], fields: [], generated: null, data: [] };
 const SETUP_SEEN = "mp-setup-seen-v1";  // per browser: the checklist opened itself once
 const SETUP_GROUPS = [
   ["SEC contact", ["sec_user_agent"]],
@@ -13,6 +13,7 @@ const SETUP_GROUPS = [
   ["Real-time prices", ["finnhub_api_key"]],
   ["Alert tuning", ["rvol_threshold", "min_volume", "insider_min_value", "gap_min_pct", "gap_brief_time", "recap_time"]],
   ["Record and replay", ["record"]],
+  ["Keeping your data", ["reactions_keep_days"]],
 ];
 const SETUP_ICON = { ok: "✓", todo: "○", warn: "!", info: "i" };
 const GENERATED_NOTE = {
@@ -24,8 +25,8 @@ const isLocalPage = () => ["localhost", "127.0.0.1", "[::1]"].includes(location.
 
 async function loadSetup(autoOpen = false) {
   try {
-    const [s, f] = await Promise.all([api("GET", "/api/setup"), api("GET", "/api/settings")]);
-    Object.assign(setup, { items: s.items, fields: f.fields });
+    const [s, f, d] = await Promise.all([api("GET", "/api/setup"), api("GET", "/api/settings"), api("GET", "/api/data")]);
+    Object.assign(setup, { items: s.items, fields: f.fields, data: d.stores });
   } catch {
     return;  // signed out or offline: the login prompt or connection pill says so
   }
@@ -103,6 +104,27 @@ function fieldRow(f) {
   </div>`;
 }
 
+function fmtBytes(n) {
+  if (n == null) return "";
+  if (n < 1024) return `${n} B`;
+  return n < 1024 * 1024 ? `${(n / 1024).toFixed(0)} KB` : `${(n / 1024 / 1024).toFixed(1)} MB`;
+}
+
+// What's kept on this computer, and in this browser. No contents, no values: sizes, counts, dates.
+function yourData() {
+  const browserNote = "Remembers only that Setup has opened once" +
+    (setup.fields.find((f) => f.name === "access_token")?.set ? ", and keeps you signed in (a cookie only the server can read)" : "");
+  return `<h3 class="sub">Your data <small>kept on this computer; nothing is sent anywhere</small></h3>
+    <ul class="data-list">${setup.data.map((d) => `
+      <li><div><b>${esc(d.label)}</b>${d.path ? ` <code>${esc(d.path)}</code>` : ""}
+        ${d.size != null ? `<small class="muted">· ${fmtBytes(d.size)}</small>` : ""}
+        <p>${esc(d.detail)}</p><p class="muted">${esc(d.note)}</p></div>
+        ${d.deletable ? `<button type="button" class="danger" data-delete-data="${esc(d.id)}">Delete</button>` : ""}</li>`).join("")}
+      <li><div><b>This browser</b><p>${esc(browserNote)}</p></div>
+        <button type="button" data-forget-browser>Forget</button></li>
+    </ul>`;
+}
+
 function renderSetup() {
   const byName = Object.fromEntries(setup.fields.map((f) => [f.name, f]));
   const g = setup.generated;
@@ -123,6 +145,7 @@ function renderSetup() {
       unencrypted. Prefer setting secrets on the computer running Market Pulse.</p>` : ""}
     <p class="muted fine">Saved in data/settings.json, readable by you only. Secrets are never shown again
       after saving; type a new value to replace one. config.toml and environment variables still work.</p>
+    ${yourData()}
     ${SETUP_GROUPS.map(([title, names]) => `
       <form class="set-group" data-group>
         <h3 class="sub">${esc(title)}</h3>
@@ -200,6 +223,19 @@ $("#setup").addEventListener("click", async (ev) => {
         getSelection().selectAllChildren(code);
         toast("Selected: copy it with Ctrl+C");
       }
+    } else if (el.dataset.deleteData) {
+      const store = setup.data.find((d) => d.id === el.dataset.deleteData);
+      if (!store || !confirm(store.confirm)) return;
+      setup.data = (await api("POST", "/api/data/delete", { store: store.id })).stores;
+      toast(`Deleted: ${store.label.toLowerCase()}`);
+      await loadSetup();
+      if (store.id === "reactions" && state.leftTab === "reactions") loadReactions();
+    } else if (el.dataset.forgetBrowser !== undefined) {
+      if (!confirm("Forget this browser? It clears what Market Pulse stored here and signs it out if an access token is set.")) return;
+      try { localStorage.removeItem(SETUP_SEEN); } catch { /* nothing stored */ }
+      await fetch("/api/logout", { method: "POST" });
+      toast("This browser is forgotten");
+      location.reload();  // signed out: the sign-in prompt shows if a token is required
     } else if (el.dataset.phoneTest !== undefined) {
       state.phone = await api("POST", "/api/phone/test");
       renderPhone();

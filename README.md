@@ -54,6 +54,19 @@ never shown back, and an access token is asked for. The app gets a scrubbed envi
 throwaway config and data; Chromium a throwaway profile with its background traffic off and
 every non-local request sent to a dead proxy (`tests/browser_kit.py`).
 
+
+**Your data** (in Setup) lists everything Market Pulse keeps on this computer, with its size,
+counts and dates, but never its contents: your watchlist and rules, settings saved in Setup
+(by name only), the reaction history, recordings, where the log goes, and what this browser
+stored. Paths are shown relative to the project, never in full (that would show your user
+name).
+
+- *Delete* clears the reaction history, the recordings (except one being written) or the
+  settings saved in Setup, after a confirmation. Deleted history is compacted out of the
+  database file, not just marked free.
+- The reaction history is kept `reactions_keep_days` (365; 0 = forever) and pruned daily.
+- *Forget* clears what this browser stored and signs it out, e.g. on a borrowed device.
+- Every file under `data/` is readable by you only.
 ### Real-time prices (optional)
 
 Get a free key at https://finnhub.io/register, then either set `finnhub_api_key` in

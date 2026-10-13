@@ -69,6 +69,7 @@ class Settings:
     # Record what the data sources answer, to replay later (app/replay.py). Newest record_keep kept.
     record: bool = False
     record_keep: int = 10
+    reactions_keep_days: int = 365  # older reaction history is deleted daily; 0 keeps it all
 
 
 # Settings that may come from same-named upper-case env vars (which win), so secrets and
@@ -142,5 +143,9 @@ class UserState:
     def save(self) -> None:
         self.path.parent.mkdir(parents=True, exist_ok=True)
         tmp = self.path.with_suffix(".tmp")
-        tmp.write_text(json.dumps(self.to_dict(), indent=2))
+        # Readable by you only, whatever the umask: it's your watchlist and alert rules.
+        fd = os.open(tmp, os.O_WRONLY | os.O_CREAT | os.O_TRUNC, 0o600)
+        with os.fdopen(fd, "w") as f:
+            f.write(json.dumps(self.to_dict(), indent=2))
+        os.chmod(tmp, 0o600)
         tmp.replace(self.path)

@@ -167,6 +167,28 @@ class ReactionStore:
         rows = self._db.execute("SELECT * FROM events WHERE at >= ? ORDER BY at DESC", (t,))
         return [dict(r) for r in rows]
 
+    def stats(self) -> dict:
+        count, oldest, newest = self._db.execute("SELECT COUNT(*), MIN(at), MAX(at) FROM events").fetchone()
+        return {"count": count, "oldest": oldest, "newest": newest}
+
+    def prune(self, before: int) -> int:
+        """Delete events older than `before` (epoch seconds); returns how many."""
+        deleted = self._db.execute("DELETE FROM events WHERE at < ?", (before,)).rowcount
+        self._db.commit()
+        if deleted:
+            self._compact()
+        return deleted
+
+    def clear(self) -> int:
+        deleted = self._db.execute("DELETE FROM events").rowcount
+        self._db.commit()
+        self._compact()
+        return deleted
+
+    def _compact(self) -> None:
+        # SQLite only marks deleted rows free; VACUUM rewrites the file so they're really gone.
+        self._db.execute("VACUUM")
+
 
 def finished(event: dict, now: int) -> bool:
     measured = event["m5m"] and event["m30m"] and event["pclose"] is not None

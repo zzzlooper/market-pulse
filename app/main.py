@@ -186,6 +186,14 @@ async def login(body: LoginIn, request: Request):
     return resp
 
 
+@app.post("/api/logout", status_code=204)
+async def logout(request: Request):
+    """Sign this browser out: delete the HttpOnly cookie (page scripts can't touch it)."""
+    resp = Response(status_code=204)
+    resp.delete_cookie(TOKEN_COOKIE, httponly=True, samesite="strict", secure=request.url.scheme == "https")
+    return resp
+
+
 def same_origin(ws: WebSocket) -> bool:
     """Browsers let any website open a WebSocket to localhost; they always send Origin, so
     refuse pages served from somewhere else. Clients without Origin (scripts) are allowed."""
@@ -290,6 +298,25 @@ def reactions(days: int = 30):
     if not 1 <= days <= 365:
         raise HTTPException(422, "days must be between 1 and 365")
     return engine.reactions_report(days)
+
+
+class DeleteDataIn(BaseModel):
+    store: str
+
+
+@app.get("/api/data")
+def your_data():
+    """What's kept on this computer: sizes, counts, dates. No contents and no values."""
+    return JSONResponse({"stores": engine.data_inventory()}, headers=NO_STORE)
+
+
+@app.post("/api/data/delete")
+async def delete_your_data(body: DeleteDataIn):
+    try:
+        await engine.delete_data(body.store)
+    except SettingsError as exc:
+        raise HTTPException(422, str(exc)) from None
+    return JSONResponse({"stores": engine.data_inventory()}, headers=NO_STORE)
 
 
 @app.get("/api/reactions.csv")

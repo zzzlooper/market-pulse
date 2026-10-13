@@ -288,6 +288,14 @@ code.cmd, .generated code { background: #0006; padding: 2px 6px; border-radius: 
 .set-input { display: flex; gap: 6px; align-items: center; }
 .set-input input { flex: 1; min-width: 0; }
 .set-locked { color: var(--muted); font-size: 12px; }
+.data-list { list-style: none; margin: 0 0 12px; padding: 0; font-size: 13px; }
+.data-list li { display: flex; gap: 10px; align-items: flex-start; justify-content: space-between;
+  padding: 8px 0; border-top: 1px solid var(--border); }
+.data-list li > div { min-width: 0; }
+.data-list p { margin: 2px 0 0; font-size: 12px; overflow-wrap: anywhere; }
+.data-list code { font-size: 11px; color: var(--muted); }
+button.danger { color: var(--down); border-color: #f8514966; flex-shrink: 0; }
+button.danger:hover { border-color: var(--down); }
 #detail {
   position: fixed;
   top: 0;

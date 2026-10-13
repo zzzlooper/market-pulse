@@ -14,6 +14,15 @@ from .. import market
 from ..alerts import AlertMonitor, new_rule
 from ..clock import clock
 from ..config import Settings, UserState
+from ..datastore import (
+    DELETABLE,
+    delete_recordings,
+    log_item,
+    reactions_item,
+    recordings_item,
+    settings_item,
+    state_item,
+)
 from ..dilution import DilutionProfiles
 from ..filings import FilingsFeed
 from ..finnhub import FinnhubFeed
@@ -21,9 +30,9 @@ from ..halts import HaltFeed
 from ..health import SourceError, SourceHealth, describe
 from ..news import NewsFeed
 from ..notify import PhoneNotifier, from_alert, from_outage
-from ..replay import LiveIO
+from ..replay import LiveIO, Recorder
 from ..sec import SecClient
-from ..setup import DashboardSettings, SettingsError, apply, validate
+from ..setup import EDITABLE, DashboardSettings, SettingsError, apply, validate
 from .catalysts import REACTIONS_INTERVAL, CatalystsMixin
 from .daily import DailyMixin
 from .earnings import EARNINGS_INTERVAL, EarningsMixin
@@ -343,6 +352,40 @@ class Engine(PricesMixin, FeedsMixin, RiskMixin, CatalystsMixin, DailyMixin, Gap
         if quote is None and range_ == "1d":
             quote = market.quote_from_bars(symbol, chart["bars"], profile)
         return {"symbol": symbol, "profile": profile, "chart": chart, "quote": quote, "errors": errors}
+
+    # --- your data -------------------------------------------------------------------------
+
+    @property
+    def _recordings(self) -> tuple:
+        """The recordings folder, and the file being written (if recording)."""
+        active = self.io.recording if isinstance(self.io, Recorder) else None
+        return self.state.path.parent / "recordings", active
+
+    def data_inventory(self) -> list[dict]:
+        folder, active = self._recordings
+        return [
+            state_item(self.state.path, self.state.watchlist, self.state.keywords, self.state.alert_rules),
+            settings_item(self.dashboard.path),
+            reactions_item(self.reactions.path, self.reactions.stats(), self.settings.reactions_keep_days),
+            recordings_item(folder, self.settings.record_keep, active),
+            log_item(),
+        ]
+
+    async def delete_data(self, store: str) -> None:
+        if store not in DELETABLE:
+            raise SettingsError(f"{store} can't be deleted here")
+        if store == "reactions":
+            self.reactions.clear()
+            self._reaction_retry.clear()
+        elif store == "recordings":
+            delete_recordings(*self._recordings)
+        elif store == "dashboard_settings":
+            self.dashboard.path.unlink(missing_ok=True)
+            fresh = self.dashboard.effective({})  # back to config.toml, environment and defaults
+            apply(self.settings, fresh, [n for n in EDITABLE if n != "finnhub_api_key"])
+            self.sec.set_user_agent(self.settings.sec_user_agent)
+            await self.hub.broadcast({"type": "phone", "data": self.phone.status()})
+        log.info("deleted from Your data: %s", store)  # what, never the contents
 
     # --- settings from the dashboard --------------------------------------------------------
 

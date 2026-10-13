@@ -60,6 +60,10 @@ gap_brief_time = "09:15"
 record = false
 record_keep = 10
 
+# Catalyst reaction history older than this is deleted daily (0 keeps it all). Setup > Your data
+# shows what's kept and can delete it.
+reactions_keep_days = 365
+
 # Setting [feeds] replaces the default list entirely.
 # [feeds]
 # "GlobeNewswire" = "https://www.globenewswire.com/RssFeed/orgclass/1/feedTitle/GlobeNewswire%20-%20News%20about%20Public%20Companies"

@@ -41,6 +41,7 @@ class CatalystsMixin:
         self.reactions = ReactionStore(self.state.path.parent / "reactions.db")
         self._reaction_retry: dict[str, float] = {}  # event id -> monotonic time to try again
         self._risk_queue: asyncio.Queue[tuple[str, str]] = asyncio.Queue()  # offerings awaiting a risk level
+        self._pruned_on = None  # the day old history was last deleted
 
     def _context(self, symbol: str) -> str:
         if symbol in self.state.watchlist:
@@ -72,8 +73,19 @@ class CatalystsMixin:
         except Exception as exc:
             log.info("no dilution risk for %s offering: %s", symbol, describe(exc))
 
+    def _prune_reactions(self) -> None:
+        """Once a day, delete history older than reactions_keep_days (0 keeps everything)."""
+        today = datetime.fromtimestamp(now_ts(), market.ET).date()
+        if self._pruned_on == today:
+            return
+        self._pruned_on = today
+        days = self.settings.reactions_keep_days
+        if days and (deleted := self.reactions.prune(now_ts() - days * 86400)):
+            log.info("deleted %d catalysts older than %d days from the reaction history", deleted, days)
+
     async def _update_reactions(self) -> None:
         """Measure what's due: one chart download per symbol covers all its events."""
+        self._prune_reactions()
         now, mono = now_ts(), time.monotonic()
         work: dict[tuple[str, str], list[dict]] = {}
         for event in self.reactions.pending():

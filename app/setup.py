@@ -54,6 +54,7 @@ EDITABLE: dict[str, Field] = {
     "recap_time": Field("Daily recap at (ET)", "time"),
     "gap_min_pct": Field("Pre-market gaps from (%)", "number", low=0.5, high=100),
     "gap_brief_time": Field("Pre-market brief at (ET)", "time"),
+    "reactions_keep_days": Field("Keep reaction history (days, 0 = forever)", "integer", high=3650),
     "record": Field("Record the day's data for replay", "bool", live=False,
                     hint="Saved in data/recordings, readable by you only; see README: Record and replay."),
 }
