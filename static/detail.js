@@ -364,9 +364,13 @@ function updateDetailLists() {
   $("#detail-halts").innerHTML = detailHalts().map((h) => {
     const status = haltStatus(h);
     const resume = h.resume_trade_at ? ` → ${fmtET(h.resume_trade_at)}` : " → no resumption time yet";
+    const resumed = status === "resumed" ? resumedText(h) : null;
+    const label = status === "resuming" ? `resumes in ${countdown(h.resume_trade_at)}`
+      : resumed ? resumed.html : status;
     return `<li class="halt-row ${status}"><b class="reason ${esc(h.category)}">${esc(h.reason_code)}</b>
       ${isToday(h) ? fmtET(h.halted_at) : h.halted_at.slice(0, 10)}${resume}
-      <span class="muted">· ${esc(h.reason)}</span> <span class="status">${status}</span></li>`;
+      <span class="muted">· ${esc(h.reason)}</span> <span class="status" title="${esc(resumed?.tip ?? "")}">${label}</span>
+      ${resumed?.tip ? `<div class="meta">${esc(resumed.tip)}</div>` : ""}</li>`;
   }).join("") || `<li class="muted">No halts in the feed</li>`;
 
   const watched = state.watchlist.includes(sym);

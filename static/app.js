@@ -30,6 +30,7 @@ function handle({ type, data }) {
     case "unusual": state.unusual = data; renderUnusual(); break;
     case "ssr": state.ssr = data; renderWatchlist(); renderMovers(); renderUnusual(); renderGaps(); refreshDetail("quotes"); break;
     case "pre_highs": state.pre_highs = data; refreshDetail("quotes"); break;
+    case "halt_info": state.halt_info = data; renderHalts(); refreshDetail("halts"); break;
     case "floats": state.floats = data; renderWatchlist(); renderMovers(); renderUnusual(); refreshDetail("quotes"); break;
     case "news": addNews(data); break;
     case "gaps": state.gaps = data; renderGaps(); break;
@@ -224,7 +225,8 @@ $("#halt-pill").addEventListener("click", () => {
   renderHalts();
 });
 $("#halt-scope").addEventListener("input", () => renderHalts());
-setInterval(refreshHalts, 10_000);  // "resumes in Nm" countdowns and halted -> resumed
+setInterval(refreshHalts, 10_000);  // halted -> resumed, also without a countdown on screen
+setInterval(tickCountdowns, 1000);   // resumption countdowns
 if (location.hash === "#halts") setLeftTab("halts");
 if (location.hash === "#reactions") setLeftTab("reactions");
 if (location.hash === "#gaps") setLeftTab("gaps");

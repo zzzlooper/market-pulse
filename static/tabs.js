@@ -16,6 +16,45 @@ const normSym = (s) => s.replace("-", ".");                    // Yahoo BRK-B is
 
 let activeHalts = new Map();  // symbol -> halt, for badges elsewhere
 
+// Live countdowns to a resumption: any element with data-until (epoch ms) is updated every
+// second; when one runs out, the halt tables and badges are redrawn (halted -> resumed).
+function fmtCountdown(ms) {
+  if (ms <= 0) return "now";
+  const s = Math.ceil(ms / 1000);
+  const h = Math.floor(s / 3600), m = Math.floor((s % 3600) / 60), sec = s % 60;
+  return h ? `${h}h ${String(m).padStart(2, "0")}m` : `${m}:${String(sec).padStart(2, "0")}`;
+}
+
+function countdown(iso) {
+  const until = Date.parse(iso);
+  return `<span class="countdown" data-until="${until}">${fmtCountdown(until - appNow())}</span>`;
+}
+
+function tickCountdowns() {
+  const now = appNow();
+  let ended = false;
+  for (const el of document.querySelectorAll("[data-until]")) {
+    const left = Number(el.dataset.until) - now;
+    el.textContent = fmtCountdown(left);
+    if (left <= 0) {
+      el.removeAttribute("data-until");
+      ended = true;
+    }
+  }
+  if (ended) refreshHalts();
+}
+
+// How a halt resumed, once the first minute's trading is known (app/halts.py resumption()).
+function resumedText(h) {
+  const info = state.halt_info?.[h.id];
+  if (!info) return { html: "Resumed", tip: "" };
+  const pct = info.change_pct;
+  const tip = `First trade ${fmtPrice(info.open)} at ${fmtET(info.resumed_at)}` +
+    (info.halt_price != null ? `, last before the halt ${fmtPrice(info.halt_price)}` : "") +
+    (info.low != null ? `; first minute ${fmtPrice(info.low)}–${fmtPrice(info.high)}` : "");
+  return { html: `Resumed${pct != null ? ` <span class="${dir(pct)}">${fmtPct(pct)}</span>` : ""}`, tip };
+}
+
 function renderHalts() {
   const now = appNow();
   activeHalts = new Map(state.halts.filter((h) => haltStatus(h, now) !== "resumed").map((h) => [h.symbol, h]));
@@ -32,15 +71,15 @@ function renderHalts() {
     .sort((a, b) => order[a.status] - order[b.status] || b.h.halted_at.localeCompare(a.h.halted_at));
   const html = rows.map(({ h, status }) => {
     const halted = isToday(h) ? fmtET(h.halted_at) : h.halted_at.slice(0, 10);
-    const mins = h.resume_trade_at ? Math.ceil((Date.parse(h.resume_trade_at) - now) / 60000) : null;
-    const label = status === "resuming" ? `Resumes in ${mins}m` : status === "resumed" ? "Resumed" : "Halted";
+    const resumed = status === "resumed" ? resumedText(h) : null;
+    const label = status === "resuming" ? `in ${countdown(h.resume_trade_at)}` : resumed ? resumed.html : "Halted";
     const tip = `${h.name} · ${h.market}${h.pause_price ? ` · pause price ${h.pause_price}` : ""}`;
     return `<tr class="halt-row ${status}">
       <td><a class="sym" data-sym="${esc(h.symbol)}" title="${esc(tip)}">${esc(h.symbol)}</a></td>
       <td>${halted}</td>
       <td class="reason ${esc(h.category)}" title="${esc(`${h.reason_code} · ${h.reason}`)}">${esc(h.reason_code)}</td>
       <td>${h.resume_trade_at ? fmtET(h.resume_trade_at) : "–"}</td>
-      <td class="status">${label}</td>
+      <td class="status" title="${esc(resumed?.tip ?? "")}">${label}</td>
     </tr>`;
   }).join("");
   fillTable($("#halts"), html, 5, scope === "today" ? "No halts today" : "No halts in the feed");
@@ -117,9 +156,11 @@ async function loadReactions() {
     const days = $("#reactions-days").value;
     $("#reactions-csv").href = `/api/reactions.csv?days=${days}`;
     const [r, recap] = await Promise.all([api("GET", `/api/reactions?days=${days}`), api("GET", "/api/recap")]);
-    $("#reactions-note").textContent = `${r.tracked} catalysts tracked`;
+    $("#reactions-note").textContent = `${r.catalysts} catalysts, ${r.tracked - r.catalysts} alerts tracked`;
     $("#reactions-types").innerHTML = reactionRows(r.by_type,
       "Nothing tracked yet: filings, halts and alert headlines are measured as they arrive");
+    $("#reactions-alerts").innerHTML = reactionRows(r.alerts,
+      "No alerts yet: breakouts, level crossings, float rotations, resumptions and your rules are measured as they fire");
     $("#reactions-risk").innerHTML = reactionRows(r.offerings_by_risk, "No offerings tracked yet");
     $("#reactions-recent").innerHTML = r.recent.map((e) => {
       const ret = e.returns;

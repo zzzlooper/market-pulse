@@ -15,8 +15,8 @@ carry only a role), placeholder contact details. Nothing leaves the machine: the
 uses the network and the phone is never called; notes are read from its queue.
 
 The engine's loops are not running. Each step freezes the market clock and runs one round:
-quotes, movers, news, halts, filings, pre-market gaps, earnings, tape (SSR, floats), risk,
-reaction measuring, health. Sources are polled in
+quotes, movers, news, halts, filings, pre-market gaps, earnings, tape (SSR, floats), halt
+resumptions, risk, reaction measuring, health. Sources are polled in
 that order, so a filing at a step sees the movers of the same step.
 """
 from __future__ import annotations
@@ -254,11 +254,13 @@ class Day:
         self._wire_outages.append((ts(start), ts(end)))
 
     def halt(self, hhmm: str, symbol: str, code: str = "LUDP", halted: str | None = None,
-             resumes: str | None = None) -> None:
+             resumes: str | None = None, pause_price: float | None = None) -> None:
         """A halt appearing in Nasdaq's feed at hhmm (halted at `halted`, default the same)."""
         halted = halted or hhmm
         resume = (f"<ndaq:ResumptionDate>10/13/2026</ndaq:ResumptionDate>"
                   f"<ndaq:ResumptionTradeTime>{resumes}:00</ndaq:ResumptionTradeTime>") if resumes else ""
+        if pause_price is not None:
+            resume += f"<ndaq:PauseThresholdPrice>{pause_price}</ndaq:PauseThresholdPrice>"
         # The same halt again (e.g. with a resumption time) replaces the earlier version.
         self._halts.setdefault((symbol, halted), []).append((ts(hhmm), (
             f"<item><title>{symbol}</title><ndaq:HaltDate>10/13/2026</ndaq:HaltDate>"
@@ -345,7 +347,8 @@ class Run:
         self.now = hhmm
         for name, update in (("quotes", e._update_quotes), ("movers", e._update_movers), ("news", e._update_news),
                              ("halts", e._update_halts), ("filings", e._update_filings), ("gaps", e._update_gaps),
-                             ("earnings", e._update_earnings), ("tape", e._update_tape)):
+                             ("earnings", e._update_earnings), ("tape", e._update_tape),
+                             ("resumptions", e._update_resumptions)):
             await e._run_step(name, update)
         await e._update_risk()
         while not e._risk_queue.empty():

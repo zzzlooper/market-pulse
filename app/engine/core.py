@@ -41,6 +41,7 @@ from .earnings import EARNINGS_INTERVAL, EarningsMixin
 from .feeds import FeedsMixin
 from .gaps import GAP_INTERVAL, GapsMixin
 from .prices import PricesMixin
+from .resumptions import RESUME_TICK, ResumptionsMixin
 from .risk import RISK_INTERVAL, RiskMixin
 from .tape import TAPE_INTERVAL, TapeMixin
 
@@ -66,7 +67,8 @@ class Hub:
                 self.clients.discard(ws)
 
 
-class Engine(PricesMixin, FeedsMixin, RiskMixin, CatalystsMixin, DailyMixin, GapsMixin, EarningsMixin, TapeMixin):
+class Engine(PricesMixin, FeedsMixin, RiskMixin, CatalystsMixin, DailyMixin, GapsMixin, EarningsMixin, TapeMixin,
+             ResumptionsMixin):
     def __init__(self, settings: Settings, state: UserState, hub: Hub, health: SourceHealth | None = None,
                  io: LiveIO | None = None):
         self.settings = settings
@@ -88,6 +90,7 @@ class Engine(PricesMixin, FeedsMixin, RiskMixin, CatalystsMixin, DailyMixin, Gap
         self._init_gaps()
         self._init_earnings()
         self._init_tape()
+        self._init_resumptions()
         self.finnhub = FinnhubFeed(settings.finnhub_api_key, self._ticks.set) if settings.finnhub_api_key else None
 
         self.alerts = AlertMonitor()
@@ -135,6 +138,7 @@ class Engine(PricesMixin, FeedsMixin, RiskMixin, CatalystsMixin, DailyMixin, Gap
             "gap_min_pct": self.settings.gap_min_pct,
             "ssr": self.ssr,
             "pre_highs": self.pre_highs,
+            "halt_info": self.halt_info,
             "floats": self.floats,
         }
 
@@ -156,6 +160,7 @@ class Engine(PricesMixin, FeedsMixin, RiskMixin, CatalystsMixin, DailyMixin, Gap
             asyncio.create_task(self._gap_brief_loop()),
             asyncio.create_task(self._loop("earnings", EARNINGS_INTERVAL, self._update_earnings, self._wake_earnings)),
             asyncio.create_task(self._loop("tape", TAPE_INTERVAL, self._update_tape, self._wake_tape)),
+            asyncio.create_task(self._loop("resumptions", RESUME_TICK, self._update_resumptions)),
             asyncio.create_task(self._fill_offering_risk()),
         ]
         if self.filings:
@@ -253,6 +258,7 @@ class Engine(PricesMixin, FeedsMixin, RiskMixin, CatalystsMixin, DailyMixin, Gap
             log.info("alerts: %s", "; ".join(e["message"] for e in fired))
             await self.hub.broadcast({"type": "alerts", "data": fired})
             self.phone.enqueue([from_alert(e, self.settings.public_url) for e in fired], self.state.phone_alerts)
+            self._track_alerts(fired)
 
     async def _phone_status(self, status: dict) -> None:
         await self.hub.broadcast({"type": "phone", "data": status})

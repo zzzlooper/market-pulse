@@ -1,5 +1,6 @@
-"""Catalyst reaction tracking: how a stock moved after a filing, an 8-K event, a halt or an
-alerting headline, 5 and 30 minutes later and at the close of the next regular session.
+"""Catalyst reaction tracking: how a stock moved after a filing, an 8-K event, a halt, an
+alerting headline or one of the app's own alerts (a breakout, a level crossing…), 5 and 30
+minutes later and at the close of the next regular session.
 
 Over a few weeks the per-type medians show which catalysts actually move stocks, and whether
 the dilution risk level means anything (offerings grouped by the risk the stock had when the
@@ -33,7 +34,7 @@ SCHEMA = """
 CREATE TABLE IF NOT EXISTS events (
     id TEXT PRIMARY KEY,
     symbol TEXT NOT NULL,
-    kind TEXT NOT NULL,      -- dilution, insider_buy, event, report, stake, halt, headline...
+    kind TEXT NOT NULL,      -- dilution, insider_buy, event, report, stake, halt, headline, alert...
     label TEXT NOT NULL,     -- what stats group by: "offering from shelf", "delisting notice"...
     title TEXT NOT NULL,
     context TEXT NOT NULL,   -- watchlist, mover or other, when the event arrived

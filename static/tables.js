@@ -116,7 +116,8 @@ function haltBadge(sym) {
   const h = activeHalts.get(normSym(sym));
   if (!h) return "";
   const resume = h.resume_trade_at ? ` · resumes ${fmtET(h.resume_trade_at)} ET` : "";
-  return ` <span class="halt-badge" title="${esc(`${h.reason_code} · ${h.reason}${resume}`)}">HALTED</span>`;
+  const clock = h.resume_trade_at && Date.parse(h.resume_trade_at) > appNow() ? ` ${countdown(h.resume_trade_at)}` : "";
+  return ` <span class="halt-badge" title="${esc(`${h.reason_code} · ${h.reason}${resume}`)}">HALTED${clock}</span>`;
 }
 
 // --- sentiment ------------------------------------------------------------------------

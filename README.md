@@ -358,7 +358,9 @@ There's deliberately no offline cache: nothing from the dashboard is stored on t
   feed, polled every 20 s. That covers news halts (T1/T2), regulatory halts (T12, H10…),
   limit-up/limit-down volatility pauses (LUDP) and circuit breakers.
   - Shows halt time, reason (hover for the full description), scheduled resumption and a
-    live status: *Halted*, *Resumes in Nm* or *Resumed*.
+    live status: *Halted*, *Resumes in 4:32* (counting down every second, as does the
+    **HALTED** badge in the tables) or *Resumed*, with the move from before the halt once known
+    (hover for the first trade, the last one before the halt and the first minute's range).
   - *Today* is the default view. *All in feed* adds long-running halts, some of them years old.
   - A red **⏸ N halted** counter in the header shows today's active halts; click it to jump
     to the list. Halted tickers get a **HALTED** badge in every table.
@@ -366,6 +368,13 @@ There's deliberately no offline cache: nothing from the dashboard is stored on t
     fire when a halt appears and again when a news halt gets its resumption time. The feed
     contents at startup are the baseline and don't alert. *All stocks* is noisy: a busy day
     has 40+ volatility pauses.
+  - **Resumptions** (`app/engine/resumptions.py`), for the same halts: a heads-up about a minute
+    before trading resumes (*BOLT resumes trading in about a minute, at 10:05 ET*), and once it
+    has, how: *BOLT resumed at 10:05 ET: first trade $4.60, +15.0% from $4.00 before the halt
+    (first minute $4.52–$4.71)*. That comes from the stock's 1-minute bars, the first minute
+    at or after the resumption against the last trade before the halt (the pause price if the
+    chart has none), so it waits for Yahoo's bar, up to 30 minutes. A resumption that happened
+    before the app started isn't reported. Both go to the phone with the halts, as high priority.
   - Open `http://localhost:8000/#halts` to start on the Halts tab.
 - **Sentiment**: every headline is scored −1…+1 by a local finance lexicon (`app/sentiment.py`),
   with no API calls. Items at ±0.35 or beyond get a ▲ bullish / ▼ bearish badge, and hovering
@@ -470,6 +479,12 @@ There's deliberately no offline cache: nothing from the dashboard is stored on t
   (routine 8-Ks only for watched and moving stocks), new trading halt and alerting headline
   is recorded with the price when it arrived, then 5 and 30 minutes later and at the close
   of the next regular session.
+  - **Your alerts: what happened next**: the app's own alerts are measured the same way, from
+    the price when they fired: breakouts (pre-market high, new high after a pullback), warrant
+    and offering-price crossings, float rotations, unusual-volume entries, halt resumptions and
+    your own price/volume rules. Grouped by alert, it shows which ones the stock followed
+    through on and which were noise, e.g. whether pre-market-high breaks held to the close.
+    They're kept apart from the catalysts, and the recap gets one line for them.
   - The tab shows the median move per catalyst type over 7/30/90 days, with *n* (tracked ·
     measured to the close) and the share that closed lower, and the same for offerings
     grouped by the stock's dilution risk. That's the check on the risk score: if *high* doesn't
@@ -480,8 +495,10 @@ There's deliberately no offline cache: nothing from the dashboard is stored on t
     An event overnight has no 5m/30m reading; it's measured from the last trade before it to
     the next close. Bars come one chart per stock per round, at most 20 a round.
   - Stored in `data/reactions.db` (SQLite, readable by you only): tickers, event types,
-    headlines, times and prices. Nothing about you.
-  - *Download CSV* saves the tracked catalysts and their moves for the chosen period, for your
+    headlines, times and prices, and the alerts that fired for you. Those include your own
+    price rules, so the file says which stocks you watch and at what levels; it never leaves
+    your machine, and *Setup → Your data* can delete it.
+  - *Download CSV* saves the tracked catalysts and alerts and their moves for the chosen period, for your
     own spreadsheet: time, ticker, catalyst, context, dilution risk, the 5m/30m/close moves and
     the headline. Headlines come from outside feeds, so any starting with = + - @ get a leading
     apostrophe and open as text, never as a formula.
@@ -536,18 +553,19 @@ app/
   sentiment.py  rule-based headline sentiment (finance lexicon + negation)
   alerts.py   price/move/RVOL alert rules (crossing + cooldown) and unusual-volume entries
   health.py   per-source health: last good update, errors, staleness, outage alerts
-  halts.py    Nasdaq Trader halts feed: parsing, reason codes, new-halt/resumption diffing
+  halts.py    Nasdaq Trader halts feed: parsing, reason codes, new-halt/resumption diffing, how trading resumed
   notify.py   phone push via ntfy / Telegram: batching, rate cap, delivery status
   engine/     the engine: one object, a file per area (see engine/__init__.py)
     core.py       lifecycle, loop runner, health, snapshot, dashboard actions, settings
     prices.py     quotes, Finnhub ticks, movers, unusual volume, price alerts
     feeds.py      news, SEC filings, halts
     risk.py       dilution-risk badges, the level filing alerts carry, warrant and offering price crossings
-    catalysts.py  catalyst reaction tracking and the Reactions report
+    catalysts.py  catalyst and alert reaction tracking, and the Reactions report
     daily.py      the end-of-day recap
     gaps.py       the pre-market gap scanner and its brief
     earnings.py   the watchlist's next earnings dates
     tape.py       the short sale restriction, float rotation and breakouts (SSR and ROT badges, their alerts)
+    resumptions.py  halt resumptions: the heads-up a minute before, and how trading resumed
   main.py     FastAPI routes, access token and /ws endpoint
 static/       single-page dashboard: plain scripts sharing globals, no build step, loaded in this order
   core.js     state, formatting, the market clock, server calls

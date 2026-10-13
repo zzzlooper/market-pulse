@@ -95,13 +95,19 @@
         </select>
         <small class="muted" id="reactions-note"></small>
         <a id="reactions-csv" class="button-link" href="/api/reactions.csv?days=30" download
-           title="Tracked catalysts and their moves, as a spreadsheet file">Download CSV</a>
+           title="Tracked catalysts and alerts with their moves, as a spreadsheet file">Download CSV</a>
       </div>
       <h3 class="sub">By catalyst <small>median move from the event price</small></h3>
       <table>
         <thead><tr><th>Catalyst</th><th title="Tracked · measured to the close">n</th><th>5m</th><th>30m</th>
           <th>Close</th><th title="Share that closed lower than the event price">↓</th></tr></thead>
         <tbody id="reactions-types"></tbody>
+      </table>
+      <h3 class="sub">Your alerts: what happened next <small>median move from the price when it fired</small></h3>
+      <table>
+        <thead><tr><th>Alert</th><th title="Fired · measured to the close">n</th><th>5m</th><th>30m</th>
+          <th>Close</th><th title="Share that closed lower than when the alert fired">↓</th></tr></thead>
+        <tbody id="reactions-alerts"></tbody>
       </table>
       <h3 class="sub">Offerings by dilution risk <small>risk when the filing arrived</small></h3>
       <table>

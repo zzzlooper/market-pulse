@@ -115,23 +115,67 @@ def _hhmm(iso: str) -> str:
     return datetime.fromisoformat(iso).strftime("%H:%M")
 
 
+def relevant(halt: dict, watchlist: list[str], mode: str) -> bool:
+    """Whether a halt is alert-worthy. mode: "watchlist" | "all" | "off"."""
+    if mode == "off":
+        return False
+    return mode == "all" or halt["symbol"] in {s.replace("-", ".") for s in watchlist}  # Yahoo BRK-B is BRK.B
+
+
 def halt_messages(new: list[dict], resumption_set: list[dict], watchlist: list[str],
                   mode: str) -> list[tuple[dict, str, str]]:
     """(halt, kind, message) for alert-worthy changes. mode: "watchlist" | "all" | "off"."""
     if mode == "off":
         return []
-    watched = {s.replace("-", ".") for s in watchlist}  # Yahoo BRK-B is BRK.B at Nasdaq
-    relevant = lambda h: mode == "all" or h["symbol"] in watched
     out = []
     for h in new:
-        if relevant(h):
+        if relevant(h, watchlist, mode):
             resume = f" · resumes {_hhmm(h['resume_trade_at'])} ET" if h["resume_trade_at"] else ""
             out.append((h, "halt", f"{h['symbol']} halted at {_hhmm(h['halted_at'])} ET · {h['reason']}{resume}"))
     for h in resumption_set:
-        if relevant(h):
+        if relevant(h, watchlist, mode):
             out.append((h, "resume", (f"{h['symbol']} trading resumes {_hhmm(h['resume_trade_at'])} ET "
                                       f"(halted {_hhmm(h['halted_at'])} · {h['reason']})")))
     return out
+
+
+def _money(price: float) -> str:
+    return f"${price:,.2f}" if price >= 1 else f"${price:.4f}"
+
+
+def resuming_message(halt: dict) -> str:
+    """Shortly before trading resumes."""
+    pause = f", pause price {_money(halt['pause_price'])}" if halt.get("pause_price") else ""
+    return (f"{halt['symbol']} resumes trading in about a minute, at {_hhmm(halt['resume_trade_at'])} ET "
+            f"(halted {_hhmm(halt['halted_at'])} · {halt['reason']}{pause})")
+
+
+def resumption(halt: dict, bars: list[dict]) -> dict | None:
+    """How trading resumed, from the stock's 1-minute bars (t, o, h, l, c): the first minute at or
+    after the resumption time against the last trade before the halt. None until that minute's
+    bar exists (Yahoo's bars can arrive late)."""
+    halted = int(datetime.fromisoformat(halt["halted_at"]).timestamp())
+    resumed = int(datetime.fromisoformat(halt["resume_trade_at"]).timestamp())
+    first = next((b for b in bars if b["t"] >= resumed - resumed % 60 and b.get("o") is not None), None)
+    if first is None:
+        return None
+    before = [b for b in bars if b["t"] < halted and b.get("c") is not None]
+    halt_price = before[-1]["c"] if before else halt.get("pause_price")
+    return {
+        "resumed_at": datetime.fromtimestamp(first["t"], ET).isoformat(),
+        "open": first["o"], "high": first.get("h"), "low": first.get("l"),
+        "halt_price": halt_price,
+        "change_pct": round((first["o"] / halt_price - 1) * 100, 2) if halt_price else None,
+    }
+
+
+def resumed_message(halt: dict, info: dict) -> str:
+    move = (f", {info['change_pct']:+.1f}% from {_money(info['halt_price'])} before the halt"
+            if info["change_pct"] is not None else "")
+    first_minute = (f" (first minute {_money(info['low'])}–{_money(info['high'])})"
+                    if info["low"] is not None and info["high"] is not None else "")
+    return (f"{halt['symbol']} resumed at {_hhmm(info['resumed_at'])} ET: first trade {_money(info['open'])}"
+            f"{move}{first_minute}")
 
 
 class HaltFeed:

@@ -1,6 +1,6 @@
 """Catalyst reaction tracking: recording filings, halts and alerting headlines as they arrive,
-measuring how the stock moved afterwards, and the Reactions tab's report. The measuring rules
-themselves are in app/reactions.py."""
+and the app's own alerts as they fire, measuring how the stock moved afterwards, and the
+Reactions tab's report. The measuring rules themselves are in app/reactions.py."""
 from __future__ import annotations
 
 import asyncio
@@ -30,6 +30,23 @@ REACTIONS_INTERVAL = 120.0  # how often pending catalyst reactions are measured
 REACTION_FETCHES = 20       # chart downloads per round, so Yahoo isn't hammered after a burst
 REACTION_BACKOFF = 1800.0   # an event with nothing new to measure waits this long
 TRACK_MAX_AGE = 5 * 86400   # older events can't be measured (5-day bars are the furthest back)
+
+# The alerts whose follow-through is measured, and the group each is reported under: did the
+# stock keep going after a breakout, a level crossing, a float rotation, a resumption?
+TRACKED_ALERTS = {
+    "pmh": "broke pre-market high",
+    "hod": "new high of day after a pullback",
+    "warrant": "crossed up through a warrant price",
+    "offering_below": "fell below an offering price",
+    "offering_above": "back above an offering price",
+    "rotation": "traded its whole float",
+    "unusual": "entered unusual volume",
+    "resumed": "resumed after a halt",
+    "above": "your rules: price above",
+    "below": "your rules: price below",
+    "move": "your rules: move ±%",
+    "rvol": "your rules: RVOL",
+}
 
 
 class CatalystsMixin:
@@ -119,15 +136,24 @@ class CatalystsMixin:
     def reactions_csv(self, days: int) -> str:
         return to_csv(self.reactions.since(now_ts() - days * 86400))
 
+    def _track_alerts(self, fired: list[dict]) -> None:
+        """Start measuring what the stock did after each alert that fired."""
+        for e in fired:
+            if label := TRACKED_ALERTS.get(e["kind"]):
+                self._track(f"alert:{e['id']}", e["symbol"], "alert", label, e["message"], e["time"])
+
     def reactions_report(self, days: int) -> dict:
         rows = self.reactions.since(now_ts() - days * 86400)
         keep = ("symbol", "kind", "label", "title", "context", "risk", "at", "close_day")
+        catalysts = [r for r in rows if r["kind"] != "alert"]
         return {
             "days": days,
             "tracked": len(rows),
-            "by_type": summarize(rows, lambda r: r["label"]),
+            "catalysts": len(catalysts),
+            "by_type": summarize(catalysts, lambda r: r["label"]),
+            "alerts": summarize([r for r in rows if r["kind"] == "alert"], lambda r: r["label"]),
             "offerings_by_risk": summarize([r for r in rows if r["kind"] == "dilution"],
                                            lambda r: r["risk"] or "unknown"),
-            "by_context": summarize(rows, lambda r: r["context"]),
+            "by_context": summarize(catalysts, lambda r: r["context"]),
             "recent": [{**{k: r[k] for k in keep}, "returns": returns(r)} for r in rows[:60]],
         }

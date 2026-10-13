@@ -75,8 +75,9 @@ def reactions_item(path: Path, stats: dict, keep_days: int) -> dict:
     return {
         "id": "reactions", "label": "Catalyst reaction history", "path": shown_path(path),
         "size": _size(path), "deletable": stats["count"] > 0,
-        "detail": f"{_count(stats['count'], 'catalyst')}{span}; {keep}",
-        "note": "Market data only: tickers, catalysts, prices, public headlines.",
+        "detail": f"{_count(stats['count'], 'event')}{span}; {keep}",
+        "note": ("Tickers, catalysts, prices and public headlines, and the alerts that fired for you, "
+                 "your own price rules among them (which stocks you watch, at what levels)."),
         "confirm": "Delete the whole reaction history? The Reactions tab and recaps start from scratch.",
     }
 

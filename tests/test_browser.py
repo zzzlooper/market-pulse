@@ -28,6 +28,7 @@ def made_up_morning(folder):
     day.quotes("09:30", BOLT=5.0, FERN=-2.0)
     day.movers("09:31", gainers={"DYNA": 12.0, "CRUX": 41.0})
     day.halt("09:35", "BOLT", "LUDP")
+    day.halt("09:38", "DYNA", "LUDP", resumes="09:55")  # a mover, resuming while the tests run
     day.chart("ACME", lambda hhmm: 10.0 if hhmm < "07:00" else 7.8)
     day.earnings("04:00", BOLT=("2026-10-13", "07:00", False), FERN=("2026-10-16", "16:05", False))
     day.daily("04:00", ACME=[("2026-10-09", 9.6, 10.0), ("2026-10-12", 8.5, 9.0)])  # fell 15% yesterday: SSR today
@@ -222,10 +223,40 @@ def test_on_a_phone_a_tap_on_the_chart_offers_an_alert_without_covering_the_leve
     page.click("#chart-alert [data-chart-alert=cancel]")
 
 
+def test_a_halt_counts_down_to_its_resumption_every_second(page, world):
+    open_dashboard(page, world)
+    badge = "document.querySelector('#movers a.sym[data-sym=DYNA]')?.parentElement.querySelector('.halt-badge .countdown')"
+    first = page.wait(f"{badge}?.textContent")
+    assert first.count(":") == 1  # m:ss, about a quarter of an hour out
+    page.wait(f"{badge}?.textContent !== {first!r}", timeout=3)  # ticks without new data from the server
+    page.click("[data-left-tab=halts]")
+    row = page.wait("[...document.querySelectorAll('#halts tr')].find(r => r.textContent.includes('DYNA'))?.innerText")
+    assert "09:55" in row and "in 1" in row  # resumes 09:55, in 1x:xx
+    assert page.eval("document.querySelector('#tab-halts').scrollWidth <= document.querySelector('#tab-halts').clientWidth")
+    # When a countdown runs out, the halts are redrawn at once (halted -> resumed), not on the next refresh.
+    page.eval("""window._redraws = 0; const draw = refreshHalts; refreshHalts = () => { _redraws++; draw(); };
+        document.body.insertAdjacentHTML('beforeend', `<span id="ending" data-until="${appNow() + 300}"></span>`)""")
+    page.wait("window._redraws >= 1 && document.querySelector('#ending').textContent === 'now'", timeout=2)
+    page.eval("document.querySelector('#ending').remove()")
+
+
 def test_reactions_tab_loads_its_report_and_the_recap_preview(page, world):
     open_dashboard(page, world)
     page.click("[data-left-tab=reactions]")
     page.wait("document.querySelector('#reactions-note').textContent.includes('tracked')")
+    assert page.text("#reactions-note").endswith("alerts tracked")
+    # The made-up morning fires no alerts while the tests run: show the table a report that has some.
+    page.eval("""(async () => {
+        const real = api;
+        api = async (method, url) => url.startsWith('/api/reactions?') ? {
+            days: 30, tracked: 3, catalysts: 1, by_type: [], offerings_by_risk: [], by_context: [], recent: [],
+            alerts: [{group: 'broke pre-market high', n: 2, measured: 2, median_5m: 3.2, median_30m: -1.5,
+                      median_close: -6.0, down_share: 1}]} : real(method, url);
+        try { await loadReactions(); } finally { api = real; }
+    })()""")
+    assert page.text("#reactions-note") == "1 catalysts, 2 alerts tracked"
+    assert page.text("#reactions-alerts tr").split() == ["broke", "pre-market", "high", "2", "·", "2", "+3.2%",
+                                                          "-1.5%", "-6.0%", "100%"]
     assert page.wait("document.querySelector('#recap-preview').textContent.startsWith('Market Pulse · close recap')")
 
 
@@ -373,7 +404,7 @@ def test_setup_lists_your_data_and_deletes_the_reaction_history_after_confirming
     page.eval("window.confirm = () => true")
     page.click("[data-delete-data=reactions]")
     page.wait("[...document.querySelectorAll('.data-list li')].find(li => li.textContent.includes('reaction history'))"
-              ".innerText.includes('0 catalysts')")
+              ".innerText.includes('0 events')")
     assert not page.eval("!!document.querySelector('[data-delete-data=reactions]')")  # nothing left to delete
     assert world[0].get("/api/reactions?days=30").json()["tracked"] == 0
 

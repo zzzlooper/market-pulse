@@ -52,7 +52,8 @@ function addAlerts(events) {
   const what = { halt: "trading halted", resume: "resumption", unusual: "unusual volume",
                  warrant: "warrants in the money", offering_below: "below offering price",
                  offering_above: "back above offering price", rotation: "float rotated",
-                 pmh: "broke pre-market high", hod: "new high of day" };
+                 pmh: "broke pre-market high", hod: "new high of day", resuming: "resumes in a minute",
+                 resumed: "resumed" };
   notify(events.map((a) => ({ title: `${a.symbol} · ${what[a.kind] ?? "price alert"}`, body: a.message, tag: a.id })), 660);
 }
 

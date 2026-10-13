@@ -29,7 +29,10 @@ def _count(label: str, n: int) -> str:
 
 def build_recap(day: date, quotes: list[dict], halts: list[dict], events: list[dict],
                 watched: set[str], problems: list[str], public_url: str = "", earnings: list[str] = ()) -> dict:
-    """A phone note (see notify.py). halts and events are today's; watched is the watchlist."""
+    """A phone note (see notify.py). halts and events are today's; watched is the watchlist.
+    Events are the tracked catalysts and the app's own alerts (kind "alert"), kept apart here."""
+    alerts = [e for e in events if e["kind"] == "alert"]
+    events = [e for e in events if e["kind"] != "alert"]
     lines = []
     moves = sorted((q for q in quotes if q.get("change_pct") is not None), key=lambda q: -abs(q["change_pct"]))
     if moves:
@@ -56,6 +59,10 @@ def build_recap(day: date, quotes: list[dict], halts: list[dict], events: list[d
             lines.append(f"  {e['symbol']} {e['label']}: {_pct(r)}")
     if events:
         lines.append(f"Tracked today: {len(events)} catalysts, {len(measured)} measured to the close")
+    if alerts:
+        kinds = Counter(e["label"] for e in alerts)
+        lines.append(f"Alerts today: {len(alerts)} ({', '.join(f'{n} {label}' for label, n in kinds.most_common(3))}); "
+                     "how they followed through is in the Reactions tab")
 
     if earnings:  # tonight's and the next trading day's reports on the watchlist
         lines += ["Earnings:", *(f"  {line}" for line in earnings)]

@@ -110,7 +110,7 @@ def test_the_engine_inventory_covers_every_store_without_contents(tmp_path):
         stores = {s["id"]: s for s in engine.data_inventory()}
         assert list(stores) == ["state", "dashboard_settings", "reactions", "recordings", "tls", "log"]
         assert stores["state"]["detail"].startswith("2 tickers")
-        assert stores["reactions"]["detail"] == "1 catalyst, 2026-10-01 to 2026-10-01; kept 365 days"
+        assert stores["reactions"]["detail"] == "1 event, 2026-10-01 to 2026-10-01; kept 365 days"
         text = json.dumps(list(stores.values()))
         assert "UNIQUE-HEADLINE" not in text and str(tmp_path) not in text and str(main.ROOT) not in text
     finally:
