@@ -42,6 +42,7 @@ from .feeds import FeedsMixin
 from .gaps import GAP_INTERVAL, GapsMixin
 from .prices import PricesMixin
 from .risk import RISK_INTERVAL, RiskMixin
+from .tape import TAPE_INTERVAL, TapeMixin
 
 log = logging.getLogger(__name__)
 
@@ -65,7 +66,7 @@ class Hub:
                 self.clients.discard(ws)
 
 
-class Engine(PricesMixin, FeedsMixin, RiskMixin, CatalystsMixin, DailyMixin, GapsMixin, EarningsMixin):
+class Engine(PricesMixin, FeedsMixin, RiskMixin, CatalystsMixin, DailyMixin, GapsMixin, EarningsMixin, TapeMixin):
     def __init__(self, settings: Settings, state: UserState, hub: Hub, health: SourceHealth | None = None,
                  io: LiveIO | None = None):
         self.settings = settings
@@ -86,6 +87,7 @@ class Engine(PricesMixin, FeedsMixin, RiskMixin, CatalystsMixin, DailyMixin, Gap
         self._init_catalysts()
         self._init_gaps()
         self._init_earnings()
+        self._init_tape()
         self.finnhub = FinnhubFeed(settings.finnhub_api_key, self._ticks.set) if settings.finnhub_api_key else None
 
         self.alerts = AlertMonitor()
@@ -131,6 +133,8 @@ class Engine(PricesMixin, FeedsMixin, RiskMixin, CatalystsMixin, DailyMixin, Gap
             "gaps": self.gaps,
             "earnings": self.earnings,
             "gap_min_pct": self.settings.gap_min_pct,
+            "ssr": self.ssr,
+            "floats": self.floats,
         }
 
     # --- lifecycle ------------------------------------------------------------------------
@@ -150,6 +154,7 @@ class Engine(PricesMixin, FeedsMixin, RiskMixin, CatalystsMixin, DailyMixin, Gap
             asyncio.create_task(self._loop("gaps", GAP_INTERVAL, self._update_gaps, self._wake_gaps)),
             asyncio.create_task(self._gap_brief_loop()),
             asyncio.create_task(self._loop("earnings", EARNINGS_INTERVAL, self._update_earnings, self._wake_earnings)),
+            asyncio.create_task(self._loop("tape", TAPE_INTERVAL, self._update_tape, self._wake_tape)),
             asyncio.create_task(self._fill_offering_risk()),
         ]
         if self.filings:
@@ -305,6 +310,10 @@ class Engine(PricesMixin, FeedsMixin, RiskMixin, CatalystsMixin, DailyMixin, Gap
         self.state.unusual_alerts = enabled
         await self._config_changed()
 
+    async def set_rotation_alerts(self, enabled: bool) -> None:
+        self.state.rotation_alerts = enabled
+        await self._config_changed()
+
     async def set_halt_alerts(self, mode: str) -> None:
         self.state.halt_alerts = mode
         await self._config_changed()
@@ -324,6 +333,7 @@ class Engine(PricesMixin, FeedsMixin, RiskMixin, CatalystsMixin, DailyMixin, Gap
         self._wake_quotes.set()
         self._wake_earnings.set()
         self._wake_risk.set()
+        self._wake_tape.set()
         if self.finnhub:
             await self.finnhub.set_symbols(self.state.watchlist)
             self._wake_finnhub.set()

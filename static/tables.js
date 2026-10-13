@@ -18,7 +18,7 @@ function quoteRow(r, extra = "", flashable = false) {
     : "";
   const stale = r.stale ? ` class="stale" title="No fresh price from Yahoo; showing the last one received"` : "";
   return `<tr${stale}>
-    <td><a class="sym" data-sym="${esc(r.symbol)}" title="${esc(r.name)}">${esc(r.symbol)}</a>${haltBadge(r.symbol)}${riskBadge(r.symbol)}${warrantBadge(r.symbol, r.price)}${erBadge(r.symbol)}</td>
+    <td><a class="sym" data-sym="${esc(r.symbol)}" title="${esc(r.name)}">${esc(r.symbol)}</a>${haltBadge(r.symbol)}${riskBadge(r.symbol)}${warrantBadge(r.symbol, r.price)}${ssrBadge(r.symbol)}${rotationBadge(r)}${erBadge(r.symbol)}</td>
     <td class="${flash}">${live}${fmtPrice(r.price)}</td>
     <td class="${dir(r.change_pct)}">${fmtPct(r.change_pct)}</td>
     <td>${fmtVol(r.volume)}</td>
@@ -82,6 +82,34 @@ function warrantBadge(sym, price) {
   const tip = `Warrants in the money: ${levels.map((lv) => warrantLevelText(lv)).join("; ")}. ` +
     "They can be exercised at a profit now, and the new shares sold.";
   return ` <span class="war-badge" title="${esc(tip)}">WAR</span>`;
+}
+
+// SSR: the short sale restriction (Rule 201) is in effect: triggered today by a 10% drop from
+// the last close (so it holds tomorrow too), or carried over from the last session's drop.
+function ssrBadge(sym) {
+  const s = state.ssr?.[sym];
+  if (!s) return "";
+  const tip = s.today
+    ? "Short sale restriction: triggered today, when the stock traded 10% below the previous close. " +
+      "Shorts can't sell at or below the bid for the rest of today and all of the next trading day."
+    : `Short sale restriction all day today, carried over from the 10% drop on ${fmtDay(s.since)}. ` +
+      "Shorts can't sell at or below the bid.";
+  return ` <span class="ssr-badge" title="${esc(tip)}">SSR</span>`;
+}
+
+// ROT: today's volume has reached the stock's whole public float (Yahoo's figure).
+function floatRotation(row) {
+  const float = state.floats?.[row.symbol];
+  if (!float || !row.volume || (row.session && row.session !== etDate())) return null;  // before the open: yesterday's volume
+  return row.volume / float;
+}
+
+function rotationBadge(row) {
+  const r = floatRotation(row);
+  if (r == null || r < 1) return "";
+  const tip = `Volume today ${fmtVol(row.volume)} is ${r.toFixed(1)}× the float of ${fmtBig(state.floats[row.symbol])} shares: ` +
+    "every share available to trade has changed hands at least once.";
+  return ` <span class="rot-badge" title="${esc(tip)}">ROT ${r.toFixed(1)}×</span>`;
 }
 
 function haltBadge(sym) {

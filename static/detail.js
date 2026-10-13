@@ -230,7 +230,7 @@ function renderDilution() {
         h.offerings_12m.map(fmtDay).join(", "))}
       ${warrantStat(d.warrants, stat)}
     </div>
-    <div id="detail-warrants"></div>
+    <div id="detail-levels"></div>
     ${h.events.length ? `<details class="dilution-events"><summary>Dilution-related filings (${h.events.length})</summary>
       <ul class="detail-list">${h.events.map((e) => `
         <li><div class="meta">${fmtDay(e.filed)} · ${esc(e.form)}</div>
@@ -238,22 +238,37 @@ function renderDilution() {
       </ul></details>` : ""}
     <p class="muted fine">From SEC filings and XBRL financials, which lag by up to a quarter. Filings since
       ${fmtDay(h.covered_since)}.</p>`;
-  updateDetailWarrants();
+  updateDetailLevels();
 }
 
-// Each warrant exercise price with how far the stock is from it; redrawn as prices stream in.
-function updateDetailWarrants() {
-  const el = $("#detail-warrants");
+// The price levels from the filings, highest first, with the current price between them: warrant
+// exercise prices and the prices recent offerings sold at. Redrawn as prices stream in.
+function updateDetailLevels() {
+  const el = $("#detail-levels");
   if (!el) return;
-  const levels = detail.dilution?.warrants?.levels ?? [];
+  const w = detail.dilution?.warrants;
+  const levels = [...(w?.levels ?? []), ...(w?.offering_levels ?? [])].sort((a, b) => b.price - a.price);
+  if (!levels.length) {
+    el.innerHTML = "";
+    return;
+  }
   const price = detailPrice();
-  const note = `<p class="muted fine">Warrant exercise prices · watchlist stocks and movers alert when they cross one</p>`;
-  el.innerHTML = levels.length ? `${note}<ul class="warrant-levels">${levels.map((lv) => {
+  const item = (lv) => {
+    const offering = lv.kind === "offering";
     const away = price != null ? (lv.price / price - 1) * 100 : null;
+    const size = Math.abs(away ?? 0);
     const where = away == null ? ""
-      : away <= 0 ? `<b class="hot">in the money</b>` : `<span class="muted">${away.toFixed(away < 10 ? 1 : 0)}% above the price</span>`;
-    return `<li><b>$${fmtPrice(lv.price)}</b> ${esc(warrantLevelText(lv, false))} ${where}</li>`;
-  }).join("")}</ul>` : "";
+      : !offering && away <= 0 ? `<b class="hot">in the money</b>`
+      : `<span class="muted">${size.toFixed(size < 10 ? 1 : 0)}% ${away > 0 ? "above" : "below"} the price</span>`;
+    const what = offering ? `offering price (${lv.form} of ${fmtDay(lv.filed)})` : warrantLevelText(lv, false);
+    return `<li${offering ? ` class="offering"` : ""}><b>$${fmtPrice(lv.price)}</b> ${esc(what)} ${where}</li>`;
+  };
+  const above = levels.filter((lv) => price == null || lv.price > price);
+  const below = levels.filter((lv) => price != null && lv.price <= price);
+  const now = price != null ? `<li class="now">now $${fmtPrice(price)}</li>` : "";
+  el.innerHTML = `<p class="muted fine">Price levels from the filings · watchlist stocks and movers alert when they cross
+    a warrant price going up, or an offering price either way</p>
+    <ul class="price-levels">${above.map(item).join("")}${now}${below.map(item).join("")}</ul>`;
 }
 
 function detailPrice() {
@@ -275,12 +290,18 @@ function updateDetailPrice() {
   const live = q?.live ? `<span class="live-dot" title="Real-time (Finnhub)"></span>` : "";
   const delayed = q?.live ? "" : `<small class="muted">delayed ~15 min</small>`;
   el.innerHTML = `${live}<strong>${fmtPrice(price)}</strong>
-    <span class="${dir(pct)}">${fmtPct(pct)}</span>${haltBadge(detail.symbol)}${warrantBadge(detail.symbol, price)} ${delayed}`;
+    <span class="${dir(pct)}">${fmtPct(pct)}</span>${haltBadge(detail.symbol)}${warrantBadge(detail.symbol, price)}${ssrBadge(detail.symbol)} ${delayed}`;
 }
 
 function updateDetailWatch() {
   const btn = $("#detail-watch");
   if (btn) btn.textContent = state.watchlist.includes(detail.symbol) ? "★ On watchlist" : "☆ Add to watchlist";
+}
+
+function floatStat(float, volume) {
+  if (!float) return "–";
+  const r = volume ? volume / float : null;
+  return fmtBig(float) + (r >= 0.1 ? ` <small class="${r >= 1 ? "up" : "muted"}">(${r.toFixed(1)}× today)</small>` : "");
 }
 
 function updateDetailStats() {
@@ -307,7 +328,7 @@ function updateDetailStats() {
     stat("Avg volume", fmtVol(p.avg_volume)),
     stat("RVOL", fmtRvol(q?.rvol), q?.rvol >= state.rvol_threshold ? "hot" : ""),
     stat("Market cap", fmtBig(p.market_cap, "$")),
-    stat("Float", fmtBig(p.float_shares)),
+    stat("Float", floatStat(p.float_shares ?? state.floats[detail.symbol], volume)),
     stat("Short % float", p.short_pct_float != null ? `${(p.short_pct_float * 100).toFixed(1)}%` : "–",
       p.short_pct_float >= 0.2 ? "hot" : ""),
     stat("Days to cover", p.short_ratio != null ? p.short_ratio.toFixed(1) : "–"),
@@ -610,7 +631,7 @@ if (tickerHash) openDetail(tickerHash[1].toUpperCase());
 // Called by app.js when streamed data changes.
 function refreshDetail(what) {
   if (!detail.symbol || !detail.data) return;
-  if (what === "quotes") { updateDetailPrice(); updateDetailStats(); updateDetailWarrants(); return; }
+  if (what === "quotes") { updateDetailPrice(); updateDetailStats(); updateDetailLevels(); return; }
   if (what === "config") updateDetailWatch();
   updateDetailLists();
   drawDetailChart();  // news/halt markers

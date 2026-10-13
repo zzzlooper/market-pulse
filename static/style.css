@@ -234,8 +234,15 @@ button:disabled { opacity: .5; cursor: default; border-color: var(--border); }
 .risk-badge.medium { color: var(--hot); border: 1px solid var(--hot); }
 .war-badge { font-size: 9px; font-weight: 700; padding: 0 3px; border-radius: 2px; cursor: help;
   vertical-align: 1px; letter-spacing: 0.03em; color: #0d1117; background: var(--hot); }
-.warrant-levels { list-style: none; margin: 2px 0 0; padding: 0; font-size: 12px; }
-.warrant-levels li { padding: 2px 0; }
+.ssr-badge { font-size: 9px; font-weight: 700; padding: 0 3px; border-radius: 2px; cursor: help;
+  vertical-align: 1px; letter-spacing: 0.03em; color: #d2a8ff; border: 1px solid #d2a8ff99; }
+.rot-badge { font-size: 9px; font-weight: 700; padding: 0 3px; border-radius: 2px; cursor: help;
+  vertical-align: 1px; letter-spacing: 0.03em; color: var(--up); border: 1px solid var(--up); white-space: nowrap; }
+.price-levels { list-style: none; margin: 2px 0 0; padding: 0; font-size: 12px; }
+.price-levels li { padding: 2px 0; }
+.price-levels li.offering b:first-child { color: #58a6ff; }
+.price-levels li.now { color: var(--muted); border-top: 1px dashed var(--border); border-bottom: 1px dashed var(--border);
+  margin: 2px 0; font-variant-numeric: tabular-nums; }
 .halt-badge {
   font-size: 10px;
   font-weight: 700;

@@ -494,6 +494,8 @@ class FilingsFeed:
             item["tags"].append("warrants")
         elif outstanding := describe_outstanding(facts):
             item["summary"] += f" Already outstanding: {outstanding}."
+        if price := (facts or {}).get("offering_price"):
+            item["summary"] = f"Priced at ${price:,.2f} per share. {item['summary']}"
         return item
 
     def _item(self, accession: str, entry, ticker: str, kind: str, info: FormInfo, form: str,

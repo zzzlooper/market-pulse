@@ -4,10 +4,12 @@
 
 const state = {
   watchlist: [], keywords: [], quotes: [], movers: {}, unusual: [], news: [],
-  alert_rules: [], unusual_alerts: true, alerts: [], halts: [], halt_alerts: "watchlist",
+  alert_rules: [], unusual_alerts: true, rotation_alerts: true, alerts: [], halts: [], halt_alerts: "watchlist",
   rvol_threshold: 2, price_source: "yahoo", tab: "gainers", leftTab: "unusual",
   health: { now: 0, sources: [] },
   risk: {},  // symbol -> { level, points, reasons } dilution summary; null = not an SEC filer
+  ssr: {},     // symbol -> { since, today }: short sale restriction in effect today
+  floats: {},  // symbol -> shares in the public float (Yahoo)
 };
 const lastPrice = new Map();   // symbol -> price, to flash changes
 const MAX_NEWS = 500;

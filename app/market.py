@@ -126,6 +126,10 @@ def _screen_row(q: dict) -> dict:
         "avg_volume": avg,
         "rvol": relative_volume(volume, avg, pace(session_date)),
         "market_cap": q.get("marketCap"),
+        # For the short sale restriction: the regular session's low against the last close.
+        "low": q.get("regularMarketDayLow"),
+        "prev_close": q.get("regularMarketPreviousClose"),
+        "session": session_date.isoformat() if session_date else None,
     }
 
 
@@ -157,8 +161,42 @@ def fetch_quotes(symbols: list[str]) -> list[dict]:
             "rvol": relative_volume(volume, avg, pace(bars.index[-1].date())),
             "high": _num(last["High"]),
             "low": _num(last["Low"]),
+            "session": bars.index[-1].date().isoformat(),
         })
     return rows
+
+
+def fetch_daily(symbols: list[str]) -> list[dict]:
+    """The last few sessions' lows and closes per symbol (regular hours), oldest first: whether
+    yesterday's drop put a short sale restriction on today (see app/ssr.py)."""
+    if not symbols:
+        return []
+    df = yf.download(symbols, period="5d", interval="1d", group_by="ticker",
+                     auto_adjust=False, progress=False, threads=True)
+    rows = []
+    for sym in symbols:
+        bars = _bars_for(df, sym)
+        if bars is None or bars.empty:
+            continue
+        rows.append({"symbol": sym, "days": [
+            {"date": t.date().isoformat(), "low": _num(b["Low"]), "close": _num(b["Close"])}
+            for t, b in bars.iterrows()]})
+    return rows
+
+
+def fetch_floats(symbols: list[str]) -> list[dict]:
+    """Shares in the public float per symbol, from Yahoo's company data (None when unknown)."""
+    from concurrent.futures import ThreadPoolExecutor
+
+    def one(symbol: str) -> dict | None:
+        try:
+            info = yf.Ticker(symbol).info or {}
+        except Exception as exc:  # one unknown symbol shouldn't sink the rest
+            log.info("float for %s unavailable: %s", symbol, exc)
+            return None
+        return {"symbol": symbol, "float_shares": info.get("floatShares")}
+    with ThreadPoolExecutor(max_workers=4) as pool:
+        return [row for row in pool.map(one, symbols) if row]
 
 
 def _bars_for(df: pd.DataFrame, sym: str) -> pd.DataFrame | None:

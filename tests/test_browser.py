@@ -12,7 +12,8 @@ pytestmark = pytest.mark.skipif(CHROMIUM is None, reason="needs Chromium or Chro
 CONFIG = f'ticker_news = false\n[feeds]\n"Wire" = "{WIRE}"\n'
 TOKEN = "mp-browser-test-token-7Qx2"
 TOPIC = "mp-browser-topic-Zp41Kq9"
-WARRANTS = """<p>Up to 1,000,000 Shares of Common Stock underlying the Series A Warrants</p>
+WARRANTS = """<p>The public offering price is $9.00 per share.</p>
+<p>Up to 1,000,000 Shares of Common Stock underlying the Series A Warrants</p>
 <p>Each Series A Warrant has an exercise price of $7.50 per share.</p>
 <p>Excludes 3,000,000 shares of common stock issuable upon the exercise of outstanding warrants,
 having a weighted average exercise price of $12.50 per share.</p>"""
@@ -29,6 +30,8 @@ def made_up_morning(folder):
     day.halt("09:35", "BOLT", "LUDP")
     day.chart("ACME", lambda hhmm: 10.0 if hhmm < "07:00" else 7.8)
     day.earnings("04:00", BOLT=("2026-10-13", "07:00", False), FERN=("2026-10-16", "16:05", False))
+    day.daily("04:00", ACME=[("2026-10-09", 9.6, 10.0), ("2026-10-12", 8.5, 9.0)])  # fell 15% yesterday: SSR today
+    day.floats("04:00", BOLT=800_000, FERN=50_000_000)  # BOLT has traded 1M shares: its float, 1.3 times
     return day.build(["BOLT", "FERN"])
 
 
@@ -134,6 +137,18 @@ def test_opening_on_gaps_shows_the_gappers_with_their_reasons(page, world):
     assert war.startswith("Warrants in the money: Series A warrants at $7.50 for 1.00M shares (424B5 of Aug")
     assert "12.50" not in war  # the outstanding ones are still out of the money
     assert page.eval("document.querySelectorAll('#gaps .war-badge').length") == 1
+    ssr = page.wait("document.querySelector('#gaps a.sym[data-sym=ACME]').parentElement.querySelector('.ssr-badge')?.title")
+    assert ssr.startswith("Short sale restriction all day today, carried over from the 10% drop on Oct 12")
+    assert page.eval("document.querySelectorAll('#gaps .ssr-badge').length") == 1
+
+
+def test_a_stock_that_traded_its_whole_float_gets_a_rot_badge(page, world):
+    open_dashboard(page, world)
+    rot = page.wait("[...document.querySelectorAll('#watchlist .rot-badge')].map(b => [b.closest('tr')"
+                    ".querySelector('a.sym').textContent, b.textContent, b.title])", timeout=20)
+    assert rot == [["BOLT", "ROT 1.3×", ("Volume today 1.0M is 1.3× the float of 800.00K shares: every share "
+                                         "available to trade has changed hands at least once.")]]
+    assert page.eval("document.querySelector('#rotation-alerts').checked") is True
     assert page.text("#gaps-note").startswith("Gaps ≥ 3%")
 
 
@@ -144,11 +159,13 @@ def test_the_ticker_drawer_opens_with_its_dilution_panel_and_closes_on_escape(pa
     page.wait("!document.querySelector('#detail').hidden")
     assert page.wait("document.querySelector('#detail-dilution .risk')?.textContent") == "high"
     assert "Shelf" in page.text("#detail-dilution")
-    levels = page.wait("document.querySelectorAll('#detail-warrants li').length === 2"
-                       " && [...document.querySelectorAll('#detail-warrants li')].map(li => li.innerText)")
-    assert levels[0].startswith("$7.50 Series A warrants for 1.00M shares") and levels[0].endswith("in the money")
-    assert levels[1].startswith("$12.50 outstanding warrants (average)") and levels[1].endswith("60% above the price")
-    assert page.text("#detail-price .war-badge") == "WAR"
+    levels = page.wait("document.querySelectorAll('#detail-levels li').length === 4"
+                       " && [...document.querySelectorAll('#detail-levels li')].map(li => li.innerText)")
+    assert levels[0].startswith("$12.50 outstanding warrants (average)") and levels[0].endswith("60% above the price")
+    assert levels[1] == "$9.00 offering price (424B5 of Aug 1, 2026) 15% above the price"
+    assert levels[2] == "now $7.80"
+    assert levels[3].startswith("$7.50 Series A warrants for 1.00M shares") and levels[3].endswith("in the money")
+    assert page.text("#detail-price .war-badge") == "WAR" and page.text("#detail-price .ssr-badge") == "SSR"
     page.eval("document.dispatchEvent(new KeyboardEvent('keydown', {key: 'Escape'}))")
     page.wait("document.querySelector('#detail').hidden")  # closes via history, so a moment later
 

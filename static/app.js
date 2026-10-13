@@ -28,6 +28,8 @@ function handle({ type, data }) {
     case "quotes": state.quotes = data; renderWatchlist(); break;
     case "movers": state.movers = data; renderMovers(); break;
     case "unusual": state.unusual = data; renderUnusual(); break;
+    case "ssr": state.ssr = data; renderWatchlist(); renderMovers(); renderUnusual(); renderGaps(); refreshDetail("quotes"); break;
+    case "floats": state.floats = data; renderWatchlist(); renderMovers(); renderUnusual(); refreshDetail("quotes"); break;
     case "news": addNews(data); break;
     case "gaps": state.gaps = data; renderGaps(); break;
     case "earnings": state.earnings = data; renderWatchlist(); renderMovers(); renderUnusual(); renderGaps(); break;
@@ -145,6 +147,15 @@ $("#add-rule").addEventListener("submit", async (ev) => {
     });
     form.value.value = "";
   } catch (err) {
+    toast(err.message);
+  }
+});
+
+$("#rotation-alerts").addEventListener("change", async (ev) => {
+  try {
+    await api("PUT", "/api/alert-rules/rotation", { enabled: ev.target.checked });
+  } catch (err) {
+    ev.target.checked = !ev.target.checked;
     toast(err.message);
   }
 });

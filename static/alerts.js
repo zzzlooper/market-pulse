@@ -16,6 +16,7 @@ function renderRules() {
     `<button data-remove-rule="${esc(r.id)}" title="Remove">×</button></span>`).join("")
     || `<span class="muted">No rules yet</span>`;
   $("#unusual-alerts").checked = state.unusual_alerts;
+  $("#rotation-alerts").checked = state.rotation_alerts;
   $("#halt-alerts").value = state.halt_alerts;
   $("#rule-symbols").innerHTML = state.watchlist.map((s) => `<option value="${esc(s)}">`).join("");
 }
@@ -48,7 +49,8 @@ function addAlerts(events) {
   state.alerts = [...events, ...state.alerts].slice(0, 100);
   renderAlertLog(new Set(events.map((a) => a.id)));
   const what = { halt: "trading halted", resume: "resumption", unusual: "unusual volume",
-                 warrant: "warrants in the money" };
+                 warrant: "warrants in the money", offering_below: "below offering price",
+                 offering_above: "back above offering price", rotation: "float rotated" };
   notify(events.map((a) => ({ title: `${a.symbol} · ${what[a.kind] ?? "price alert"}`, body: a.message, tag: a.id })), 660);
 }
 

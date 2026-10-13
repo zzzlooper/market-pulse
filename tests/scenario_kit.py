@@ -15,8 +15,8 @@ carry only a role), placeholder contact details. Nothing leaves the machine: the
 uses the network and the phone is never called; notes are read from its queue.
 
 The engine's loops are not running. Each step freezes the market clock and runs one round:
-quotes, movers, news, halts, filings, pre-market gaps, earnings, risk, reaction measuring,
-health. Sources are polled in
+quotes, movers, news, halts, filings, pre-market gaps, earnings, tape (SSR, floats), risk,
+reaction measuring, health. Sources are polled in
 that order, so a filing at a step sees the movers of the same step.
 """
 from __future__ import annotations
@@ -100,19 +100,24 @@ class Day:
 
     # --- Yahoo --------------------------------------------------------------------------------
 
-    def quotes(self, hhmm: str, **change_pct: float) -> None:
-        """Watchlist prices: each symbol at 10.00 × (1 + change%), with ordinary volume."""
+    def quotes(self, hhmm: str, low: dict | None = None, volume: dict | None = None, session: date = DAY,
+               **change_pct: float) -> None:
+        """Watchlist prices: each symbol at 10.00 × (1 + change%), with ordinary volume (or
+        volume[symbol]). low[symbol]: the session's low so far, from a 10.00 close. session: the
+        day the quote describes (before the open, Yahoo's latest is the previous session)."""
         self._quoted = True
         rows = [{"symbol": s, "price": round(10 * (1 + p / 100), 4), "prev_close": 10.0, "change": p / 10,
-                 "change_pct": p, "volume": 1_000_000, "avg_volume": 1_000_000, "rvol": 1.0}
+                 "change_pct": p, "volume": (volume or {}).get(s, 1_000_000), "avg_volume": 1_000_000, "rvol": 1.0,
+                 "low": (low or {}).get(s), "session": session.isoformat()}
                 for s, p in change_pct.items()]
         self.record(hhmm, f"call fetch_quotes {json.dumps([sorted(change_pct)])}", {"r": rows})
 
     def movers(self, hhmm: str, gainers: dict | None = None, small_caps: dict | None = None,
-               rvol: dict | None = None) -> None:
+               rvol: dict | None = None, volume: dict | None = None) -> None:
         def rows(entries):
             return [{"symbol": s, "name": COMPANIES.get(s, (s,))[0], "price": 10 * (1 + p / 100), "change_pct": p,
-                     "volume": 5_000_000, "avg_volume": 1_000_000, "rvol": (rvol or {}).get(s, 1.0)}
+                     "volume": (volume or {}).get(s, 5_000_000), "avg_volume": 1_000_000, "rvol": (rvol or {}).get(s, 1.0),
+                     "prev_close": 10.0, "session": DAY.isoformat()}
                     for s, p in (entries or {}).items()]
         self.record(hhmm, "call fetch_movers []", {"r": {
             "gainers": rows(gainers), "losers": [], "active": [], "small_caps": rows(small_caps)}})
@@ -127,6 +132,18 @@ class Day:
             t += 60
         self.record(recorded, f'call fetch_chart {json.dumps([symbol, "1d"])}',
                     {"r": {"range": "1d", "interval": "1m", "bars": bars}})
+
+    def daily(self, hhmm: str, **sessions: list[tuple[str, float, float]]) -> None:
+        """The last sessions' daily bars per symbol, as Yahoo answers the SSR lookup:
+        symbol=[("YYYY-MM-DD", low, close), …], oldest first."""
+        rows = [{"symbol": s, "days": [{"date": d, "low": lo, "close": c} for d, lo, c in days]}
+                for s, days in sessions.items()]
+        self.record(hhmm, f"call fetch_daily {json.dumps([sorted(sessions)])}", {"r": rows})
+
+    def floats(self, hhmm: str, **shares: int | None) -> None:
+        """Shares in the public float per symbol, as Yahoo's company data gives them."""
+        rows = [{"symbol": s, "float_shares": n} for s, n in shares.items()]
+        self.record(hhmm, f"call fetch_floats {json.dumps([sorted(shares)])}", {"r": rows})
 
     def premarket(self, hhmm: str, **gaps: tuple[float, int]) -> None:
         """Pre-market gap rows as the scanner's Yahoo download returns them:
@@ -325,7 +342,7 @@ class Run:
         self.now = hhmm
         for name, update in (("quotes", e._update_quotes), ("movers", e._update_movers), ("news", e._update_news),
                              ("halts", e._update_halts), ("filings", e._update_filings), ("gaps", e._update_gaps),
-                             ("earnings", e._update_earnings)):
+                             ("earnings", e._update_earnings), ("tape", e._update_tape)):
             await e._run_step(name, update)
         await e._update_risk()
         while not e._risk_queue.empty():

@@ -282,3 +282,68 @@ def test_a_stock_already_at_the_exercise_price_at_its_first_reading_hasnt_crosse
         assert [n for n in run.phone if "warrants" in n["title"]] == []
     finally:
         run.close()
+
+
+# --- offering prices ------------------------------------------------------------------------------------
+
+@pytest.mark.parametrize(("text", "price"), [
+    ("The public offering price is $2.10 per share.", 2.10),
+    (("The combined public offering price for each share of common stock and accompanying Series A warrant "
+      "is $1.00."), 1.00),
+    ("We are offering the Units at a public offering price of US$1.44 per Unit.", 1.44),
+    ("sold 1,000,000 shares at a purchase price of $2.00 per share in a private placement", 2.00),
+    ("The offering price per share is $3.25", 3.25),
+    # not what this offering sold at:
+    ("Dilution is calculated based on an assumed public offering price of $4.00 per share.", None),
+    ("We may sell shares having an aggregate offering price of up to $50,000,000.", None),
+    ("for a total offering price of $25,000,000 before expenses", None),  # an amount, not a price per share
+    ("The last reported sale price of our common stock on October 8, 2026 was $2.35 per share.", None),
+    ("Each Series B Warrant has an exercise price of $0.80 per share.", None),
+])
+def test_the_price_an_offering_sold_at(text, price):
+    assert (detect(text) or {}).get("offering_price") == price
+
+
+def test_offering_levels_skip_registration_statements_and_repeat_prices():
+    priced = "<p>The public offering price is $2.10 per share.</p>"
+    checked = [(candidate("424B4", "2026-10-09"), detect(priced)),
+               (candidate("S-1/A", "2026-10-01"), detect(priced.replace("2.10", "2.40"))),  # a range, not a sale
+               (candidate("8-K", "2026-06-01"), detect("at a purchase price of $3.00 per share")),
+               (candidate("424B5", "2026-05-01"), detect(priced))]                             # same price again
+    levels = warrant_summary(checked)["offering_levels"]
+    assert [(lv["price"], lv["form"], lv["filed"]) for lv in levels] == [
+        (2.10, "424B4", date(2026, 10, 9)), (3.00, "8-K", date(2026, 6, 1))]
+
+
+def test_falling_through_an_offering_price_and_climbing_back_each_alert_once(day, monkeypatch):
+    monkeypatch.setattr("app.sec.MIN_REQUEST_GAP", 0)
+    day.profile("BOLT", "high", offering_text="<p>The public offering price is $9.50 per share.</p>")
+    day.quotes("09:30", BOLT=0.0)
+    day.quotes("09:40", BOLT=-7.0)  # 9.30: under the deal price
+    day.quotes("09:50", BOLT=-2.0)  # 9.80: back above
+    day.quotes("10:00", BOLT=-6.0)  # under again: already said today
+    run = Run(day, watchlist=["BOLT"]).steps("09:31", "09:32", "09:41", "09:51", "10:01")
+    try:
+        assert run.engine.risk["BOLT"]["offering_levels"][0]["price"] == 9.5
+        notes = [(n["at"], n["title"], n["body"], n["priority"]) for n in run.phone if "offering" in n["title"]]
+        assert notes == [
+            ("09:41", "BOLT · below offering price",
+             ("BOLT fell below $9.50 (now $9.30), the price of its 424B5 offering of Aug 1, 2026: the deal's buyers "
+              "are now under water"), "high"),
+            ("09:51", "BOLT · back above offering price",
+             "BOLT climbed back above $9.50 (now $9.80), the price of its 424B5 offering of Aug 1, 2026", "high"),
+        ]
+    finally:
+        run.close()
+
+
+def test_a_priced_offering_says_its_price_in_the_news_item(day):
+    day.movers("09:45", gainers={"ACME": 45.0})
+    day.filing("10:02", "424B4", "ACME", text="<p>The public offering price is $2.10 per share.</p>" + UNITS_COVER)
+    run = Run(day, watchlist=["BOLT"]).steps("09:31", "09:46", "10:05")
+    try:
+        item = run.browser("news")[-1]
+        assert item["summary"].startswith("Priced at $2.10 per share. Includes pre-funded warrants")
+        assert item["filing"]["warrants"]["offering_price"] == 2.10
+    finally:
+        run.close()

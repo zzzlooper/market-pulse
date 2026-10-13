@@ -10,6 +10,7 @@ One Engine object, assembled from a mixin per area so each file stays about one 
     daily.py      the end-of-day recap
     gaps.py       the pre-market gap scanner and its 09:15 brief
     earnings.py   the watchlist's next earnings dates (ER badges, brief and recap lines)
+    tape.py       the short sale restriction and float rotation (SSR and ROT badges, rotation alerts)
 
 Each mixin sets up the state it owns in its own _init_* method, called from Engine.__init__.
 """

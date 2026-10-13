@@ -34,7 +34,10 @@ class GapsMixin:
         # No rows is normal at 04:01 (nothing has traded yet) and all day on a holiday.
         rows = await self._call("fetch_premarket", market.fetch_premarket, list(context))
         self._gaps_traded = self._gaps_traded or bool(rows)
-        self.gaps = select(rows, context, s.gap_min_pct, s.gap_min_minutes)
+        gaps = select(rows, context, s.gap_min_pct, s.gap_min_minutes)
+        if {g["symbol"] for g in gaps} - {g["symbol"] for g in self.gaps}:
+            self._wake_tape.set()  # new gappers: is SSR in effect on them today?
+        self.gaps = gaps
         await self.hub.broadcast({"type": "gaps", "data": self.gaps})
         return None
 

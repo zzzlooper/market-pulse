@@ -17,6 +17,7 @@ from __future__ import annotations
 import os
 import sqlite3
 import statistics
+import threading
 from datetime import date, datetime, timedelta
 from pathlib import Path
 
@@ -129,10 +130,14 @@ def summarize(rows: list[dict], key) -> list[dict]:
 
 
 class ReactionStore:
+    """The SQLite file of tracked events. The engine and request handlers on worker threads
+    (the CSV download) share one connection, so every use of it holds the lock."""
+
     def __init__(self, path: Path):
         self.path = path
         path.parent.mkdir(parents=True, exist_ok=True)
         new = not path.exists()
+        self._lock = threading.RLock()
         self._db = sqlite3.connect(path, check_same_thread=False)
         self._db.row_factory = sqlite3.Row
         self._db.executescript(SCHEMA)
@@ -140,19 +145,22 @@ class ReactionStore:
             os.chmod(path, 0o600)  # yours only, whatever the umask
 
     def close(self) -> None:
-        self._db.close()
+        with self._lock:
+            self._db.close()
 
     def add(self, event: dict) -> bool:
         """Store a new event; False if this id is already tracked (e.g. after a restart)."""
-        cur = self._db.execute(
-            "INSERT OR IGNORE INTO events (id, symbol, kind, label, title, context, risk, at) "
-            "VALUES (:id, :symbol, :kind, :label, :title, :context, :risk, :at)", event)
-        self._db.commit()
-        return cur.rowcount == 1
+        with self._lock:
+            cur = self._db.execute(
+                "INSERT OR IGNORE INTO events (id, symbol, kind, label, title, context, risk, at) "
+                "VALUES (:id, :symbol, :kind, :label, :title, :context, :risk, :at)", event)
+            self._db.commit()
+            return cur.rowcount == 1
 
     def pending(self, limit: int = 500) -> list[dict]:
-        rows = self._db.execute("SELECT * FROM events WHERE done = 0 ORDER BY at LIMIT ?", (limit,))
-        return [dict(r) for r in rows]
+        with self._lock:
+            rows = self._db.execute("SELECT * FROM events WHERE done = 0 ORDER BY at LIMIT ?", (limit,))
+            return [dict(r) for r in rows]
 
     def update(self, event_id: str, fields: dict) -> None:
         if not fields:
@@ -160,34 +168,40 @@ class ReactionStore:
         allowed = {"base", "p5m", "p30m", "pclose", "close_day", "m5m", "m30m", "done", "risk"}
         assert set(fields) <= allowed, fields
         sets = ", ".join(f"{k} = :{k}" for k in fields)
-        self._db.execute(f"UPDATE events SET {sets} WHERE id = :id", {**fields, "id": event_id})
-        self._db.commit()
+        with self._lock:
+            self._db.execute(f"UPDATE events SET {sets} WHERE id = :id", {**fields, "id": event_id})
+            self._db.commit()
 
     def since(self, t: int) -> list[dict]:
-        rows = self._db.execute("SELECT * FROM events WHERE at >= ? ORDER BY at DESC", (t,))
-        return [dict(r) for r in rows]
+        with self._lock:
+            rows = self._db.execute("SELECT * FROM events WHERE at >= ? ORDER BY at DESC", (t,))
+            return [dict(r) for r in rows]
 
     def stats(self) -> dict:
-        count, oldest, newest = self._db.execute("SELECT COUNT(*), MIN(at), MAX(at) FROM events").fetchone()
+        with self._lock:
+            count, oldest, newest = self._db.execute("SELECT COUNT(*), MIN(at), MAX(at) FROM events").fetchone()
         return {"count": count, "oldest": oldest, "newest": newest}
 
     def prune(self, before: int) -> int:
         """Delete events older than `before` (epoch seconds); returns how many."""
-        deleted = self._db.execute("DELETE FROM events WHERE at < ?", (before,)).rowcount
-        self._db.commit()
-        if deleted:
-            self._compact()
-        return deleted
+        with self._lock:
+            deleted = self._db.execute("DELETE FROM events WHERE at < ?", (before,)).rowcount
+            self._db.commit()
+            if deleted:
+                self._compact()
+            return deleted
 
     def clear(self) -> int:
-        deleted = self._db.execute("DELETE FROM events").rowcount
-        self._db.commit()
-        self._compact()
-        return deleted
+        with self._lock:
+            deleted = self._db.execute("DELETE FROM events").rowcount
+            self._db.commit()
+            self._compact()
+            return deleted
 
     def _compact(self) -> None:
         # SQLite only marks deleted rows free; VACUUM rewrites the file so they're really gone.
-        self._db.execute("VACUUM")
+        with self._lock:
+            self._db.execute("VACUUM")
 
 
 def finished(event: dict, now: int) -> bool:

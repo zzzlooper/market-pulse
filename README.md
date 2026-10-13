@@ -119,7 +119,8 @@ and `SEC_USER_AGENT` for your contact address).
   0 turns it off), you get one message saying which alerts can't fire, and another when it's
   back. Silence from a broken feed otherwise looks the same as a quiet market.
 - A burst of alerts is sent as 2 messages plus a "+N more" summary, with a hard cap of 20 per
-  minute. Halts arrive as urgent notifications, price and warrant alerts as high priority, news as normal.
+  minute. Halts arrive as urgent notifications, price, warrant and offering-price alerts as high
+  priority, news and float rotation as normal.
 - Set `public_url` (e.g. `http://192.168.1.20:8000`) to make a tapped alert open that
   ticker's detail panel. That only works where your phone can reach the app, e.g. on the same Wi-Fi,
   so set an access token first (next section).
@@ -280,8 +281,9 @@ There's deliberately no offline cache: nothing from the dashboard is stored on t
       year: sold with an offering (+1), and outstanding warrants worth 10% or more of the shares
       (+1; smaller overhangs are noted without points). The panel's *Warrants* figure shows the
       outstanding shares and their average exercise price, with the filing it came from. Below
-      the figures, each warrant exercise price is listed with how far the stock is from it (see
-      *Warrants in the money*);
+      the figures, the price levels from the filings (warrant exercise prices and offering
+      prices) are listed highest first, with the current price between them and how far each
+      is (see *Warrants in the money* and *Offering prices*);
     - XBRL financials: cash, monthly operating burn and the months of cash left at that rate
       (+2 under 6 months, +1 under 12; positive cash flow −1), and the share count against a
       year earlier (+2 for 50% more, +1 for 20%).
@@ -314,6 +316,15 @@ There's deliberately no offline cache: nothing from the dashboard is stored on t
     - Profiles exist for the stocks dilution risk covers (watchlist, gainers, small caps), so
       those are the ones watched. Warrant terms can be adjusted later (resets, reverse splits)
       in filings not read here; check the latest before trading on a level.
+  - **Offering prices**: what a recent offering or private placement sold at, read from the
+    same first pages ("public offering price of $2.10 per share", "purchase price of $2.00 per
+    share", "US$1.44 per Unit"). Below it, the offering's buyers are at a loss; stocks often
+    trade back to it, and a break below it is the deal "breaking". Assumed prices (an S-1's
+    illustration), registration statements and aggregate amounts are left out. The news item
+    of a priced offering starts with *Priced at $2.10 per share*.
+    - An alert fires when a watchlist stock or a mover **falls below** an offering price
+      (*… the deal's buyers are now under water*) and when it **climbs back above** it; each
+      direction at most once a day, the first reading a baseline. Sent with the price alerts.
   - *Add to watchlist*, *Filter news* (the old click behaviour), and the company description.
   - Esc or a click outside closes it. `http://localhost:8000/#ticker=AAPL` opens straight to
     a ticker. Times in the panel are ET, to match the chart.
@@ -322,7 +333,8 @@ There's deliberately no offline cache: nothing from the dashboard is stored on t
 - **Price & volume alerts** (bottom-right panel): rules like *AAPL above 350*,
   *all watchlist tickers move ±5%* or *RVOL ≥ 3×*. Leave the ticker blank to apply a rule to
   the whole watchlist. A toggle adds *alert when a stock enters the unusual-volume list*,
-  at most once per stock per day.
+  at most once per stock per day, and another *alert when a stock trades its whole float* (see
+  *Float rotation*).
   - Rules fire when a level is **crossed**, not while it holds. The first reading after
     startup, or after adding a rule, only records a baseline, so a stock already up 6%
     when the app starts won't alert until it dips below 5% and crosses again. A stock
@@ -395,6 +407,22 @@ There's deliberately no offline cache: nothing from the dashboard is stored on t
     figures it computes, none of the addresses or phone numbers in SEC's responses.
   - `sec_filings = false` turns it off (8-Ks then show as plain news, as in v0.1). EDGAR doesn't accept filings on weekends and federal
     holidays, and insiders have two business days to file a Form 4.
+- **Short sale restriction** (`app/ssr.py`): an **SSR** badge, in every table and the panel's
+  price line, when SEC Rule 201 is in effect: the stock traded 10% or more below the previous
+  close during regular hours, today (so it holds tomorrow too) or in the last session (so it
+  holds all of today). Shorts then can't sell at or below the bid, which takes pressure off the
+  price and makes squeezes likelier. Hover for which. The last sessions' daily bars are looked
+  up once a day for the watchlist, the movers and the gappers, so a pre-market gapper shows a
+  restriction carried over from yesterday. It's worked out from prices (the rule itself goes by
+  the best bid), so treat it as a strong hint; your broker's flag is the final word.
+- **Float rotation**: a **ROT 2.3×** badge in the watchlist, movers and unusual-volume tables
+  once today's volume has reached the stock's whole public float (Yahoo's figure), and the
+  ticker panel's *Float* shows the multiple. Low-float runners that rotate their float are a
+  classic momentum setup. An alert fires the first time a watchlist stock or mover crosses 1×
+  in a day (the first reading a baseline), unless switched off in the alerts panel; on the phone
+  it comes under *Unusual volume*, off by default. Floats are looked up once a day per stock,
+  20 at a time; before the open the volume shown is yesterday's, so nothing counts until today's
+  session starts.
 - **Earnings** (`app/earnings.py`): the next report date of each watchlist stock, looked up
   every 6 hours and when the watchlist changes. An **ER** badge marks reports within 5 days
   (filled on the day; hover for when). The 09:15 brief lists the watchlist's reports today, and
@@ -476,7 +504,8 @@ app/
   recap.py    end-of-day recap message and its schedule
   setup.py    dashboard settings (write-only secrets) and the first-run checklist
   tls.py      HTTPS: a name-constrained local CA and the server certificate it signs
-  warrants.py warrant overhang signals from a filing's first pages (sold, outstanding)
+  warrants.py warrant overhang signals and the offering price from a filing's first pages
+  ssr.py      the short sale restriction (Rule 201): triggered today, carried over from yesterday
   serve.py    python -m app.serve [--https]: starts the app, as the background service does
   clock.py    the market clock: real time, or a replayed day's time and speed
   replay.py   record what the data sources answer, and replay it offline (python -m app.replay)
@@ -489,15 +518,16 @@ app/
     core.py       lifecycle, loop runner, health, snapshot, dashboard actions, settings
     prices.py     quotes, Finnhub ticks, movers, unusual volume, price alerts
     feeds.py      news, SEC filings, halts
-    risk.py       dilution-risk badges, the level filing alerts carry, warrant-price crossings
+    risk.py       dilution-risk badges, the level filing alerts carry, warrant and offering price crossings
     catalysts.py  catalyst reaction tracking and the Reactions report
     daily.py      the end-of-day recap
     gaps.py       the pre-market gap scanner and its brief
     earnings.py   the watchlist's next earnings dates
+    tape.py       the short sale restriction and float rotation (SSR and ROT badges, rotation alerts)
   main.py     FastAPI routes, access token and /ws endpoint
 static/       single-page dashboard: plain scripts sharing globals, no build step, loaded in this order
   core.js     state, formatting, the market clock, server calls
-  tables.js   table rows and badges (HALTED, DIL, ER, sentiment): watchlist, movers, unusual
+  tables.js   table rows and badges (HALTED, DIL, WAR, SSR, ROT, ER, sentiment): watchlist, movers, unusual
   tabs.js     left-panel tabs: halts, pre-market gaps, catalyst reactions
   news.js     news feed, filters, keyword highlighting
   alerts.js   alert rules and log, the Phone box, desktop notifications and sound

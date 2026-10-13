@@ -224,9 +224,17 @@ def warrant_summary(checked: list[tuple[dict, dict | None]]) -> dict:
         # Plain warrants from different deals are told apart by price.
         series = lv["kind"].startswith("Series ")
         unique.setdefault((lv["kind"], None if series else round(lv["price"], 4)), lv)
+    # The prices recent offerings sold at: where the new shares' buyers break even.
+    offering_levels: dict[float, dict] = {}
+    for c, f in checked:
+        price = (f or {}).get("offering_price")
+        if price and c["form"] not in REGISTRATION_FORMS:
+            offering_levels.setdefault(round(price, 4), {"kind": "offering", "price": price, "shares": None,
+                                                          "form": c["form"], "filed": c["filed"]})
     return {
         "checked": len(checked),
         "levels": list(unique.values())[:WARRANT_LEVELS],
+        "offering_levels": list(offering_levels.values()),
         "offerings_with_warrants": len(sold),
         "latest_sold": {"filed": sold[0][0]["filed"], "form": sold[0][0]["form"], "text": describe_sold(sold[0][1])}
         if sold else None,
@@ -383,5 +391,9 @@ def summary(profile: dict | None) -> dict | None:
     if profile is None:
         return None
     top = [r["text"] for r in profile["reasons"] if r["points"] > 0][:3]
-    levels = [{**lv, "filed": lv["filed"].isoformat()} for lv in (profile.get("warrants") or {}).get("levels", [])]
-    return {"level": profile["level"], "points": profile["points"], "reasons": top, "warrant_levels": levels}
+    warrants = profile.get("warrants") or {}
+
+    def levels(key: str) -> list[dict]:
+        return [{**lv, "filed": lv["filed"].isoformat()} for lv in warrants.get(key, [])]
+    return {"level": profile["level"], "points": profile["points"], "reasons": top,
+            "warrant_levels": levels("levels"), "offering_levels": levels("offering_levels")}

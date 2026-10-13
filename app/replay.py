@@ -55,7 +55,7 @@ log = logging.getLogger(__name__)
 FORMAT = "market-pulse-recording"
 SECRET_PARAM = re.compile(r"token|key|secret|pass|sig|auth", re.IGNORECASE)
 DEFAULT_PORT = 8001
-PER_SYMBOL_CALLS = ("fetch_quotes", "fetch_premarket", "fetch_earnings")  # Yahoo calls returning one row per symbol
+PER_SYMBOL_CALLS = ("fetch_quotes", "fetch_premarket", "fetch_earnings", "fetch_daily", "fetch_floats")  # Yahoo calls returning one row per symbol
 START_AFTER_FIRST = 15  # seconds
 
 

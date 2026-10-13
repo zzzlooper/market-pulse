@@ -9,7 +9,7 @@ from .. import market
 from ..clock import clock
 from ..dilution import summary as risk_summary
 from ..health import SourceError, describe
-from ..warrants import in_the_money_message
+from ..warrants import in_the_money_message, offering_message
 
 log = logging.getLogger(__name__)
 
@@ -26,8 +26,8 @@ class RiskMixin:
         self.risk: dict[str, dict | None] = {}  # symbol -> dilution summary; None = not an SEC filer
         self._risk_failed: dict[str, float] = {}  # symbol -> loop time of the last failure
         self._wake_risk = asyncio.Event()
-        self._warrant_last: dict[str, float] = {}             # symbol -> last price seen
-        self._warrant_fired: dict[tuple, object] = {}         # (symbol, kind, price) -> day it fired
+        self._level_last: dict[str, float] = {}       # symbol -> last price seen
+        self._level_fired: dict[tuple, object] = {}   # (symbol, kind, price, direction) -> day it fired
 
     def _risk_symbols(self) -> list[str]:
         """Watchlist first, then the movers lists where dilution matters most."""
@@ -53,25 +53,38 @@ class RiskMixin:
             await self.hub.broadcast({"type": "risk", "data": {symbol: summary}})
         return summary
 
-    async def _check_warrants(self, rows: list[dict]) -> None:
-        """Alert when a stock crosses up through a warrant exercise price: from then on those
-        warrants can be exercised at a profit, and the new shares sold. The first price seen is
-        only a baseline; each level fires at most once a day."""
+    async def _check_levels(self, rows: list[dict]) -> None:
+        """Alert when a stock crosses a price level from its filings:
+        - up through a warrant exercise price: those warrants can now be exercised at a profit,
+          and the new shares sold;
+        - either way through a recent offering's price, where its buyers break even.
+        The first price seen is only a baseline; each level and direction fires at most once a day."""
         today = clock.today(market.ET)
         fired = []
         for row in rows:
             symbol, price = row.get("symbol"), row.get("price")
-            levels = (self.risk.get(symbol) or {}).get("warrant_levels") if symbol else None
-            if price is None or not levels:
+            summary = (self.risk.get(symbol) or {}) if symbol else {}
+            warrants, offerings = summary.get("warrant_levels") or [], summary.get("offering_levels") or []
+            if price is None or not (warrants or offerings):
                 continue
-            before, self._warrant_last[symbol] = self._warrant_last.get(symbol), price
+            before, self._level_last[symbol] = self._level_last.get(symbol), price
             if before is None:
                 continue
-            for level in levels:
-                key = (symbol, level["kind"], level["price"])
-                if before < level["price"] <= price and self._warrant_fired.get(key) != today:
-                    self._warrant_fired[key] = today
+
+            def once(level: dict, direction: str, symbol: str = symbol) -> bool:
+                key = (symbol, level["kind"], level["price"], direction)
+                if self._level_fired.get(key) == today:
+                    return False
+                self._level_fired[key] = today
+                return True
+            for level in warrants:
+                if before < level["price"] <= price and once(level, "up"):
                     fired.append(self.alerts.event(row, "warrant", in_the_money_message(symbol, price, level)))
+            for level in offerings:
+                if before < level["price"] <= price and once(level, "up"):
+                    fired.append(self.alerts.event(row, "offering_above", offering_message(symbol, price, level, up=True)))
+                elif price < level["price"] <= before and once(level, "down"):
+                    fired.append(self.alerts.event(row, "offering_below", offering_message(symbol, price, level, up=False)))
         if fired:
             await self._publish_alerts(self.alerts.record(fired))
 

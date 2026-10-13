@@ -128,6 +128,7 @@ class UserState:
         self.keywords: list[str] = data.get("keywords", list(DEFAULT_KEYWORDS))
         self.alert_rules: list[dict] = data.get("alert_rules", [dict(r) for r in DEFAULT_ALERT_RULES])
         self.unusual_alerts: bool = data.get("unusual_alerts", True)
+        self.rotation_alerts: bool = data.get("rotation_alerts", True)
         self.halt_alerts: str = data.get("halt_alerts", "watchlist")  # "watchlist" | "all" | "off"
         self.phone_alerts: dict[str, bool] = {**DEFAULT_PHONE_ALERTS, **data.get("phone_alerts", {})}
 
@@ -137,6 +138,7 @@ class UserState:
             "keywords": self.keywords,
             "alert_rules": self.alert_rules,
             "unusual_alerts": self.unusual_alerts,
+            "rotation_alerts": self.rotation_alerts,
             "halt_alerts": self.halt_alerts,
             "phone_alerts": self.phone_alerts,
         }
