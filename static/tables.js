@@ -18,7 +18,7 @@ function quoteRow(r, extra = "", flashable = false) {
     : "";
   const stale = r.stale ? ` class="stale" title="No fresh price from Yahoo; showing the last one received"` : "";
   return `<tr${stale}>
-    <td><a class="sym" data-sym="${esc(r.symbol)}" title="${esc(r.name)}">${esc(r.symbol)}</a>${haltBadge(r.symbol)}${riskBadge(r.symbol)}${erBadge(r.symbol)}</td>
+    <td><a class="sym" data-sym="${esc(r.symbol)}" title="${esc(r.name)}">${esc(r.symbol)}</a>${haltBadge(r.symbol)}${riskBadge(r.symbol)}${warrantBadge(r.symbol, r.price)}${erBadge(r.symbol)}</td>
     <td class="${flash}">${live}${fmtPrice(r.price)}</td>
     <td class="${dir(r.change_pct)}">${fmtPct(r.change_pct)}</td>
     <td>${fmtVol(r.volume)}</td>
@@ -65,6 +65,23 @@ function riskBadge(sym) {
   if (!r || (r.level !== "high" && r.level !== "medium")) return "";
   const tip = `Dilution risk ${r.level} (${r.points} pts)${r.reasons.length ? `: ${r.reasons.join("; ")}` : ""}`;
   return ` <span class="risk-badge ${r.level}" title="${esc(tip)}">DIL</span>`;
+}
+
+// WAR: the price is at or above the exercise price of warrants from the stock's recent filings,
+// so holders can exercise them at a profit and sell the new shares. Pre-funded warrants are left
+// out (their price is next to nothing). The ticker drawer lists every level and its distance.
+function warrantLevelText(lv, withPrice = true) {
+  const what = lv.kind === "outstanding" ? "outstanding warrants (average)"
+    : lv.kind === "common" ? "warrants" : `${lv.kind} warrants`;
+  return `${what}${withPrice ? ` at $${fmtPrice(lv.price)}` : ""} for ${fmtBig(lv.shares)} shares (${lv.form} of ${fmtDay(lv.filed)})`;
+}
+
+function warrantBadge(sym, price) {
+  const levels = (state.risk[sym]?.warrant_levels ?? []).filter((lv) => price != null && price >= lv.price);
+  if (!levels.length) return "";
+  const tip = `Warrants in the money: ${levels.map((lv) => warrantLevelText(lv)).join("; ")}. ` +
+    "They can be exercised at a profit now, and the new shares sold.";
+  return ` <span class="war-badge" title="${esc(tip)}">WAR</span>`;
 }
 
 function haltBadge(sym) {

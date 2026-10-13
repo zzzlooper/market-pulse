@@ -232,6 +232,10 @@ button:disabled { opacity: .5; cursor: default; border-color: var(--border); }
   vertical-align: 1px; letter-spacing: 0.03em; }
 .risk-badge.high { color: var(--down); border: 1px solid var(--down); }
 .risk-badge.medium { color: var(--hot); border: 1px solid var(--hot); }
+.war-badge { font-size: 9px; font-weight: 700; padding: 0 3px; border-radius: 2px; cursor: help;
+  vertical-align: 1px; letter-spacing: 0.03em; color: #0d1117; background: var(--hot); }
+.warrant-levels { list-style: none; margin: 2px 0 0; padding: 0; font-size: 12px; }
+.warrant-levels li { padding: 2px 0; }
 .halt-badge {
   font-size: 10px;
   font-weight: 700;

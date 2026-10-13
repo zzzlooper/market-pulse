@@ -35,6 +35,7 @@ INDEX_URL = "https://www.sec.gov/Archives/edgar/data/{cik}/{folder}/{accession}-
 DOC_URL = "https://www.sec.gov/Archives/edgar/data/{cik}/{folder}/{doc}"
 WARRANT_FILINGS = 3          # newest offering-type filings read for warrants, per profile
 WARRANT_OVERHANG_PCT = 10.0  # outstanding warrant shares at least this share of the float scores
+WARRANT_LEVELS = 6           # exercise prices watched per stock
 COMPANY_URL = "https://www.sec.gov/cgi-bin/browse-edgar?action=getcompany&CIK={cik}&owner=include&count=40"
 CACHE_SECONDS = 6 * 3600  # filings and financials change a few times a quarter
 CACHE_SIZE = 200
@@ -203,8 +204,29 @@ def warrant_summary(checked: list[tuple[dict, dict | None]]) -> dict:
     sold = [(c, f) for c, f in checked if f and f["sold"]]
     outstanding = next(({**f["outstanding"], "as_of": c["filed"], "form": c["form"]}
                         for c, f in checked if f and f["outstanding"]), None)
+    # Exercise prices to watch the stock against, newest filings first. Pre-funded warrants are
+    # left out: their price is next to nothing, so they're effectively shares already. So are
+    # warrants a registration statement proposes: not sold yet, and priced only provisionally.
+    levels: list[dict] = []
+    for c, f in checked:
+        if c["form"] in REGISTRATION_FORMS:
+            f = {"sold": []}
+        for s in (f or {}).get("sold", []):
+            if s["kind"] != "pre-funded" and s["exercise_price"]:
+                levels.append({"kind": s["kind"], "shares": s["shares"], "price": s["exercise_price"],
+                               "form": c["form"], "filed": c["filed"]})
+    if outstanding and outstanding["exercise_price"]:
+        levels.append({"kind": "outstanding", "shares": outstanding["shares"], "price": outstanding["exercise_price"],
+                       "form": outstanding["form"], "filed": outstanding["as_of"]})
+    unique: dict[tuple, dict] = {}
+    for lv in levels:
+        # A series is one set of warrants: a newer filing restating it has the current price.
+        # Plain warrants from different deals are told apart by price.
+        series = lv["kind"].startswith("Series ")
+        unique.setdefault((lv["kind"], None if series else round(lv["price"], 4)), lv)
     return {
         "checked": len(checked),
+        "levels": list(unique.values())[:WARRANT_LEVELS],
         "offerings_with_warrants": len(sold),
         "latest_sold": {"filed": sold[0][0]["filed"], "form": sold[0][0]["form"], "text": describe_sold(sold[0][1])}
         if sold else None,
@@ -361,4 +383,5 @@ def summary(profile: dict | None) -> dict | None:
     if profile is None:
         return None
     top = [r["text"] for r in profile["reasons"] if r["points"] > 0][:3]
-    return {"level": profile["level"], "points": profile["points"], "reasons": top}
+    levels = [{**lv, "filed": lv["filed"].isoformat()} for lv in (profile.get("warrants") or {}).get("levels", [])]
+    return {"level": profile["level"], "points": profile["points"], "reasons": top, "warrant_levels": levels}

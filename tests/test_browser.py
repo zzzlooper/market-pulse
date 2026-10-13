@@ -12,12 +12,16 @@ pytestmark = pytest.mark.skipif(CHROMIUM is None, reason="needs Chromium or Chro
 CONFIG = f'ticker_news = false\n[feeds]\n"Wire" = "{WIRE}"\n'
 TOKEN = "mp-browser-test-token-7Qx2"
 TOPIC = "mp-browser-topic-Zp41Kq9"
+WARRANTS = """<p>Up to 1,000,000 Shares of Common Stock underlying the Series A Warrants</p>
+<p>Each Series A Warrant has an exercise price of $7.50 per share.</p>
+<p>Excludes 3,000,000 shares of common stock issuable upon the exercise of outstanding warrants,
+having a weighted average exercise price of $12.50 per share.</p>"""
 
 
 def made_up_morning(folder):
     day = Day(folder, start="04:00")
     day.filing("06:45", "424B5", "ACME")
-    day.profile("ACME", "high")
+    day.profile("ACME", "high", offering_text=WARRANTS)  # trades at 7.80: the $7.50 warrants are in the money
     day.headline("05:30", "Crux Biotherapeutics Inc (NASDAQ: CRUX) reports positive topline data")
     day.premarket("07:00", ACME=(-22.0, 40), BOLT=(4.5, 12), CRUX=(38.0, 55), DYNA=(-6.2, 9))
     day.quotes("09:30", BOLT=5.0, FERN=-2.0)
@@ -126,6 +130,10 @@ def test_opening_on_gaps_shows_the_gappers_with_their_reasons(page, world):
     symbols = [r.split()[0] for r in rows]
     assert symbols == ["CRUX", "ACME", "DYNA", "BOLT"]
     assert "offering from shelf" in rows[1] and "DIL" in rows[1]
+    war = page.wait("document.querySelector('#gaps a.sym[data-sym=ACME]').parentElement.querySelector('.war-badge')?.title")
+    assert war.startswith("Warrants in the money: Series A warrants at $7.50 for 1.00M shares (424B5 of Aug")
+    assert "12.50" not in war  # the outstanding ones are still out of the money
+    assert page.eval("document.querySelectorAll('#gaps .war-badge').length") == 1
     assert page.text("#gaps-note").startswith("Gaps ≥ 3%")
 
 
@@ -136,6 +144,11 @@ def test_the_ticker_drawer_opens_with_its_dilution_panel_and_closes_on_escape(pa
     page.wait("!document.querySelector('#detail').hidden")
     assert page.wait("document.querySelector('#detail-dilution .risk')?.textContent") == "high"
     assert "Shelf" in page.text("#detail-dilution")
+    levels = page.wait("document.querySelectorAll('#detail-warrants li').length === 2"
+                       " && [...document.querySelectorAll('#detail-warrants li')].map(li => li.innerText)")
+    assert levels[0].startswith("$7.50 Series A warrants for 1.00M shares") and levels[0].endswith("in the money")
+    assert levels[1].startswith("$12.50 outstanding warrants (average)") and levels[1].endswith("60% above the price")
+    assert page.text("#detail-price .war-badge") == "WAR"
     page.eval("document.dispatchEvent(new KeyboardEvent('keydown', {key: 'Escape'}))")
     page.wait("document.querySelector('#detail').hidden")  # closes via history, so a moment later
 
@@ -156,7 +169,8 @@ def test_reactions_can_be_downloaded_as_a_csv_file(page, world):
     href = page.wait("document.querySelector('#reactions-csv').href.endsWith('days=7')"
                      " && document.querySelector('#reactions-csv').getAttribute('href')")
     assert href == "/api/reactions.csv?days=7"
-    text = page.eval(f"fetch({json.dumps(href)}).then(r => r.text())")
+    # The offering's reaction is recorded once its risk profile is read: fetch until it's in.
+    text = page.wait(f"fetch({json.dumps(href)}).then(r => r.text()).then(t => t.includes(',ACME,') && t)", timeout=20)
     lines = text.splitlines()
     assert lines[0].startswith("time_et,symbol,type,catalyst")
     assert any(",ACME,dilution,offering from shelf," in line for line in lines[1:])

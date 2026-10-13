@@ -47,7 +47,8 @@ function renderAlertLog(freshIds = new Set()) {
 function addAlerts(events) {
   state.alerts = [...events, ...state.alerts].slice(0, 100);
   renderAlertLog(new Set(events.map((a) => a.id)));
-  const what = { halt: "trading halted", resume: "resumption", unusual: "unusual volume" };
+  const what = { halt: "trading halted", resume: "resumption", unusual: "unusual volume",
+                 warrant: "warrants in the money" };
   notify(events.map((a) => ({ title: `${a.symbol} · ${what[a.kind] ?? "price alert"}`, body: a.message, tag: a.id })), 660);
 }
 

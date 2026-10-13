@@ -177,3 +177,108 @@ def test_an_unreadable_document_doesnt_hold_the_filing_back(day):
         assert run.news("offering from shelf")["filing"]["warrants"] is None
     finally:
         run.close()
+
+
+# --- warrants in the money ------------------------------------------------------------------------------
+
+# Prices in a scenario day sit around $10 (Day.quotes), so these warrants are priced near it.
+NEAR_TEN = """<p>Up to 2,000,000 Common Units, Each Consisting of One Share of Common Stock and One Series C Warrant</p>
+<p>Up to 300,000 Pre-Funded Warrants</p>
+<p>Up to 2,000,000 Shares of Common Stock underlying the Series C Warrants</p>
+<p>Each Series C Warrant has an exercise price of $11.00 per share.</p>
+<p>The number of shares outstanding excludes 6,000,000 shares of common stock issuable upon the exercise of
+outstanding warrants, having a weighted average exercise price of $12.50 per share.</p>"""
+
+
+def test_levels_list_each_exercise_price_newest_first_without_pre_funded():
+    checked = [(candidate("424B4", "2026-10-09"), detect(UNITS_COVER)),
+               (candidate("8-K", "2026-09-21"), detect(PRIVATE_PLACEMENT_8K)),
+               (candidate("424B5", "2026-06-01"), detect(DILUTION_TABLE)),
+               (candidate("424B5", "2026-05-01"), detect(UNITS_COVER.replace("$0.80", "$0.95")))]  # restated
+    levels = warrant_summary(checked)["levels"]
+    assert [(lv["kind"], lv["price"], lv["shares"], lv["form"], lv["filed"]) for lv in levels] == [
+        ("Series B", 0.80, 4_500_000, "424B4", date(2026, 10, 9)),
+        ("common", 1.10, 1_000_000, "8-K", date(2026, 9, 21)),
+        ("outstanding", 2.0592, 5_002_000, "424B5", date(2026, 6, 1)),
+    ]
+
+
+def test_warrants_a_registration_statement_proposes_arent_levels_yet_but_outstanding_ones_are():
+    checked = [(candidate("S-1", "2026-10-02"), detect(UNITS_COVER + DILUTION_TABLE))]
+    assert [lv["kind"] for lv in warrant_summary(checked)["levels"]] == ["outstanding"]
+
+
+def test_the_risk_summary_carries_the_levels_for_the_badge():
+    from app.dilution import summary
+    levels = [{"kind": "Series B", "shares": 4_500_000, "price": 0.8, "form": "424B4", "filed": date(2026, 10, 9)}]
+    profile = {"level": "high", "points": 5, "reasons": [], "warrants": {"levels": levels}}
+    assert summary(profile)["warrant_levels"] == [{**levels[0], "filed": "2026-10-09"}]
+    assert summary({"level": "low", "points": 0, "reasons": [], "warrants": None})["warrant_levels"] == []
+
+
+def test_crossing_a_warrant_price_alerts_once_a_day_and_the_first_price_is_only_a_baseline(day, monkeypatch):
+    monkeypatch.setattr("app.sec.MIN_REQUEST_GAP", 0)
+    day.profile("ACME", "high", offering_text=NEAR_TEN)
+    day.profile("CRUX", "high", offering_text=NEAR_TEN)
+    day.quotes("09:30", ACME=12.0, CRUX=0.0)  # ACME starts above $11: in the money, but no crossing seen
+    day.quotes("09:40", ACME=12.0, CRUX=5.0)
+    day.quotes("09:50", ACME=12.0, CRUX=12.0)   # CRUX crosses $11.00
+    day.quotes("10:00", ACME=12.0, CRUX=8.0)    # back under
+    day.quotes("10:10", ACME=26.0, CRUX=13.0)   # CRUX again (no repeat); ACME crosses $12.50
+    run = Run(day, watchlist=["ACME", "CRUX"]).steps("09:31", "09:41", "09:51", "10:01", "10:11")
+    try:
+        levels = run.engine.risk["CRUX"]["warrant_levels"]
+        assert [(lv["kind"], lv["price"]) for lv in levels] == [("Series C", 11.0), ("outstanding", 12.5)]
+        fired = [(n["at"], n["title"], n["body"]) for n in run.phone if "warrants" in n["title"]]
+        assert fired == [
+            ("09:51", "CRUX · warrants in the money",
+             ("CRUX crossed $11.00 (now $11.20), the Series C warrants' exercise price: 2M shares can now be "
+              "exercised at a profit (per the 424B5 of Aug 1, 2026)")),
+            ("10:11", "ACME · warrants in the money",
+             ("ACME crossed $12.50 (now $12.60), the outstanding warrants' average exercise price: 6M shares can "
+              "now be exercised at a profit (per the 424B5 of Aug 1, 2026)")),
+        ]
+        assert {(n["category"], n["priority"], n["tag"]) for n in run.phone if "warrants" in n["title"]} == {
+            ("price", "high", "warning")}  # switched with the phone's price alerts
+        assert [a["symbol"] for a in run.browser("alerts") if a["kind"] == "warrant"] == ["CRUX", "ACME"]
+    finally:
+        run.close()
+
+
+def test_a_mover_off_the_watchlist_alerts_too(day, monkeypatch):
+    monkeypatch.setattr("app.sec.MIN_REQUEST_GAP", 0)
+    day.profile("ACME", "high", offering_text=NEAR_TEN)
+    day.movers("09:30", gainers={"ACME": 5.0})
+    day.movers("09:45", gainers={"ACME": 9.0})
+    day.movers("10:00", gainers={"ACME": 30.0})  # through $11.00 and $12.50 in one step: both levels
+    run = Run(day, watchlist=["BOLT"]).steps("09:31", "09:46", "10:01")
+    try:
+        assert [n["body"][:32] for n in run.phone if "warrants" in n["title"]] == [
+            "ACME crossed $11.00 (now $13.00)", "ACME crossed $12.50 (now $13.00)"]
+    finally:
+        run.close()
+
+
+def test_a_watchlist_stock_goes_by_its_own_quote_not_the_movers_delayed_price(day, monkeypatch):
+    monkeypatch.setattr("app.sec.MIN_REQUEST_GAP", 0)
+    day.profile("ACME", "high", offering_text=NEAR_TEN)
+    day.quotes("09:30", ACME=5.0)
+    day.movers("09:30", gainers={"ACME": 5.0})
+    day.movers("09:45", gainers={"ACME": 15.0})  # a different price for the same stock: not used
+    run = Run(day, watchlist=["ACME"]).steps("09:31", "09:41", "09:46")
+    try:
+        assert [n for n in run.phone if "warrants" in n["title"]] == []
+    finally:
+        run.close()
+
+
+def test_a_stock_already_at_the_exercise_price_at_its_first_reading_hasnt_crossed_it(day, monkeypatch):
+    monkeypatch.setattr("app.sec.MIN_REQUEST_GAP", 0)
+    day.profile("ACME", "high", offering_text=NEAR_TEN)
+    day.quotes("09:30", ACME=10.0)  # exactly $11.00
+    day.quotes("09:40", ACME=11.0)
+    run = Run(day, watchlist=["ACME"]).steps("09:31", "09:32", "09:41")  # 09:31 reads the profile
+    try:
+        assert [n for n in run.phone if "warrants" in n["title"]] == []
+    finally:
+        run.close()

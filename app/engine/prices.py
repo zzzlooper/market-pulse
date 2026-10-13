@@ -59,6 +59,7 @@ class PricesMixin:
         quotes = self.quotes
         await self.hub.broadcast({"type": "quotes", "data": quotes})
         await self._publish_alerts(self.alerts.check_quotes(quotes, self.state.alert_rules))
+        await self._check_warrants(quotes)
 
     async def _update_movers(self) -> str | None:
         fetched = await self._call("fetch_movers", market.fetch_movers)
@@ -68,6 +69,10 @@ class PricesMixin:
         self._wake_risk.set()  # new movers may need risk profiles
         self._wake_gaps.set()  # and are candidates for the gap scan
         await self.hub.broadcast({"type": "movers", "data": self.movers})
+        # Watchlist stocks are checked on their own quotes, which can be real-time: mixing in the
+        # movers' delayed price would make the price seem to cross back and forth.
+        watched = set(self.state.watchlist)
+        await self._check_warrants([row for rows in self.movers.values() for row in rows if row["symbol"] not in watched])
         await self._update_unusual()
         failed = [key for key in market.SCREENS if key not in fetched]
         return f"screener failing: {', '.join(failed)}" if failed else None

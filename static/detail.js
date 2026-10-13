@@ -230,6 +230,7 @@ function renderDilution() {
         h.offerings_12m.map(fmtDay).join(", "))}
       ${warrantStat(d.warrants, stat)}
     </div>
+    <div id="detail-warrants"></div>
     ${h.events.length ? `<details class="dilution-events"><summary>Dilution-related filings (${h.events.length})</summary>
       <ul class="detail-list">${h.events.map((e) => `
         <li><div class="meta">${fmtDay(e.filed)} · ${esc(e.form)}</div>
@@ -237,6 +238,26 @@ function renderDilution() {
       </ul></details>` : ""}
     <p class="muted fine">From SEC filings and XBRL financials, which lag by up to a quarter. Filings since
       ${fmtDay(h.covered_since)}.</p>`;
+  updateDetailWarrants();
+}
+
+// Each warrant exercise price with how far the stock is from it; redrawn as prices stream in.
+function updateDetailWarrants() {
+  const el = $("#detail-warrants");
+  if (!el) return;
+  const levels = detail.dilution?.warrants?.levels ?? [];
+  const price = detailPrice();
+  const note = `<p class="muted fine">Warrant exercise prices · watchlist stocks and movers alert when they cross one</p>`;
+  el.innerHTML = levels.length ? `${note}<ul class="warrant-levels">${levels.map((lv) => {
+    const away = price != null ? (lv.price / price - 1) * 100 : null;
+    const where = away == null ? ""
+      : away <= 0 ? `<b class="hot">in the money</b>` : `<span class="muted">${away.toFixed(away < 10 ? 1 : 0)}% above the price</span>`;
+    return `<li><b>$${fmtPrice(lv.price)}</b> ${esc(warrantLevelText(lv, false))} ${where}</li>`;
+  }).join("")}</ul>` : "";
+}
+
+function detailPrice() {
+  return detailQuote()?.price ?? detail.data?.chart.bars.at(-1)?.c ?? null;
 }
 
 function detailQuote() {
@@ -248,14 +269,13 @@ function updateDetailPrice() {
   const el = $("#detail-price");
   if (!el) return;
   const q = detailQuote();
-  const bars = detail.data.chart.bars;
-  const price = q?.price ?? bars.at(-1)?.c;
+  const price = detailPrice();
   const prev = detail.data.profile.prev_close ?? q?.prev_close;
   const pct = q?.change_pct ?? (price != null && prev ? (price / prev - 1) * 100 : null);
   const live = q?.live ? `<span class="live-dot" title="Real-time (Finnhub)"></span>` : "";
   const delayed = q?.live ? "" : `<small class="muted">delayed ~15 min</small>`;
   el.innerHTML = `${live}<strong>${fmtPrice(price)}</strong>
-    <span class="${dir(pct)}">${fmtPct(pct)}</span>${haltBadge(detail.symbol)} ${delayed}`;
+    <span class="${dir(pct)}">${fmtPct(pct)}</span>${haltBadge(detail.symbol)}${warrantBadge(detail.symbol, price)} ${delayed}`;
 }
 
 function updateDetailWatch() {
@@ -590,7 +610,7 @@ if (tickerHash) openDetail(tickerHash[1].toUpperCase());
 // Called by app.js when streamed data changes.
 function refreshDetail(what) {
   if (!detail.symbol || !detail.data) return;
-  if (what === "quotes") { updateDetailPrice(); updateDetailStats(); return; }
+  if (what === "quotes") { updateDetailPrice(); updateDetailStats(); updateDetailWarrants(); return; }
   if (what === "config") updateDetailWatch();
   updateDetailLists();
   drawDetailChart();  // news/halt markers

@@ -22,6 +22,7 @@ from __future__ import annotations
 import html
 import json
 import re
+from datetime import date
 
 HEAD_BYTES = 400_000  # the first pages: cover, summary, dilution
 SOLD_CHARS = 40_000   # where an offering describes what it sells
@@ -132,3 +133,13 @@ def describe_outstanding(facts: dict | None) -> str:
         return ""
     price = f", average exercise price ${out['exercise_price']:,.2f}" if out["exercise_price"] else ""
     return f"warrants for {_shares(out['shares'])} shares outstanding{price}"
+
+
+def in_the_money_message(symbol: str, price: float, level: dict) -> str:
+    """The alert when a stock crosses up through a warrant level (dilution.warrant_summary)."""
+    kind = level["kind"]
+    what = ("the outstanding warrants' average exercise price" if kind == "outstanding"
+            else f"the {'' if kind == 'common' else kind + ' '}warrants' exercise price")
+    filed = date.fromisoformat(level["filed"])
+    return (f"{symbol} crossed ${level['price']:,.2f} (now ${price:,.2f}), {what}: {_shares(level['shares'])} "
+            f"shares can now be exercised at a profit (per the {level['form']} of {filed:%b} {filed.day}, {filed.year})")

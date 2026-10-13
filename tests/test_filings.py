@@ -367,7 +367,7 @@ def test_engine_sends_filings_to_the_news_feed_and_the_phone(tmp_path):
     asyncio.run(scenario())
     assert seen == {"ACME": "top gainer +45%"}
     assert [m["type"] for m in hub.messages] == ["risk", "news"]
-    assert hub.messages[0]["data"] == {"ACME": {"level": "high", "points": 6, "reasons": ["S-1 pending"]}}
+    assert hub.messages[0]["data"] == {"ACME": {"level": "high", "points": 6, "reasons": ["S-1 pending"], "warrant_levels": []}}
     assert len(hub.messages[1]["data"]) == 2 and hub.messages[1]["data"][0]["filing"]["risk"] == "high"
     assert [n["category"] for n in sent] == ["filings"]
     assert sent[0]["body"].endswith("(top gainer +45%, dilution risk HIGH)")

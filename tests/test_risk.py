@@ -52,7 +52,7 @@ def run(engine, coro):
 
 def test_summary_keeps_the_level_and_top_warning_signs():
     p = profile("high", 5, (2, "a"), (2, "b"), (1, "c"), (1, "d"), (-1, "e"))
-    assert summary(p) == {"level": "high", "points": 5, "reasons": ["a", "b", "c"]}
+    assert summary(p) == {"level": "high", "points": 5, "reasons": ["a", "b", "c"], "warrant_levels": []}
     assert summary(None) is None
 
 
@@ -69,7 +69,7 @@ def test_risk_covers_watchlist_then_chosen_movers_and_skips_indices(tmp_path):
         await engine._update_risk()  # everything fresh now: no new lookups, no new messages
     run(engine, twice())
     assert calls == ["AAPL", "ACME", "UPUP", "SPY"]  # losers aren't in risk_movers; ^GSPC is an index
-    assert engine.risk["ACME"] == {"level": "high", "points": 6, "reasons": ["S-1 pending"]}
+    assert engine.risk["ACME"] == {"level": "high", "points": 6, "reasons": ["S-1 pending"], "warrant_levels": []}
     assert engine.risk["SPY"] is None
     assert len(hub.messages) == 4 and all(m["type"] == "risk" for m in hub.messages)
     assert engine.snapshot()["risk"] is engine.risk

@@ -119,7 +119,7 @@ and `SEC_USER_AGENT` for your contact address).
   0 turns it off), you get one message saying which alerts can't fire, and another when it's
   back. Silence from a broken feed otherwise looks the same as a quiet market.
 - A burst of alerts is sent as 2 messages plus a "+N more" summary, with a hard cap of 20 per
-  minute. Halts arrive as urgent notifications, price alerts as high priority, news as normal.
+  minute. Halts arrive as urgent notifications, price and warrant alerts as high priority, news as normal.
 - Set `public_url` (e.g. `http://192.168.1.20:8000`) to make a tapped alert open that
   ticker's detail panel. That only works where your phone can reach the app, e.g. on the same Wi-Fi,
   so set an access token first (next section).
@@ -279,7 +279,9 @@ There's deliberately no offline cache: nothing from the dashboard is stored on t
     - warrants, from the first pages of the 3 newest offerings and private sales of the past
       year: sold with an offering (+1), and outstanding warrants worth 10% or more of the shares
       (+1; smaller overhangs are noted without points). The panel's *Warrants* figure shows the
-      outstanding shares and their average exercise price, with the filing it came from;
+      outstanding shares and their average exercise price, with the filing it came from. Below
+      the figures, each warrant exercise price is listed with how far the stock is from it (see
+      *Warrants in the money*);
     - XBRL financials: cash, monthly operating burn and the months of cash left at that rate
       (+2 under 6 months, +1 under 12; positive cash flow −1), and the share count against a
       year earlier (+2 for 50% more, +1 for 20%).
@@ -295,6 +297,23 @@ There's deliberately no offline cache: nothing from the dashboard is stored on t
       hover it for the reasons. Profiles are kept fresh (every 6 hours) for the watchlist and
       the gainers and small-cap lists (`risk_movers`, at most `risk_max_symbols` = 60), fetched
       one at a time so news and filings aren't held up.
+  - **Warrants in the money**: once the price reaches a warrant's exercise price, holders can
+    exercise at a profit and sell the new shares, which often caps a run. The levels come from
+    the same filings as the dilution profile, at most 6 per stock: warrants sold in an offering
+    or private sale (a series once, at its newest stated price) and the outstanding warrants'
+    average price. Pre-funded warrants (priced at next to nothing) and warrants an S-1 or F-1
+    only proposes (not sold yet, priced provisionally) are left out.
+    - A **WAR** badge next to a ticker, in every table and the panel's price line, marks a
+      price at or above a level; hover it for which warrants, how many shares and the filing.
+    - An alert fires when a watchlist stock or a mover **crosses up** through a level, e.g.
+      *CRUX crossed $11.00 (now $11.20), the Series C warrants' exercise price: 2M shares can
+      now be exercised at a profit (per the 424B5 of Aug 1, 2026)*. Like the price rules, the
+      first reading only records a baseline, and each level fires at most once a day. Watchlist
+      stocks go by their own quotes (real-time with Finnhub), movers by the screener's price.
+      They're sent to the phone with the price alerts.
+    - Profiles exist for the stocks dilution risk covers (watchlist, gainers, small caps), so
+      those are the ones watched. Warrant terms can be adjusted later (resets, reverse splits)
+      in filings not read here; check the latest before trading on a level.
   - *Add to watchlist*, *Filter news* (the old click behaviour), and the company description.
   - Esc or a click outside closes it. `http://localhost:8000/#ticker=AAPL` opens straight to
     a ticker. Times in the panel are ET, to match the chart.
@@ -470,7 +489,7 @@ app/
     core.py       lifecycle, loop runner, health, snapshot, dashboard actions, settings
     prices.py     quotes, Finnhub ticks, movers, unusual volume, price alerts
     feeds.py      news, SEC filings, halts
-    risk.py       dilution-risk badges and the level filing alerts carry
+    risk.py       dilution-risk badges, the level filing alerts carry, warrant-price crossings
     catalysts.py  catalyst reaction tracking and the Reactions report
     daily.py      the end-of-day recap
     gaps.py       the pre-market gap scanner and its brief

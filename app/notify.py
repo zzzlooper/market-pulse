@@ -34,12 +34,14 @@ ALERT_KINDS = {
     "unusual": ("unusual", "default", "bar_chart"),
     "halt": ("halts", "urgent", "rotating_light"),
     "resume": ("halts", "high", "arrow_forward"),
+    "warrant": ("price", "high", "warning"),
 }
 
 
 def from_alert(event: dict, public_url: str = "") -> dict:
     category, priority, tag = ALERT_KINDS.get(event["kind"], ("price", "default", "bell"))
-    titles = {"halt": "trading halted", "resume": "trading resumes", "unusual": "unusual volume"}
+    titles = {"halt": "trading halted", "resume": "trading resumes", "unusual": "unusual volume",
+              "warrant": "warrants in the money"}
     return {
         "category": category,
         "title": f"{event['symbol']} · {titles.get(event['kind'], 'price alert')}",

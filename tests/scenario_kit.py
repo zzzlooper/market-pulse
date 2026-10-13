@@ -189,8 +189,9 @@ class Day:
                f"</nonDerivativeTransaction></nonDerivativeTable></ownershipDocument>")
         return self.filing(hhmm, "4", ticker, document=doc)
 
-    def profile(self, ticker: str, level: str) -> None:
-        """SEC history and financials that score `level` (high or low) for dilution risk."""
+    def profile(self, ticker: str, level: str, offering_text: str | None = None) -> None:
+        """SEC history and financials that score `level` (high or low) for dilution risk.
+        offering_text: the document of the newest offering (a high profile's 424B5 of Aug 1)."""
         _, cik = COMPANIES[ticker]
         if level == "high":
             # Pending S-1, effective shelf, two offerings, private sales, ~2 months of cash,
@@ -206,7 +207,12 @@ class Day:
         self.record(self.start, get(SUBMISSIONS_URL.format(cik=cik)), self._json({
             "cik": cik, "filings": {"files": [], "recent": {
                 "form": [r[0] for r in rows], "filingDate": [r[1] for r in rows], "items": [r[2] for r in rows],
-                "accessionNumber": [f"{cik}-26-9{i:05d}" for i in range(len(rows))]}}}))
+                "accessionNumber": [f"{cik}-26-9{i:05d}" for i in range(len(rows))],
+                "primaryDocument": ["offering.htm" if offering_text and r == rows[1] else "" for r in rows]}}}))
+        if offering_text:
+            folder = f"{cik}-26-9{1:05d}".replace("-", "")
+            self.record(self.start, get(f"https://www.sec.gov/Archives/edgar/data/{int(cik)}/{folder}/offering.htm"),
+                        {"s": 200, "ct": "text/html", "b": offering_text})
 
         def concept(spec, unit, facts):
             taxonomy, name = spec[0]

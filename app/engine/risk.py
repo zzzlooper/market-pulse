@@ -5,14 +5,18 @@ from __future__ import annotations
 import asyncio
 import logging
 
+from .. import market
+from ..clock import clock
 from ..dilution import summary as risk_summary
 from ..health import SourceError, describe
+from ..warrants import in_the_money_message
 
 log = logging.getLogger(__name__)
 
 RISK_INTERVAL = 60.0      # how often the risk loop looks for symbols without a fresh profile
 RISK_RETRY = 900.0        # after a failed profile, wait this long before trying the symbol again
 RISK_ALERT_WAIT = 8.0     # a filing alert waits at most this long for the stock's risk level
+
 
 
 class RiskMixin:
@@ -22,6 +26,8 @@ class RiskMixin:
         self.risk: dict[str, dict | None] = {}  # symbol -> dilution summary; None = not an SEC filer
         self._risk_failed: dict[str, float] = {}  # symbol -> loop time of the last failure
         self._wake_risk = asyncio.Event()
+        self._warrant_last: dict[str, float] = {}             # symbol -> last price seen
+        self._warrant_fired: dict[tuple, object] = {}         # (symbol, kind, price) -> day it fired
 
     def _risk_symbols(self) -> list[str]:
         """Watchlist first, then the movers lists where dilution matters most."""
@@ -46,6 +52,28 @@ class RiskMixin:
             self.risk[symbol] = summary
             await self.hub.broadcast({"type": "risk", "data": {symbol: summary}})
         return summary
+
+    async def _check_warrants(self, rows: list[dict]) -> None:
+        """Alert when a stock crosses up through a warrant exercise price: from then on those
+        warrants can be exercised at a profit, and the new shares sold. The first price seen is
+        only a baseline; each level fires at most once a day."""
+        today = clock.today(market.ET)
+        fired = []
+        for row in rows:
+            symbol, price = row.get("symbol"), row.get("price")
+            levels = (self.risk.get(symbol) or {}).get("warrant_levels") if symbol else None
+            if price is None or not levels:
+                continue
+            before, self._warrant_last[symbol] = self._warrant_last.get(symbol), price
+            if before is None:
+                continue
+            for level in levels:
+                key = (symbol, level["kind"], level["price"])
+                if before < level["price"] <= price and self._warrant_fired.get(key) != today:
+                    self._warrant_fired[key] = today
+                    fired.append(self.alerts.event(row, "warrant", in_the_money_message(symbol, price, level)))
+        if fired:
+            await self._publish_alerts(self.alerts.record(fired))
 
     async def _risk_level(self, symbol: str) -> str | None:
         try:
