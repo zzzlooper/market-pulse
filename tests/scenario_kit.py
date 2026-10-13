@@ -101,14 +101,15 @@ class Day:
     # --- Yahoo --------------------------------------------------------------------------------
 
     def quotes(self, hhmm: str, low: dict | None = None, volume: dict | None = None, session: date = DAY,
-               **change_pct: float) -> None:
+               high: dict | None = None, **change_pct: float) -> None:
         """Watchlist prices: each symbol at 10.00 × (1 + change%), with ordinary volume (or
-        volume[symbol]). low[symbol]: the session's low so far, from a 10.00 close. session: the
-        day the quote describes (before the open, Yahoo's latest is the previous session)."""
+        volume[symbol]). low[symbol] / high[symbol]: the session's low / high so far, from a 10.00
+        close. session: the day the quote describes (before the open, Yahoo's latest is the
+        previous session)."""
         self._quoted = True
         rows = [{"symbol": s, "price": round(10 * (1 + p / 100), 4), "prev_close": 10.0, "change": p / 10,
                  "change_pct": p, "volume": (volume or {}).get(s, 1_000_000), "avg_volume": 1_000_000, "rvol": 1.0,
-                 "low": (low or {}).get(s), "session": session.isoformat()}
+                 "low": (low or {}).get(s), "high": (high or {}).get(s), "session": session.isoformat()}
                 for s, p in change_pct.items()]
         self.record(hhmm, f"call fetch_quotes {json.dumps([sorted(change_pct)])}", {"r": rows})
 
@@ -145,11 +146,13 @@ class Day:
         rows = [{"symbol": s, "float_shares": n} for s, n in shares.items()]
         self.record(hhmm, f"call fetch_floats {json.dumps([sorted(shares)])}", {"r": rows})
 
-    def premarket(self, hhmm: str, **gaps: tuple[float, int]) -> None:
+    def premarket(self, hhmm: str, pre_high: dict | None = None, **gaps: tuple[float, int]) -> None:
         """Pre-market gap rows as the scanner's Yahoo download returns them:
-        symbol=(gap %, minutes with trades), from a 10.00 close."""
+        symbol=(gap %, minutes with trades), from a 10.00 close. pre_high[symbol]: the highest
+        pre-market trade (default: the latest price)."""
         rows = [{"symbol": s, "prev_close": 10.0, "price": round(10 * (1 + g / 100), 4), "gap_pct": g,
-                 "pre_minutes": m, "last_trade": int(ts(hhmm)), "at_open": False} for s, (g, m) in gaps.items()]
+                 "pre_minutes": m, "last_trade": int(ts(hhmm)), "at_open": False,
+                 "pre_high": (pre_high or {}).get(s, round(10 * (1 + g / 100), 4))} for s, (g, m) in gaps.items()]
         self.record(hhmm, f"call fetch_premarket {json.dumps([sorted(gaps)])}", {"r": rows})
 
     def earnings(self, hhmm: str, **reports: tuple[str, str, bool]) -> None:

@@ -174,6 +174,9 @@
     <div id="rules" class="keywords"></div>
     <label class="toggle"><input type="checkbox" id="unusual-alerts"> Alert when a stock enters unusual volume</label>
     <label class="toggle"><input type="checkbox" id="rotation-alerts"> Alert when a stock trades its whole float</label>
+    <label class="toggle" title="After the open: through the pre-market high, or a new high of day after a 5% pullback.
+Watchlist stocks, gappers and movers.">
+      <input type="checkbox" id="breakout-alerts"> Alert on breakouts (pre-market high, new high of day)</label>
     <label class="toggle">Trading halts &amp; resumptions:
       <select id="halt-alerts">
         <option value="watchlist">Watchlist</option>
@@ -194,6 +197,8 @@
         <label title="Offerings, insider trades and 13D stakes for watchlist stocks and today's movers">
           <input type="checkbox" data-phone-cat="filings"> SEC filings</label>
         <label><input type="checkbox" data-phone-cat="unusual"> Unusual volume</label>
+        <label title="A stock going through its pre-market high, or making a new high of day after a pullback">
+          <input type="checkbox" data-phone-cat="breakouts"> Breakouts</label>
         <label title="Weekdays at 9:15 ET: the biggest pre-market gaps and what's behind them">
           <input type="checkbox" data-phone-cat="gaps"> Pre-market brief</label>
         <label title="Weekdays after the close: watchlist moves, halts, filings and the biggest reactions">

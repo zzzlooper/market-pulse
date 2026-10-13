@@ -1,10 +1,12 @@
 """Today's tape for the watched and moving stocks: the short sale restriction (SSR badges, rules
-in app/ssr.py) and float rotation (ROT badges, and an alert when a stock trades its whole float)."""
+in app/ssr.py), float rotation (ROT badges, and an alert when a stock trades its whole float) and
+breakouts (alerts, rules in app/breakouts.py)."""
 from __future__ import annotations
 
 import asyncio
 
 from .. import market
+from ..breakouts import Breakouts
 from ..clock import clock
 from ..ssr import carried_over, triggered
 from ..warrants import shares_text
@@ -27,6 +29,7 @@ class TapeMixin:
         self._tape_done: set[tuple[str, str]] = set()      # (what, symbol) looked up today
         self._rotation_last: dict[str, float] = {}         # symbol -> last volume / float seen
         self._rotation_fired: set[str] = set()             # today
+        self.breakouts = Breakouts()
         self._wake_tape = asyncio.Event()
 
     def _tape_today(self) -> str:
@@ -103,5 +106,21 @@ class TapeMixin:
                     f"{rotation:.1f}× the {shares_text(float_shares)}-share float")))
         if ssr_changed:
             await self.hub.broadcast({"type": "ssr", "data": dict(self.ssr)})
+        if fired:
+            await self._publish_alerts(self.alerts.record(fired))
+        await self._check_breakouts([r for r in rows if r.get("session") in (None, today)], regular=regular)
+
+    async def _check_breakouts(self, rows: list[dict], regular: bool) -> None:
+        """Feed today's prices to the breakout rules; alert on what they find, unless switched off."""
+        today, now, fired = self._tape_today(), clock.time(), []
+        for row in rows:
+            symbol, price = row.get("symbol"), row.get("price")
+            if not symbol or price is None or symbol.startswith("^") or "=" in symbol:
+                continue
+            found = self.breakouts.update(symbol, price, day=today, now=now, regular=regular,
+                                          high=row.get("high") if regular else None,
+                                          pre_high=self.pre_highs.get(symbol))
+            if self.state.breakout_alerts:
+                fired += [self.alerts.event(row, kind, message) for kind, message in found]
         if fired:
             await self._publish_alerts(self.alerts.record(fired))

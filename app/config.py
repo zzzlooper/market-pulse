@@ -110,7 +110,7 @@ def load_settings(path: Path = CONFIG_PATH, dashboard: dict | None = None) -> Se
 # Which alert categories go to the phone. Unusual volume is off: it can fire dozens of times a day.
 # "sources" is a data source going down (and coming back), so silence isn't mistaken for a calm market.
 DEFAULT_PHONE_ALERTS = {"price": True, "halts": True, "news": True, "filings": True, "unusual": False,
-                        "sources": True, "recap": True, "gaps": True}
+                        "breakouts": False, "sources": True, "recap": True, "gaps": True}
 
 DEFAULT_ALERT_RULES = [
     {"id": "default-move", "symbol": "", "kind": "move", "value": 5.0},
@@ -129,6 +129,7 @@ class UserState:
         self.alert_rules: list[dict] = data.get("alert_rules", [dict(r) for r in DEFAULT_ALERT_RULES])
         self.unusual_alerts: bool = data.get("unusual_alerts", True)
         self.rotation_alerts: bool = data.get("rotation_alerts", True)
+        self.breakout_alerts: bool = data.get("breakout_alerts", True)
         self.halt_alerts: str = data.get("halt_alerts", "watchlist")  # "watchlist" | "all" | "off"
         self.phone_alerts: dict[str, bool] = {**DEFAULT_PHONE_ALERTS, **data.get("phone_alerts", {})}
 
@@ -139,6 +140,7 @@ class UserState:
             "alert_rules": self.alert_rules,
             "unusual_alerts": self.unusual_alerts,
             "rotation_alerts": self.rotation_alerts,
+            "breakout_alerts": self.breakout_alerts,
             "halt_alerts": self.halt_alerts,
             "phone_alerts": self.phone_alerts,
         }

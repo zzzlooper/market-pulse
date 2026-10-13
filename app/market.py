@@ -54,7 +54,7 @@ def fetch_premarket(symbols: list[str]) -> list[dict]:
         frame = _bars_for(df, sym)
         if frame is None or frame.empty:
             continue
-        bars = [{"t": int(ts.timestamp()), "o": _num(r["Open"]), "c": _num(r["Close"]),
+        bars = [{"t": int(ts.timestamp()), "o": _num(r["Open"]), "h": _num(r["High"]), "c": _num(r["Close"]),
                  "v": int(_num(r["Volume"]) or 0)} for ts, r in frame.iterrows()]
         if row := premarket_row(sym, bars, today):
             rows.append(row)
@@ -128,6 +128,7 @@ def _screen_row(q: dict) -> dict:
         "market_cap": q.get("marketCap"),
         # For the short sale restriction: the regular session's low against the last close.
         "low": q.get("regularMarketDayLow"),
+        "high": q.get("regularMarketDayHigh"),
         "prev_close": q.get("regularMarketPreviousClose"),
         "session": session_date.isoformat() if session_date else None,
     }

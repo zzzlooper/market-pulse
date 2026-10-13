@@ -17,6 +17,7 @@ function renderRules() {
     || `<span class="muted">No rules yet</span>`;
   $("#unusual-alerts").checked = state.unusual_alerts;
   $("#rotation-alerts").checked = state.rotation_alerts;
+  $("#breakout-alerts").checked = state.breakout_alerts;
   $("#halt-alerts").value = state.halt_alerts;
   $("#rule-symbols").innerHTML = state.watchlist.map((s) => `<option value="${esc(s)}">`).join("");
 }
@@ -50,7 +51,8 @@ function addAlerts(events) {
   renderAlertLog(new Set(events.map((a) => a.id)));
   const what = { halt: "trading halted", resume: "resumption", unusual: "unusual volume",
                  warrant: "warrants in the money", offering_below: "below offering price",
-                 offering_above: "back above offering price", rotation: "float rotated" };
+                 offering_above: "back above offering price", rotation: "float rotated",
+                 pmh: "broke pre-market high", hod: "new high of day" };
   notify(events.map((a) => ({ title: `${a.symbol} · ${what[a.kind] ?? "price alert"}`, body: a.message, tag: a.id })), 660);
 }
 

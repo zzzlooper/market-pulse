@@ -170,6 +170,58 @@ def test_the_ticker_drawer_opens_with_its_dilution_panel_and_closes_on_escape(pa
     page.wait("document.querySelector('#detail').hidden")  # closes via history, so a moment later
 
 
+def chart_point(page, price):
+    """Viewport coordinates of `price` on the drawer's chart, from the geometry it was drawn with."""
+    return page.eval(f"""(() => {{
+        const g = detail.geom, r = document.querySelector('#detail-chart').getBoundingClientRect();
+        return [r.left + g.pad.l + g.plotW / 2, r.top + g.pad.t + (g.hi - {price}) / (g.hi - g.lo) * g.priceH];
+    }})()""")
+
+
+def test_the_chart_shows_the_levels_and_a_click_sets_an_alert_there(page, world):
+    open_dashboard(page, world)
+    page.wait("!!document.querySelector('#news a.sym[data-sym=ACME]')")
+    page.click("#news a.sym[data-sym=ACME]")
+    page.wait("document.querySelectorAll('#detail-levels li').length === 4 && !!detail.geom")
+    labels = page.eval("chartLevels().map(l => `${l.label} ${l.price}`)")
+    assert labels == ["Series A warrants 7.5", "warrants (avg) 12.5", "offering 424B5 9", "pre-market high 7.8"]
+    assert page.text("#detail-stats").count("PM high") == 1
+    try:
+        page.click_at(*chart_point(page, 9.0))  # above the 7.80 price
+        offer = page.wait("!document.querySelector('#chart-alert').hidden && document.querySelector('#chart-alert').innerText")
+        assert offer.startswith("Alert when ACME goes above $9.00") and "Add to watchlist & set alert" in offer
+        page.click("#chart-alert [data-chart-alert=set]")
+        page.wait("state.alert_rules.some(r => r.symbol === 'ACME' && r.kind === 'above' && r.value === 9)")
+        assert "ACME" in page.eval("state.watchlist") and page.eval("document.querySelector('#chart-alert').hidden")
+        page.wait("chartLevels().some(l => l.label === 'alert ↑' && l.price === 9)")
+        assert "above 9" in page.text("#detail-alerts")
+        page.click_at(*chart_point(page, 7.6))  # below the price this time; then thought better of it
+        assert page.wait("document.querySelector('#chart-alert').innerText").startswith("Alert when ACME goes below $7.6")
+        page.click("#chart-alert [data-chart-alert=cancel]")
+        assert page.eval("document.querySelector('#chart-alert').hidden") is True
+    finally:  # the server is shared: put the watchlist back as the other tests expect it
+        page.eval("""(async () => {
+            for (const r of state.alert_rules.filter(r => r.symbol === 'ACME')) await api('DELETE', `/api/alert-rules/${r.id}`);
+            if (state.watchlist.includes('ACME')) await api('DELETE', '/api/watchlist/ACME');
+        })()""")
+        page.wait("!state.watchlist.includes('ACME')")
+
+
+def test_on_a_phone_a_tap_on_the_chart_offers_an_alert_without_covering_the_level(page, world):
+    page.phone()
+    page.goto(world[0].url + "/#ticker=ACME")
+    page.wait("document.querySelectorAll('#detail-levels li').length === 4 && !!detail.geom", timeout=20)
+    page.eval("document.querySelector('#detail-chart').scrollIntoView({block: 'center'})")
+    x, y = chart_point(page, 9.9)  # near the top: no room for the offer above the point
+    page.tap_at(x, y)
+    box = page.wait("!document.querySelector('#chart-alert').hidden"
+                    " && JSON.parse(JSON.stringify(document.querySelector('#chart-alert').getBoundingClientRect()))")
+    assert page.text("#chart-alert").startswith("Alert when ACME goes above $9.9")
+    assert not box["top"] <= y <= box["bottom"]  # the line tapped stays visible
+    assert box["left"] >= 0 and box["right"] <= 390
+    page.click("#chart-alert [data-chart-alert=cancel]")
+
+
 def test_reactions_tab_loads_its_report_and_the_recap_preview(page, world):
     open_dashboard(page, world)
     page.click("[data-left-tab=reactions]")

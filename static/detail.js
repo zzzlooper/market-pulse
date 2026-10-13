@@ -4,7 +4,7 @@
 // from the live `state` in app.js, so the drawer updates as new data streams in.
 
 const detail = {
-  symbol: null, range: "1d", data: null, error: null, timer: null, seq: 0, hover: null, geom: null,
+  symbol: null, range: "1d", data: null, error: null, timer: null, seq: 0, hover: null, hoverY: null, geom: null,
   dilution: null, dilutionError: null,  // from /api/dilution, loaded once per open (cached 6h server-side)
 };
 const DETAIL_REFRESH_MS = 30_000;
@@ -46,7 +46,7 @@ function pushDrawer(name, hash) {
 async function openDetail(symbol) {
   pushDrawer("detail", `#ticker=${encodeURIComponent(symbol)}`);
   if (symbol !== detail.symbol) {
-    Object.assign(detail, { symbol, data: null, error: null, hover: null, dilution: null, dilutionError: null });
+    Object.assign(detail, { symbol, data: null, error: null, hover: null, hoverY: null, dilution: null, dilutionError: null });
     renderDetail();
     loadDilution(symbol);
   }
@@ -135,11 +135,13 @@ function renderDetail() {
     <div class="chart-wrap">
       <canvas id="detail-chart"></canvas>
       <div id="chart-tip" hidden></div>
+      <div id="chart-alert" class="chart-alert" hidden></div>
     </div>
     <div class="chart-legend muted">
       <span><i class="dot bullish"></i>bullish news</span><span><i class="dot bearish"></i>bearish news</span>
       <span><i class="dot neutral"></i>other news</span><span><i class="band"></i>halted</span>
       <span><i class="band ext"></i>pre/post-market</span>
+      <span class="chart-hint">Click or tap the chart to set an alert at that price</span>
     </div>
     <div id="detail-stats" class="stats"></div>
     <section id="detail-dilution" class="dilution"></section>
@@ -239,6 +241,7 @@ function renderDilution() {
     <p class="muted fine">From SEC filings and XBRL financials, which lag by up to a quarter. Filings since
       ${fmtDay(h.covered_since)}.</p>`;
   updateDetailLevels();
+  drawDetailChart();  // the warrant and offering lines
 }
 
 // The price levels from the filings, highest first, with the current price between them: warrant
@@ -322,6 +325,8 @@ function updateDetailStats() {
     stat("Open", fmtPrice(p.open)),
     stat("Prev close", fmtPrice(p.prev_close)),
     stat("Gap", fmtPct(p.gap_pct), dir(p.gap_pct)),
+    stat("PM high", fmtPrice(state.pre_highs?.[detail.symbol]),
+      q?.price != null && q.price >= state.pre_highs?.[detail.symbol] ? "up" : ""),
     stat("Day range", range(p.day_low, p.day_high)),
     stat("52-wk range", range(p.week52_low, p.week52_high)),
     stat("Volume", fmtVol(volume)),
@@ -448,13 +453,19 @@ function drawDetailChart() {
   let lo = Math.min(...bars.map((b) => b.l ?? b.c));
   let hi = Math.max(...bars.map((b) => b.h ?? b.c));
   if (base) { lo = Math.min(lo, base); hi = Math.max(hi, base); }
+  // Levels just outside the price range widen it so they show; far-away ones don't squash the chart.
+  const levels = chartLevels();
+  const near = hi - lo || hi * 0.05;
+  for (const lv of levels) {
+    if (lv.price >= lo - near * 0.5 && lv.price <= hi + near * 0.5) { lo = Math.min(lo, lv.price); hi = Math.max(hi, lv.price); }
+  }
   const span = hi - lo || hi * 0.01 || 1;
   lo -= span * 0.06; hi += span * 0.06;
   const y = (p) => pad.t + ((hi - p) / (hi - lo)) * priceH;
   const volTop = pad.t + priceH + 6;
   const maxVol = Math.max(...bars.map((b) => b.v), 1);
   const barW = Math.max(step * 0.7, 1);
-  detail.geom = { pad, plotW, n, step };
+  detail.geom = { pad, plotW, n, step, lo, hi, priceH };
 
   // pre/post-market shading
   ctx.fillStyle = "#ffffff08";
@@ -508,6 +519,21 @@ function drawDetailChart() {
   ctx.fillStyle = grad;
   ctx.fill();
 
+  // levels: your alert rules and the ones from the filings, labelled at the left edge
+  for (const lv of levels) {
+    if (lv.price < lo || lv.price > hi) continue;
+    const yy = Math.round(y(lv.price)) + 0.5;
+    ctx.strokeStyle = lv.color;
+    ctx.setLineDash(lv.dash);
+    ctx.beginPath(); ctx.moveTo(pad.l, yy); ctx.lineTo(pad.l + plotW, yy); ctx.stroke();
+    ctx.setLineDash([]);
+    const text = `${lv.label} ${fmtPrice(lv.price)}`;
+    ctx.fillStyle = color("--bg");
+    ctx.fillRect(pad.l + 2, yy - 13, ctx.measureText(text).width + 6, 12);
+    ctx.fillStyle = lv.color;
+    ctx.fillText(text, pad.l + 5, yy - 3);
+  }
+
   // news markers along the top
   const dotColor = { bullish: color("--up"), bearish: color("--down"), neutral: color("--muted") };
   for (const m of news) {
@@ -523,6 +549,19 @@ function drawDetailChart() {
     ctx.fillText(label, Math.min(x(i), pad.l + plotW - 40), H - 5);
   }
 
+  // hover: the price under the pointer, where a click would set an alert
+  if (detail.hoverY != null && detail.hoverY >= pad.t && detail.hoverY <= pad.t + priceH) {
+    const p = hi - ((detail.hoverY - pad.t) / priceH) * (hi - lo);
+    ctx.strokeStyle = color("--muted");
+    ctx.setLineDash([2, 3]);
+    ctx.beginPath(); ctx.moveTo(pad.l, detail.hoverY); ctx.lineTo(pad.l + plotW, detail.hoverY); ctx.stroke();
+    ctx.setLineDash([]);
+    ctx.fillStyle = color("--border");
+    ctx.fillRect(pad.l + plotW + 2, detail.hoverY - 8, pad.r - 2, 16);
+    ctx.fillStyle = color("--text");
+    ctx.fillText(fmtPrice(p), pad.l + plotW + 6, detail.hoverY + 4);
+  }
+
   // hover crosshair
   if (detail.hover != null && detail.hover < n) {
     const i = detail.hover;
@@ -533,6 +572,66 @@ function drawDetailChart() {
     ctx.fillStyle = lineColor;
     ctx.beginPath(); ctx.arc(x(i), y(bars[i].c), 3, 0, Math.PI * 2); ctx.fill();
   }
+}
+
+// Horizontal lines on the chart: your price rules for this stock, the warrant and offering prices
+// from its filings, and today's pre-market high (1-day view).
+function chartLevels() {
+  const sym = detail.symbol;
+  const css = getComputedStyle(document.documentElement);
+  const hot = css.getPropertyValue("--hot").trim();
+  const muted = css.getPropertyValue("--muted").trim();
+  const out = state.alert_rules.filter((r) => r.symbol === sym && (r.kind === "above" || r.kind === "below"))
+    .map((r) => ({ price: r.value, label: `alert ${r.kind === "above" ? "↑" : "↓"}`, color: hot, dash: [6, 3] }));
+  const w = detail.dilution?.warrants;
+  const risk = state.risk[sym];
+  for (const lv of w?.levels ?? risk?.warrant_levels ?? []) {
+    out.push({ price: lv.price, label: lv.kind === "outstanding" ? "warrants (avg)" : `${lv.kind === "common" ? "" : `${lv.kind} `}warrants`,
+      color: "#f0883e", dash: [] });
+  }
+  for (const lv of w?.offering_levels ?? risk?.offering_levels ?? []) {
+    out.push({ price: lv.price, label: `offering ${lv.form}`, color: "#58a6ff", dash: [] });
+  }
+  const pmh = state.pre_highs?.[sym];
+  if (pmh && detail.range === "1d") out.push({ price: pmh, label: "pre-market high", color: muted, dash: [2, 2] });
+  return out;
+}
+
+// A click on the chart offers an alert at that price: above it if the stock is below, and the
+// other way round. A stock not on the watchlist is added first (rules cover the watchlist).
+function offerChartAlert(offsetX, offsetY) {
+  const g = detail.geom;
+  const box = $("#chart-alert");
+  if (!g || offsetY < g.pad.t || offsetY > g.pad.t + g.priceH) {
+    box.hidden = true;
+    return;
+  }
+  const raw = g.hi - ((offsetY - g.pad.t) / g.priceH) * (g.hi - g.lo);
+  const price = Number(raw.toFixed(raw < 1 ? 4 : 2));
+  const now = detailPrice();
+  const kind = now != null && price < now ? "below" : "above";
+  const sym = detail.symbol;
+  const watched = state.watchlist.includes(sym);
+  Object.assign(box.dataset, { kind, price: String(price) });
+  box.innerHTML = `<span>Alert when ${esc(sym)} goes ${kind} <b>$${fmtPrice(price)}</b></span>
+    <button data-chart-alert="set">${watched ? "Set alert" : "Add to watchlist &amp; set alert"}</button>
+    <button data-chart-alert="cancel" class="x" title="Cancel">×</button>`;
+  box.hidden = false;
+  const wrap = box.parentElement.clientWidth;
+  box.style.left = `${Math.min(Math.max(offsetX - box.offsetWidth / 2, 0), wrap - box.offsetWidth)}px`;
+  const above = offsetY - box.offsetHeight - 10;  // above the point if it fits, else below: never over it
+  box.style.top = `${above >= 0 ? above : offsetY + 12}px`;
+}
+
+async function setChartAlert() {
+  const box = $("#chart-alert");
+  const sym = detail.symbol;
+  const { kind } = box.dataset;
+  const price = Number(box.dataset.price);
+  box.hidden = true;
+  if (!state.watchlist.includes(sym)) await api("POST", "/api/watchlist", { symbol: sym });
+  await api("POST", "/api/alert-rules", { symbol: sym, kind, value: price });
+  toast(`Alert set: ${sym} ${kind} $${fmtPrice(price)}`);
 }
 
 function showChartTip(i, mouseX) {
@@ -563,8 +662,9 @@ $("#detail").addEventListener("mousemove", (ev) => {
   const { pad, n, step } = detail.geom;
   const mx = ev.offsetX;
   const i = Math.min(n - 1, Math.max(0, Math.round((mx - pad.l) / (step || 1))));
-  if (i !== detail.hover) {
+  if (i !== detail.hover || ev.offsetY !== detail.hoverY) {
     detail.hover = i;
+    detail.hoverY = ev.offsetY;
     drawDetailChart();
   }
   showChartTip(i, mx);
@@ -572,12 +672,23 @@ $("#detail").addEventListener("mousemove", (ev) => {
 
 $("#detail").addEventListener("mouseout", (ev) => {
   if (ev.target.id !== "detail-chart") return;
-  detail.hover = null;
+  detail.hover = detail.hoverY = null;
   $("#chart-tip").hidden = true;
   drawDetailChart();
 });
 
 $("#detail").addEventListener("click", async (ev) => {
+  if (ev.target.id === "detail-chart" && detail.symbol) {
+    $("#chart-tip").hidden = true;
+    offerChartAlert(ev.offsetX, ev.offsetY);
+    return;
+  }
+  const action = ev.target.closest("[data-chart-alert]");
+  if (action) {
+    if (action.dataset.chartAlert === "cancel") $("#chart-alert").hidden = true;
+    else await setChartAlert().catch((err) => toast(err.message));
+    return;
+  }
   const el = ev.target.closest("[data-detail-action], [data-range]");
   if (!el) return;
   const sym = detail.symbol;

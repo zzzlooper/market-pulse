@@ -192,6 +192,16 @@ class Page:
     def click(self, selector: str) -> None:
         self.eval(f"document.querySelector({json.dumps(selector)}).click()")
 
+    def click_at(self, x: float, y: float) -> None:
+        """A real mouse click at viewport coordinates (CSS pixels): move, press, release."""
+        for kind in ("mouseMoved", "mousePressed", "mouseReleased"):
+            self.send("Input.dispatchMouseEvent", {"type": kind, "x": x, "y": y, "button": "left", "clickCount": 1})
+
+    def tap_at(self, x: float, y: float) -> None:
+        """A finger tap at viewport coordinates, as on a phone (see phone())."""
+        self.send("Input.dispatchTouchEvent", {"type": "touchStart", "touchPoints": [{"x": x, "y": y}]})
+        self.send("Input.dispatchTouchEvent", {"type": "touchEnd", "touchPoints": []})
+
     def text(self, selector: str = "body") -> str:
         return self.eval(f"document.querySelector({json.dumps(selector)})?.innerText ?? ''")
 

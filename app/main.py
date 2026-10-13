@@ -75,7 +75,8 @@ def build_engine() -> Engine:
         state = UserState(Path(tempfile.mkdtemp(prefix="market-pulse-replay-")) / "state.json")
         player = Player(Path(REPLAY))
         recorded = player.header.get("state", {})
-        for key in ("watchlist", "keywords", "alert_rules", "unusual_alerts", "rotation_alerts", "halt_alerts"):
+        for key in ("watchlist", "keywords", "alert_rules", "unusual_alerts", "rotation_alerts", "breakout_alerts",
+                    "halt_alerts"):
             if key in recorded:
                 setattr(state, key, recorded[key])
         return Engine(replay_settings(settings), state, hub, io=player)
@@ -427,6 +428,12 @@ async def set_unusual_alerts(body: ToggleIn):
 async def set_rotation_alerts(body: ToggleIn):
     await engine.set_rotation_alerts(body.enabled)
     return {"rotation_alerts": body.enabled}
+
+
+@app.put("/api/alert-rules/breakouts")
+async def set_breakout_alerts(body: ToggleIn):
+    await engine.set_breakout_alerts(body.enabled)
+    return {"breakout_alerts": body.enabled}
 
 
 class PhoneAlertsIn(BaseModel):

@@ -134,6 +134,7 @@ class Engine(PricesMixin, FeedsMixin, RiskMixin, CatalystsMixin, DailyMixin, Gap
             "earnings": self.earnings,
             "gap_min_pct": self.settings.gap_min_pct,
             "ssr": self.ssr,
+            "pre_highs": self.pre_highs,
             "floats": self.floats,
         }
 
@@ -312,6 +313,10 @@ class Engine(PricesMixin, FeedsMixin, RiskMixin, CatalystsMixin, DailyMixin, Gap
 
     async def set_rotation_alerts(self, enabled: bool) -> None:
         self.state.rotation_alerts = enabled
+        await self._config_changed()
+
+    async def set_breakout_alerts(self, enabled: bool) -> None:
+        self.state.breakout_alerts = enabled
         await self._config_changed()
 
     async def set_halt_alerts(self, mode: str) -> None:

@@ -108,7 +108,8 @@ Secrets can come from environment variables instead of `config.toml`: `NTFY_TOPI
 and `SEC_USER_AGENT` for your contact address).
 
 - The *Phone* box has switches for which alerts go to the phone: price, halts, news (keyword
-  and watchlist headlines), SEC filings, unusual volume, the pre-market brief, the daily recap and data outages.
+  and watchlist headlines), SEC filings, unusual volume, breakouts, the pre-market brief, the daily recap and
+  data outages.
 - *Daily recap*: weekdays at `recap_time` (default 16:30 ET), one message with the watchlist's
   moves, the day's halts (yours named), filings by type, the biggest reactions by the close
   (see *Catalyst reactions*) and any data source that's down. Skipped on market holidays.
@@ -119,8 +120,8 @@ and `SEC_USER_AGENT` for your contact address).
   0 turns it off), you get one message saying which alerts can't fire, and another when it's
   back. Silence from a broken feed otherwise looks the same as a quiet market.
 - A burst of alerts is sent as 2 messages plus a "+N more" summary, with a hard cap of 20 per
-  minute. Halts arrive as urgent notifications, price, warrant and offering-price alerts as high
-  priority, news and float rotation as normal.
+  minute. Halts arrive as urgent notifications, price, warrant, offering-price and breakout alerts as
+  high priority, news and float rotation as normal.
 - Set `public_url` (e.g. `http://192.168.1.20:8000`) to make a tapped alert open that
   ticker's detail panel. That only works where your phone can reach the app, e.g. on the same Wi-Fi,
   so set an access token first (next section).
@@ -268,9 +269,18 @@ There's deliberately no offline cache: nothing from the dashboard is stored on t
   - an intraday chart: 1 day of 1-minute bars including pre/post-market (shaded), or 5 days
     of 5-minute bars. It has a previous-close line and volume bars, news dots coloured by
     sentiment, and red bands where the stock was halted. Hover for the bar's OHLC, volume,
-    change and any headlines from that minute.
-  - key stats: open, gap, day and 52-week range, volume vs average, RVOL, market cap, float,
-    short % of float, days to cover, P/E, beta and next earnings date.
+    change and any headlines from that minute, and the price under the pointer.
+  - lines on the chart for your *above*/*below* rules on the stock (amber, dashed), its warrant
+    exercise prices (orange) and offering prices (blue), and today's pre-market high (1 day).
+    Levels a little outside the day's range widen it so they show; far-away ones stay off it
+    (they're listed under *Dilution risk*).
+  - **click or tap the chart to set an alert at that price**: it offers *above* when the price
+    is below it and *below* when it's above, and sets it with one more click. A stock not on
+    the watchlist is added first, since rules cover the watchlist. The rule then shows as a
+    line, and in the panel's alert list where it can be removed.
+  - key stats: open, gap, pre-market high (green once the price is above it), day and
+    52-week range, volume vs average, RVOL, market cap, float, short % of float, days to
+    cover, P/E, beta and next earnings date.
   - the ticker's news, halts, alert rules (add or remove them here) and fired alerts. These
     update live while the panel is open. Chart and stats refresh every 30 s.
   - **Dilution risk**: *high*, *medium*, *low* or *unknown*, with every reason and its points,
@@ -333,8 +343,8 @@ There's deliberately no offline cache: nothing from the dashboard is stored on t
 - **Price & volume alerts** (bottom-right panel): rules like *AAPL above 350*,
   *all watchlist tickers move ±5%* or *RVOL ≥ 3×*. Leave the ticker blank to apply a rule to
   the whole watchlist. A toggle adds *alert when a stock enters the unusual-volume list*,
-  at most once per stock per day, and another *alert when a stock trades its whole float* (see
-  *Float rotation*).
+  at most once per stock per day, another *alert when a stock trades its whole float* (see
+  *Float rotation*), and one for *breakouts* (see below).
   - Rules fire when a level is **crossed**, not while it holds. The first reading after
     startup, or after adding a rule, only records a baseline, so a stock already up 6%
     when the app starts won't alert until it dips below 5% and crosses again. A stock
@@ -423,6 +433,19 @@ There's deliberately no offline cache: nothing from the dashboard is stored on t
   it comes under *Unusual volume*, off by default. Floats are looked up once a day per stock,
   20 at a time; before the open the volume shown is yesterday's, so nothing counts until today's
   session starts.
+- **Breakouts** (`app/breakouts.py`): alerts at the moments momentum traders act, for
+  watchlist stocks, gappers and movers, after the open:
+  - **through the pre-market high**: the highest pre-market trade, from the gap scanner's
+    1-minute bars (it covers the watchlist, stocks with fresh news or filings, and the last
+    session's movers). The last pre-market price is the baseline, so a stock that opens
+    straight through its pre-market high counts. Once a day per stock.
+  - **a new high of day after a pullback**: a new regular-session high after the price fell at
+    least 5% below the previous one, at most every 15 minutes per stock. Without the pullback, a
+    runner would alert on every tick up.
+  - Switch them off in the alerts panel. On the phone they're a category of their own,
+    *Breakouts*, off by default since busy days bring many; switched on, they're high priority.
+    Prices arrive at the app's polling rate (a minute or so with Yahoo, seconds with Finnhub),
+    and Yahoo's are delayed ~15 minutes, so these are as timely as the price source.
 - **Earnings** (`app/earnings.py`): the next report date of each watchlist stock, looked up
   every 6 hours and when the watchlist changes. An **ER** badge marks reports within 5 days
   (filled on the day; hover for when). The 09:15 brief lists the watchlist's reports today, and
@@ -506,6 +529,7 @@ app/
   tls.py      HTTPS: a name-constrained local CA and the server certificate it signs
   warrants.py warrant overhang signals and the offering price from a filing's first pages
   ssr.py      the short sale restriction (Rule 201): triggered today, carried over from yesterday
+  breakouts.py  through the pre-market high, a new high of day after a pullback
   serve.py    python -m app.serve [--https]: starts the app, as the background service does
   clock.py    the market clock: real time, or a replayed day's time and speed
   replay.py   record what the data sources answer, and replay it offline (python -m app.replay)
@@ -523,7 +547,7 @@ app/
     daily.py      the end-of-day recap
     gaps.py       the pre-market gap scanner and its brief
     earnings.py   the watchlist's next earnings dates
-    tape.py       the short sale restriction and float rotation (SSR and ROT badges, rotation alerts)
+    tape.py       the short sale restriction, float rotation and breakouts (SSR and ROT badges, their alerts)
   main.py     FastAPI routes, access token and /ws endpoint
 static/       single-page dashboard: plain scripts sharing globals, no build step, loaded in this order
   core.js     state, formatting, the market clock, server calls
@@ -533,7 +557,7 @@ static/       single-page dashboard: plain scripts sharing globals, no build ste
   alerts.js   alert rules and log, the Phone box, desktop notifications and sound
   header.js   data-source health and the session clock
   app.js      server messages, the live connection, sign-in, events, startup
-  detail.js   ticker detail drawer and its canvas chart
+  detail.js   ticker detail drawer and its canvas chart (levels, click to set an alert)
   setup.js    Setup drawer: checklist and settings form
 scripts/
   install-service.sh  systemd user service install/uninstall

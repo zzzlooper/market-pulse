@@ -27,9 +27,10 @@ def scanning(now: datetime) -> bool:
 
 
 def premarket_row(symbol: str, bars: list[dict], today: date) -> dict | None:
-    """Gap from yesterday's close, from 1-minute bars (t, o, c, v) covering yesterday and
+    """Gap from yesterday's close, from 1-minute bars (t, o, h, c, v) covering yesterday and
     today with pre/post-market. Before 09:30 the gap is to the latest pre-market trade, after
-    it to today's open. None without a previous close or any trade today."""
+    it to today's open. None without a previous close or any trade today. Also the pre-market
+    high, which a breakout after the open goes through."""
     def et(bar):
         return datetime.fromtimestamp(bar["t"], ET)
 
@@ -57,6 +58,7 @@ def premarket_row(symbol: str, bars: list[dict], today: date) -> dict | None:
         "price": price,
         "gap_pct": (price / prev_close - 1) * 100,
         "pre_minutes": len(pre),  # minutes with pre-market trades (Yahoo reports no pre-market volume)
+        "pre_high": max((b.get("h") or b["c"] for b in pre if (b.get("h") or b["c"]) is not None), default=None),
         "last_trade": opened[0]["t"] if opened else pre[-1]["t"],
         "at_open": at_open,
     }

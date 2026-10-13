@@ -38,6 +38,8 @@ ALERT_KINDS = {
     "offering_below": ("price", "high", "chart_with_downwards_trend"),
     "offering_above": ("price", "high", "chart_with_upwards_trend"),
     "rotation": ("unusual", "default", "arrows_counterclockwise"),
+    "pmh": ("breakouts", "high", "rocket"),
+    "hod": ("breakouts", "high", "chart_with_upwards_trend"),
 }
 
 
@@ -45,7 +47,8 @@ def from_alert(event: dict, public_url: str = "") -> dict:
     category, priority, tag = ALERT_KINDS.get(event["kind"], ("price", "default", "bell"))
     titles = {"halt": "trading halted", "resume": "trading resumes", "unusual": "unusual volume",
               "warrant": "warrants in the money", "offering_below": "below offering price",
-              "offering_above": "back above offering price", "rotation": "float rotated"}
+              "offering_above": "back above offering price", "rotation": "float rotated",
+              "pmh": "broke pre-market high", "hod": "new high of day"}
     return {
         "category": category,
         "title": f"{event['symbol']} · {titles.get(event['kind'], 'price alert')}",
