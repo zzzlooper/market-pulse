@@ -46,13 +46,18 @@ function updateSetupButton() {
 }
 
 function openSetup() {
+  if (history.state?.drawer !== "setup") history.pushState({ drawer: "setup" }, "", location.pathname + location.search);
   setup.open = true;
   try { localStorage.setItem(SETUP_SEEN, "1"); } catch { /* fine */ }
   $("#setup").hidden = $("#setup-backdrop").hidden = false;
   renderSetup();
 }
 
-function closeSetup() {
+function closeSetup(fromHistory = false) {
+  if (!fromHistory && history.state?.drawer === "setup") {
+    history.back();  // popstate closes it: a phone's Back gesture works the same way
+    return;
+  }
   setup.open = false;
   setup.generated = null;  // a generated value is shown once
   $("#setup").hidden = $("#setup-backdrop").hidden = true;
@@ -134,7 +139,10 @@ async function saveSettings(values) {
 }
 
 $("#setup-btn").addEventListener("click", () => (setup.open ? closeSetup() : openSetup()));
-$("#setup-backdrop").addEventListener("click", closeSetup);
+$("#setup-backdrop").addEventListener("click", () => closeSetup());
+window.addEventListener("popstate", () => {
+  if (setup.open && history.state?.drawer !== "setup") closeSetup(true);
+});
 document.addEventListener("keydown", (ev) => {
   if (ev.key === "Escape" && setup.open) closeSetup();
 });

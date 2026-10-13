@@ -66,7 +66,8 @@ main {
   main {
     grid-template-columns: 1fr;
     grid-template-rows: none;
-    grid-template-areas: "watch" "alerts" "news" "unusual" "movers";
+    /* What you came for first (often from a phone alert); alert settings last. */
+    grid-template-areas: "watch" "news" "unusual" "movers" "alerts";
   }
   body { height: auto; }
   .panel { max-height: 70vh; }
@@ -437,3 +438,53 @@ tr.stale td { opacity: .45; }
 #login::backdrop { background: #000a; }
 #login h2 { font-size: 14px; margin: 0 0 6px; color: var(--accent); }
 #login input { width: 100%; margin: 8px 0; }
+
+/* --- phones ------------------------------------------------------------------------------ */
+@media (max-width: 700px) {
+  /* Nothing may be wider than the screen, or the phone zooms the whole page out. */
+  html, body { overflow-x: hidden; }
+  header { flex-wrap: wrap; row-gap: 6px; padding: 8px 10px; }
+  header h1 { font-size: 15px; }
+  main { padding: 6px; gap: 6px; }
+  .panel { padding: 8px; }
+  #news-panel { max-height: 80vh; }
+
+  /* Fingers, not mouse pointers: ~40px targets, and 16px text so focusing a field doesn't zoom. */
+  button, select, input:not([type=checkbox]) { min-height: 40px; font-size: 16px; }
+  input[type=checkbox] { width: 20px; height: 20px; }
+  .filters label, .phone-cats label { min-height: 36px; }
+  a.sym { display: inline-block; padding: 8px 2px; margin: -8px 0; }
+  td button.x { min-width: 36px; min-height: 36px; }
+  .chip button { min-height: 0; padding: 4px 8px; }
+  .keywords .inline-form input { width: 140px; }
+
+  /* Drawers take the whole screen, with their title bar and close button always in view. */
+  #detail, #setup { width: 100vw; left: 0; padding: 0 12px 24px; overflow-x: hidden; }
+  .detail-head {
+    position: sticky; top: 0; z-index: 2; background: var(--panel);
+    flex-wrap: wrap; padding: 10px 0 8px; margin-bottom: 4px; border-bottom: 1px solid var(--border);
+  }
+  .detail-head > div:first-child { flex: 1 1 60%; min-width: 0; }
+  .detail-head h2 { font-size: 18px; }
+  .detail-actions { flex-wrap: wrap; flex-shrink: 1; justify-content: flex-end; }
+  .detail-actions .x { min-width: 44px; font-size: 24px; order: 9; }
+  .detail-range { max-width: none; flex-wrap: wrap; }
+  .detail-range button { flex: 1 1 140px; }
+  #detail-chart { height: 220px; }
+  .stats { grid-template-columns: repeat(2, 1fr); }
+  .set-input { flex-wrap: wrap; }
+  .set-input input { flex: 1 1 100%; }
+  code.cmd { display: block; overflow-x: auto; white-space: nowrap; max-width: 100%; min-width: 0; flex: 1 1 100%; }
+  .check > div { min-width: 0; }
+  #login { width: calc(100vw - 32px); }
+}
+
+/* Small phones: the watchlist drops raw volume (RVOL beside it says whether it's unusual). */
+@media (max-width: 420px) {
+  #watchlist-panel th:nth-child(4), #watchlist-panel td:nth-child(4) { display: none; }
+  th, td { padding-left: 3px; padding-right: 3px; }
+}
+/* The smallest phones (320px): the 24h news sentiment goes too; the news is right below. */
+@media (max-width: 340px) {
+  #watchlist-panel th:nth-child(6), #watchlist-panel td:nth-child(6) { display: none; }
+}

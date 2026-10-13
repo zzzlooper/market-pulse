@@ -184,6 +184,12 @@ uvicorn app.main:app --host 0.0.0.0
 - It's plain HTTP: anyone who can watch your Wi-Fi traffic can see the token. Use it on a home
   network, or put it behind HTTPS (a reverse proxy, or Tailscale) to go further.
 
+On a phone the dashboard is one column: watchlist, news, the tabs (unusual volume, halts,
+gaps, reactions), movers, then alert settings. A tapped alert opens the ticker full-screen,
+and the phone's Back gesture closes it (and Setup) back to the dashboard. Small phones drop
+the watchlist's raw volume column (below 420px wide) and its 24h news column (below 340px).
+Browser tests check it at 390, 360 and 320px wide.
+
 ## What's on screen
 
 | Panel | Source | Refresh |

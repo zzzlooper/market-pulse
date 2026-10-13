@@ -31,7 +31,20 @@ function fmtBig(v, prefix = "") {
 
 // --- open / close / load ---------------------------------------------------------------
 
+// The drawer is a history entry, so a phone's Back gesture closes it instead of leaving the
+// dashboard. A deep link (a tapped phone alert) puts the dashboard underneath it first.
+function pushDrawer(name, hash) {
+  const base = location.pathname + location.search;
+  if (history.state?.drawer === name) {
+    history.replaceState({ drawer: name }, "", base + hash);
+  } else {
+    if (location.hash.startsWith("#ticker=") && !history.state) history.replaceState(null, "", base);
+    history.pushState({ drawer: name }, "", base + hash);
+  }
+}
+
 async function openDetail(symbol) {
+  pushDrawer("detail", `#ticker=${encodeURIComponent(symbol)}`);
   if (symbol !== detail.symbol) {
     Object.assign(detail, { symbol, data: null, error: null, hover: null, dilution: null, dilutionError: null });
     renderDetail();
@@ -43,7 +56,11 @@ async function openDetail(symbol) {
   await loadDetail();
 }
 
-function closeDetail() {
+function closeDetail(fromHistory = false) {
+  if (!fromHistory && history.state?.drawer === "detail") {
+    history.back();  // popstate closes it, keeping history and drawer in step
+    return;
+  }
   clearInterval(detail.timer);
   detail.symbol = null;
   detail.seq++;  // drop any response still in flight
@@ -540,9 +557,12 @@ $("#detail").addEventListener("submit", async (ev) => {
   }
 });
 
-$("#detail-backdrop").addEventListener("click", closeDetail);
+$("#detail-backdrop").addEventListener("click", () => closeDetail());
 document.addEventListener("keydown", (ev) => {
   if (ev.key === "Escape" && detail.symbol) closeDetail();
+});
+window.addEventListener("popstate", () => {
+  if (detail.symbol && history.state?.drawer !== "detail") closeDetail(true);
 });
 window.addEventListener("resize", () => drawDetailChart());
 

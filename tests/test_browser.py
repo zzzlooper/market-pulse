@@ -104,7 +104,7 @@ def test_the_ticker_drawer_opens_with_its_dilution_panel_and_closes_on_escape(pa
     assert page.wait("document.querySelector('#detail-dilution .risk')?.textContent") == "high"
     assert "Shelf" in page.text("#detail-dilution")
     page.eval("document.dispatchEvent(new KeyboardEvent('keydown', {key: 'Escape'}))")
-    assert page.eval("document.querySelector('#detail').hidden")
+    page.wait("document.querySelector('#detail').hidden")  # closes via history, so a moment later
 
 
 def test_reactions_tab_loads_its_report_and_the_recap_preview(page, world):
@@ -147,3 +147,76 @@ def test_with_an_access_token_the_page_asks_for_it_first(tmp_path, world):
     finally:
         page.close()
         server.stop()
+
+
+# --- on a phone -------------------------------------------------------------------------------------
+
+# Visible elements reaching past the right edge (overflow is hidden on phones, so they'd be
+# cut off rather than scrollable).
+OFF_SCREEN = ("[...document.querySelectorAll('SCOPE')].filter(e => e.offsetParent && e.getBoundingClientRect().width"
+              " && e.getBoundingClientRect().right > innerWidth + 1).map(e => e.tagName + '#' + e.id + '.' + e.className)")
+
+
+def on_a_phone(page, world, path="/"):
+    page.phone()
+    page.goto(world[0].url + path)
+    page.wait("document.querySelectorAll('#watchlist tr:not(.empty)').length === 2")
+
+
+def test_on_a_phone_nothing_is_wider_than_the_screen_and_news_comes_right_after_the_watchlist(page, world):
+    on_a_phone(page, world)
+    page.wait("document.querySelectorAll('#news .news-item').length >= 2")
+    assert page.eval("[document.documentElement.scrollWidth, innerWidth]") == [390, 390]  # no zoomed-out page
+    # And nothing pushed off the right edge where it can't be tapped (overflow is hidden, not fixed).
+    assert page.eval(OFF_SCREEN.replace("SCOPE", "header *, main *")) == []
+    order = page.eval("[...document.querySelectorAll('main > .panel')]"
+                      ".sort((a, b) => a.getBoundingClientRect().top - b.getBoundingClientRect().top).map(p => p.id)")
+    assert order == ["watchlist-panel", "news-panel", "unusual-panel", "movers-panel", "alerts-panel"]
+    # Fields at 16px, so focusing one doesn't zoom the page; buttons big enough for a thumb.
+    assert page.eval("Math.min(...[...document.querySelectorAll('input:not([type=checkbox]), select')]"
+                     ".filter(e => e.offsetParent).map(e => parseFloat(getComputedStyle(e).fontSize)))") >= 16
+    assert page.eval("Math.min(...[...document.querySelectorAll('main button:not(.chip button)')]"
+                     ".filter(e => e.offsetParent).map(e => e.getBoundingClientRect().height))") >= 36
+
+
+def test_on_a_phone_a_tapped_alert_opens_the_ticker_and_back_returns_to_the_dashboard(page, world):
+    on_a_phone(page, world, "/#ticker=ACME")  # what a phone alert links to (public_url/#ticker=…)
+    page.wait("!document.querySelector('#detail').hidden && document.querySelector('#detail-dilution .risk')?.textContent === 'high'",
+              timeout=20)
+    close_visible = ("(() => { const r = document.querySelector('#detail .x').getBoundingClientRect();"
+                     " return r.left >= 0 && r.right <= innerWidth && r.top >= 0 && r.bottom <= innerHeight; })()")
+    assert page.eval(close_visible)
+    assert page.eval(OFF_SCREEN.replace("SCOPE", "#detail *")) == []
+    page.eval("document.querySelector('#detail').scrollTop = 600")
+    assert page.eval(close_visible)  # the title bar stays put while scrolling
+    page.eval("history.back()")  # the phone's Back gesture
+    page.wait("document.querySelector('#detail').hidden")
+    assert page.eval("[location.pathname, location.hash]") == ["/", ""]
+    assert page.eval("document.querySelectorAll('#watchlist tr:not(.empty)').length") == 2  # still the dashboard
+
+
+@pytest.mark.parametrize("width", [360, 320])
+def test_on_small_phones_nothing_is_cut_off(page, world, width):
+    page.phone(width=width, height=740)
+    page.goto(world[0].url + "/")
+    page.wait("document.querySelectorAll('#watchlist tr:not(.empty)').length === 2"
+              " && document.querySelectorAll('#news .news-item').length >= 2")
+    assert page.eval(OFF_SCREEN.replace("SCOPE", "header *, main *")) == []
+    page.click("#setup-btn")
+    page.wait("!document.querySelector('#setup').hidden && !!document.querySelector('#set-ntfy_topic')")
+    assert page.eval(OFF_SCREEN.replace("SCOPE", "#setup *")) == []
+
+
+def test_on_a_phone_back_closes_setup_and_the_close_button_does_too(page, world):
+    on_a_phone(page, world)
+    page.click("#setup-btn")
+    page.wait("!document.querySelector('#setup').hidden && !!document.querySelector('#set-ntfy_topic')")
+    assert page.eval(OFF_SCREEN.replace("SCOPE", "#setup *")) == []
+    page.eval("history.back()")
+    page.wait("document.querySelector('#setup').hidden")
+    page.click("#setup-btn")
+    page.wait("!document.querySelector('#setup').hidden && !!document.querySelector('[data-setup-close]')")
+    page.click("[data-setup-close]")
+    page.wait("document.querySelector('#setup').hidden")
+    # The × went back through history too, so no stale entry is left for the next Back.
+    assert page.eval("history.state?.drawer ?? null") is None

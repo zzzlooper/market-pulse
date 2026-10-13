@@ -157,6 +157,20 @@ class Page:
         an element comes back as {}, which Python reads as false (use !!element)."""
         return wait_for(lambda: self.eval(expression), timeout, expression)
 
+    def phone(self, width: int = 390, height: int = 844) -> None:
+        """Look and behave like a phone: narrow, high-density, touch."""
+        self.send("Emulation.setDeviceMetricsOverride",
+                  {"width": width, "height": height, "deviceScaleFactor": 2, "mobile": True})
+        self.send("Emulation.setTouchEmulationEnabled", {"enabled": True, "maxTouchPoints": 5})
+
+    def screenshot(self, path: Path, full_page: bool = False) -> None:
+        params = {"format": "png", "captureBeyondViewport": full_page}
+        if full_page:
+            size = self.eval("[document.documentElement.scrollWidth, document.documentElement.scrollHeight]")
+            params["clip"] = {"x": 0, "y": 0, "width": size[0], "height": size[1], "scale": 1}
+        data = self.send("Page.captureScreenshot", params, timeout=30)["data"]
+        path.write_bytes(__import__("base64").b64decode(data))
+
     def click(self, selector: str) -> None:
         self.eval(f"document.querySelector({json.dumps(selector)}).click()")
 
