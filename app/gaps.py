@@ -104,7 +104,7 @@ def select(rows: list[dict], context: dict[str, dict], min_pct: float, min_minut
 
 
 def build_brief(day: date, gaps: list[dict], risk: dict[str, dict | None], min_pct: float,
-                public_url: str = "") -> dict:
+                public_url: str = "", earnings: list[str] = ()) -> dict:
     """The 09:15 phone note: the biggest gappers with what's behind them."""
     lines = []
     for g in gaps[:MAX_BRIEF_ROWS]:
@@ -121,6 +121,8 @@ def build_brief(day: date, gaps: list[dict], risk: dict[str, dict | None], min_p
         lines.append(f"+{len(gaps) - MAX_BRIEF_ROWS} more in the Gaps tab")
     if not lines:
         lines.append(f"No gaps of {min_pct:g}% or more among the stocks scanned.")
+    if earnings:  # watchlist stocks reporting today
+        lines += ["Earnings:", *(f"  {line}" for line in earnings)]
     return {
         "category": "gaps",
         "title": f"Market Pulse · pre-market {day:%a %b} {day.day}",

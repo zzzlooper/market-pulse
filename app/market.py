@@ -215,6 +215,22 @@ def next_earnings(info: dict, now: float | None = None) -> int | None:
     return min(future) if future else None
 
 
+def fetch_earnings(symbols: list[str]) -> list[dict]:
+    """Next earnings report per symbol (see earnings.earnings_row), from Yahoo company data."""
+    from concurrent.futures import ThreadPoolExecutor
+
+    from .earnings import earnings_row
+
+    def one(symbol: str) -> dict | None:
+        try:
+            return earnings_row(symbol, yf.Ticker(symbol).info or {}, app_clock.time())
+        except Exception as exc:  # one unknown symbol shouldn't sink the rest
+            log.info("earnings for %s unavailable: %s", symbol, exc)
+            return None
+    with ThreadPoolExecutor(max_workers=4) as pool:
+        return [row for row in pool.map(one, symbols) if row]
+
+
 def fetch_profile(symbol: str) -> dict:
     """Company facts and today's stats. Empty dict when Yahoo doesn't know the symbol."""
     def load() -> dict:

@@ -72,7 +72,7 @@ function quoteRow(r, extra = "", flashable = false) {
     : "";
   const stale = r.stale ? ` class="stale" title="No fresh price from Yahoo; showing the last one received"` : "";
   return `<tr${stale}>
-    <td><a class="sym" data-sym="${esc(r.symbol)}" title="${esc(r.name)}">${esc(r.symbol)}</a>${haltBadge(r.symbol)}${riskBadge(r.symbol)}</td>
+    <td><a class="sym" data-sym="${esc(r.symbol)}" title="${esc(r.name)}">${esc(r.symbol)}</a>${haltBadge(r.symbol)}${riskBadge(r.symbol)}${erBadge(r.symbol)}</td>
     <td class="${flash}">${live}${fmtPrice(r.price)}</td>
     <td class="${dir(r.change_pct)}">${fmtPct(r.change_pct)}</td>
     <td>${fmtVol(r.volume)}</td>
@@ -109,6 +109,23 @@ const isToday = (h) => h.halted_at.slice(0, 10) === etDate();  // halted_at carr
 const normSym = (s) => s.replace("-", ".");                    // Yahoo BRK-B is BRK.B at Nasdaq
 
 let activeHalts = new Map();  // symbol -> halt, for badges elsewhere
+
+// ER: the stock reports earnings within 5 days (highlighted on the day). Only the watchlist's
+// dates are looked up. Times are shown only when Yahoo's is clearly before the open or after
+// the close; its other times are often placeholders.
+const ER_DAYS = 5;
+
+function erBadge(sym) {
+  const e = state.earnings?.[sym];
+  if (!e) return "";
+  const today = etDate();
+  const days = Math.round((Date.parse(`${e.date}T00:00:00Z`) - Date.parse(`${today}T00:00:00Z`)) / DAY_MS);
+  if (days < 0 || days > ER_DAYS) return "";
+  const day = days === 0 ? "today" : days === 1 ? "tomorrow"
+    : new Date(`${e.date}T12:00:00Z`).toLocaleDateString([], { weekday: "long", timeZone: "UTC" });
+  const tip = `Earnings ${e.when ? `${e.when} ` : ""}${day}${e.when ? "" : ", time not confirmed"}${e.estimate ? " (estimated date)" : ""}`;
+  return ` <span class="er-badge${days === 0 ? " today" : ""}" title="${esc(tip)}">ER${days === 0 ? " today" : ""}</span>`;
+}
 
 // Only elevated risk gets a badge, so the tables don't fill with "low". Hover for the reasons;
 // the ticker drawer has the full breakdown.
@@ -202,7 +219,7 @@ function renderGaps() {
       ? `<span class="clamp" title="${esc(`${fmtTime(g.catalyst.at)} · ${g.catalyst.text}`)}">${
         g.catalyst.filing ? `<b>${esc(g.catalyst.text)}</b>` : esc(g.catalyst.text)}</span>`
       : `<span class="muted">${esc(g.why)}</span>`;
-    return `<tr><td><a class="sym" data-sym="${esc(g.symbol)}">${esc(g.symbol)}</a>${haltBadge(g.symbol)}${riskBadge(g.symbol)}</td>
+    return `<tr><td><a class="sym" data-sym="${esc(g.symbol)}">${esc(g.symbol)}</a>${haltBadge(g.symbol)}${riskBadge(g.symbol)}${erBadge(g.symbol)}</td>
       <td class="${dir(g.gap_pct)}">${fmtPct(g.gap_pct)}</td><td>${fmtPrice(g.price)}</td>
       <td>${g.at_open ? `<small class="muted">open</small>` : g.pre_minutes}</td><td class="why">${why}</td></tr>`;
   }).join("");
@@ -596,6 +613,7 @@ function handle({ type, data }) {
     case "unusual": state.unusual = data; renderUnusual(); break;
     case "news": addNews(data); break;
     case "gaps": state.gaps = data; renderGaps(); break;
+    case "earnings": state.earnings = data; renderWatchlist(); renderMovers(); renderUnusual(); renderGaps(); break;
     case "risk":
       Object.assign(state.risk, data);
       // Profiles arrive one symbol at a time after startup; redraw once per frame at most.

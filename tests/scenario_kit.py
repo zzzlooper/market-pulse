@@ -15,7 +15,8 @@ carry only a role), placeholder contact details. Nothing leaves the machine: the
 uses the network and the phone is never called; notes are read from its queue.
 
 The engine's loops are not running. Each step freezes the market clock and runs one round:
-quotes, movers, news, halts, filings, pre-market gaps, risk, reaction measuring, health. Sources are polled in
+quotes, movers, news, halts, filings, pre-market gaps, earnings, risk, reaction measuring,
+health. Sources are polled in
 that order, so a filing at a step sees the movers of the same step.
 """
 from __future__ import annotations
@@ -133,6 +134,17 @@ class Day:
         rows = [{"symbol": s, "prev_close": 10.0, "price": round(10 * (1 + g / 100), 4), "gap_pct": g,
                  "pre_minutes": m, "last_trade": int(ts(hhmm)), "at_open": False} for s, (g, m) in gaps.items()]
         self.record(hhmm, f"call fetch_premarket {json.dumps([sorted(gaps)])}", {"r": rows})
+
+    def earnings(self, hhmm: str, **reports: tuple[str, str, bool]) -> None:
+        """Next earnings per symbol as the Yahoo lookup returns them:
+        symbol=("YYYY-MM-DD", "HH:MM" ET, estimated?)."""
+        from app.earnings import when
+        rows = []
+        for symbol, (day, at, estimate) in reports.items():
+            moment = datetime.combine(date.fromisoformat(day), time(*(int(x) for x in at.split(":"))), ET)
+            rows.append({"symbol": symbol, "at": int(moment.timestamp()), "date": day, "when": when(moment),
+                         "estimate": estimate})
+        self.record(hhmm, f"call fetch_earnings {json.dumps([sorted(reports)])}", {"r": rows})
 
     # --- SEC ----------------------------------------------------------------------------------
 
@@ -304,7 +316,8 @@ class Run:
         clock.freeze(ts(hhmm))
         self.now = hhmm
         for name, update in (("quotes", e._update_quotes), ("movers", e._update_movers), ("news", e._update_news),
-                             ("halts", e._update_halts), ("filings", e._update_filings), ("gaps", e._update_gaps)):
+                             ("halts", e._update_halts), ("filings", e._update_filings), ("gaps", e._update_gaps),
+                             ("earnings", e._update_earnings)):
             await e._run_step(name, update)
         await e._update_risk()
         while not e._risk_queue.empty():

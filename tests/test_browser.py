@@ -24,6 +24,7 @@ def made_up_morning(folder):
     day.movers("09:31", gainers={"DYNA": 12.0, "CRUX": 41.0})
     day.halt("09:35", "BOLT", "LUDP")
     day.chart("ACME", lambda hhmm: 10.0 if hhmm < "07:00" else 7.8)
+    day.earnings("04:00", BOLT=("2026-10-13", "07:00", False), FERN=("2026-10-16", "16:05", False))
     return day.build(["BOLT", "FERN"])
 
 
@@ -72,6 +73,38 @@ def test_badges_show_halts_filings_and_dilution_risk(page, world):
                      ".find(li => li.textContent.includes('Acme Rocket') && li.querySelector('.risk-badge'))?.innerText",
                      timeout=20)  # the risk lookup finishes a little after the news
     assert "OFFERING FROM SHELF" in acme.upper() and "DIL" in acme
+
+
+def test_earnings_badges_mark_todays_report_and_the_coming_ones(page, world):
+    open_dashboard(page, world)
+    badges = page.wait("document.querySelectorAll('#watchlist .er-badge').length === 2"
+                       " && [...document.querySelectorAll('#watchlist tr')].filter(r => r.querySelector('.er-badge'))"
+                       ".map(r => [r.querySelector('a.sym').textContent, r.querySelector('.er-badge').textContent,"
+                       " r.querySelector('.er-badge').title, r.querySelector('.er-badge').classList.contains('today')])")
+    assert badges == [["BOLT", "ER today", "Earnings before the open today", True],
+                      ["FERN", "ER", "Earnings after the close Friday", False]]
+
+
+@pytest.mark.parametrize("width", [1400, 1100])
+def test_on_a_desktop_no_panel_scrolls_sideways(page, world, width):
+    open_dashboard(page, world)
+    page.wait("document.querySelectorAll('#watchlist .er-badge').length === 2", timeout=20)  # badges widen rows
+    page.send("Emulation.setDeviceMetricsOverride", {"width": width, "height": 800, "deviceScaleFactor": 1,
+                                                     "mobile": False})
+    page.eval("new Promise(ok => requestAnimationFrame(() => requestAnimationFrame(ok)))")  # let it re-lay out
+    assert page.eval("[...document.querySelectorAll('main > .panel')]"
+                     ".filter(p => p.scrollWidth > p.clientWidth).map(p => p.id)") == []
+
+
+def test_the_page_can_be_added_to_a_home_screen(page, world):
+    open_dashboard(page, world)
+    manifest = page.eval("fetch(document.querySelector('link[rel=manifest]').href).then(r => r.json())")
+    assert manifest["display"] == "standalone" and manifest["name"] == "Market Pulse"
+    for icon in [i["src"] for i in manifest["icons"]] + ["icon-180.png"]:
+        size = page.eval(f"new Promise(ok => {{ const i = new Image(); i.onload = () => ok(i.naturalWidth);"
+                         f" i.onerror = () => ok(0); i.src = {json.dumps(icon)}; }})")
+        assert size > 0, icon
+    assert page.eval("document.querySelector('meta[name=theme-color]').content") == "#0d1117"
 
 
 def test_left_tabs_switch_and_keep_their_highlight_when_movers_update(page, world):

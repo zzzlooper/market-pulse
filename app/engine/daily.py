@@ -24,7 +24,8 @@ class DailyMixin:
         halts = [h for h in self.halts.latest() if h["halted_at"][:10] == today.isoformat()]
         problems = [s["label"] for s in self.health.status() if s["state"] == "down"]
         return build_recap(today, list(self.quotes), halts, self.reactions.since(start),
-                           set(self.state.watchlist), problems, self.settings.public_url)
+                           set(self.state.watchlist), problems, self.settings.public_url,
+                           earnings=self._earnings_recap())
 
     async def _traded_today(self) -> bool:
         bars = (await self._call("fetch_chart", market.fetch_chart, "SPY", "1d"))["bars"]

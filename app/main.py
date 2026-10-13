@@ -5,6 +5,7 @@ import asyncio
 import ipaddress
 import logging
 import math
+import mimetypes
 import os
 import re
 import secrets
@@ -50,6 +51,7 @@ logging.getLogger("httpx").setLevel(logging.WARNING)
 logging.getLogger("yfinance").setLevel(logging.CRITICAL)
 
 log = logging.getLogger(__name__)
+mimetypes.add_type("application/manifest+json", ".webmanifest")  # so browsers accept the app manifest
 
 SYMBOL_RE = re.compile(r"^[A-Z0-9^][A-Z0-9.\-=^]{0,11}$")
 TOKEN_COOKIE = "mp_token"

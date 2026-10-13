@@ -190,6 +190,13 @@ and the phone's Back gesture closes it (and Setup) back to the dashboard. Small 
 the watchlist's raw volume column (below 420px wide) and its 24h news column (below 340px).
 Browser tests check it at 390, 360 and 320px wide.
 
+To install it like an app, open the dashboard on the phone and choose *Add to Home Screen*
+(Safari: Share menu; Chrome: ⋮ menu). It gets the Market Pulse icon and opens full-screen,
+without the browser bar. On iPhones the home-screen app keeps its own sign-in, so enter the
+access token once more there. Over plain HTTP on your network Android adds a shortcut that
+opens in Chrome; the full app treatment there needs HTTPS (a reverse proxy, or Tailscale).
+There's deliberately no offline cache: nothing from the dashboard is stored on the phone.
+
 ## What's on screen
 
 | Panel | Source | Refresh |
@@ -311,6 +318,12 @@ Browser tests check it at 390, 360 and 320px wide.
     figures it computes, none of the addresses or phone numbers in SEC's responses.
   - `sec_filings = false` turns it off (8-Ks then show as plain news, as in v0.1). EDGAR doesn't accept filings on weekends and federal
     holidays, and insiders have two business days to file a Form 4.
+- **Earnings** (`app/earnings.py`): the next report date of each watchlist stock, looked up
+  every 6 hours and when the watchlist changes. An **ER** badge marks reports within 5 days
+  (filled on the day; hover for when). The 09:15 brief lists the watchlist's reports today, and
+  the recap tonight's and the next trading day's. Yahoo's dates are reliable but its times often
+  aren't (a 15:00 placeholder is common), so a time is only shown when it's clearly before the
+  open or after the close; otherwise the time isn't confirmed. Estimated dates are marked.
 - **Pre-market gaps** (*Gaps* tab, bottom left; `app/gaps.py`): from 04:00 to 10:00 ET on
   weekdays, every minute, the stocks opening well away from yesterday's close (default 3%,
   `gap_min_pct`), biggest first, with why each was scanned: the filing or headline behind it,
@@ -378,6 +391,7 @@ app/
   dilution.py dilution risk profile: filing history, cash runway, share growth
   reactions.py  catalyst reaction tracking: what's due, price at each horizon, medians
   gaps.py     pre-market gaps: the gap, what to scan, what to show, the 09:15 brief
+  earnings.py next earnings dates: before the open / after the close, brief and recap lines
   recap.py    end-of-day recap message and its schedule
   setup.py    dashboard settings (write-only secrets) and the first-run checklist
   clock.py    the market clock: real time, or a replayed day's time and speed
@@ -395,6 +409,7 @@ app/
     catalysts.py  catalyst reaction tracking and the Reactions report
     daily.py      the end-of-day recap
     gaps.py       the pre-market gap scanner and its brief
+    earnings.py   the watchlist's next earnings dates
   main.py     FastAPI routes, access token and /ws endpoint
 static/       single-page dashboard (vanilla JS, no build step)
   app.js      tables, news, alerts, halts, WebSocket client
