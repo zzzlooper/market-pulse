@@ -4,7 +4,7 @@
   pre-market price is the baseline, so a stock that opens straight through it counts too. Once
   a day per stock.
 - New high of day after a pullback: the price makes a new regular-session high after falling
-  at least PULLBACK below the previous one. Without the pullback, a runner would alert on every
+  at least a pullback (PULLBACK by default) below the previous one. Without it, a runner would alert on every
   tick up; with it, this is the classic "first pullback, then new high". At most once every
   HOD_COOLDOWN seconds per stock.
 
@@ -39,7 +39,8 @@ class Breakouts:
         self._stocks: dict[str, _Stock] = {}
 
     def update(self, symbol: str, price: float, *, day: str, now: float, regular: bool,
-               high: float | None = None, pre_high: float | None = None) -> list[tuple[str, str]]:
+               high: float | None = None, pre_high: float | None = None,
+               min_pullback: float = PULLBACK) -> list[tuple[str, str]]:
         """A new price for symbol; returns the breakouts it makes as (kind, message)."""
         if day != self._day:
             self._day, self._stocks = day, {}
@@ -61,7 +62,7 @@ class Breakouts:
             return fired
         if price > s.hod:
             pullback = 1 - s.low / s.hod
-            if pullback >= PULLBACK and now - s.hod_at >= HOD_COOLDOWN and not fired:
+            if pullback >= min_pullback and now - s.hod_at >= HOD_COOLDOWN and not fired:
                 s.hod_at = now
                 fired.append(("hod", (f"{symbol} made a new high of day at {money(price)}, after pulling back "
                                       f"{pullback * 100:.0f}% from {money(s.hod)} to {money(s.low)}")))

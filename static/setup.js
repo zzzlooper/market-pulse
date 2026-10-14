@@ -12,6 +12,8 @@ const SETUP_GROUPS = [
   ["Opening it from your phone", ["access_token", "public_url"]],
   ["Real-time prices", ["finnhub_api_key"]],
   ["Alert tuning", ["rvol_threshold", "min_volume", "insider_min_value", "gap_min_pct", "gap_brief_time", "recap_time"]],
+  ["Signal thresholds", ["breakout_pullback_pct", "day2_min_pct", "rotation_multiple", "luld_near_pct",
+    "sympathy_lead_pct", "sympathy_min_pct", "record_min"]],
   ["Record and replay", ["record"]],
   ["Keeping your data", ["reactions_keep_days"]],
 ];

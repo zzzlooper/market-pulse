@@ -32,7 +32,6 @@ REACTION_BACKOFF = 1800.0   # an event with nothing new to measure waits this lo
 TRACK_MAX_AGE = 5 * 86400   # older events can't be measured (5-day bars are the furthest back)
 
 RECORD_DAYS = 30        # an alert's track record covers this many days
-RECORD_MIN = 10         # and is quoted once this many have been measured to the close
 RECORD_REFRESH = 600.0  # seconds the track records are reused before being recomputed
 
 # The alerts whose follow-through is measured, and the group each is reported under: did the
@@ -48,6 +47,7 @@ TRACKED_ALERTS = {
     "resumed": "resumed after a halt",
     "luld_up": "near the limit-up band",
     "luld_down": "near the limit-down band",
+    "sympathy": "moving in sympathy",
     "above": "your rules: price above",
     "below": "your rules: price below",
     "move": "your rules: move ±%",
@@ -153,13 +153,13 @@ class CatalystsMixin:
 
     def _add_track_records(self, fired: list[dict]) -> None:
         """Quote, in each alert, how that kind of alert has followed through: is it worth acting on?
-        Only once enough have been measured to the close."""
+        Only once enough have been measured to the close (the record_min setting)."""
         if not any(e["kind"] in TRACKED_ALERTS for e in fired):
             return
         records = self._track_records()
         for e in fired:
             g = records.get(TRACKED_ALERTS.get(e["kind"], ""))
-            if not g or g["measured"] < RECORD_MIN:
+            if not g or g["measured"] < self.settings.record_min:
                 continue
             parts = [f"{label} {v:+.1f}%" for label, v in (("30 min", g["median_30m"]), ("close", g["median_close"]))
                      if v is not None]

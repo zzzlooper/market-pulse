@@ -123,6 +123,9 @@ def test_an_alert_quotes_how_its_kind_followed_through_once_there_is_enough_hist
     try:
         history(run.engine, 9, lambda i: 3.0)
         assert "track record" not in fire(run)["message"]  # 9 isn't enough to say anything
+        run.engine.settings.record_min, run.engine._records = 5, None
+        assert "(median of 9 in 30 days)" in fire(run)["message"]  # unless you ask for fewer
+        run.engine.settings.record_min = 10
         history(run.engine, 12, lambda i: -4.0 if i < 7 else 3.0)
         run.engine._records = None  # the cache would wait 10 minutes
         alert = fire(run)

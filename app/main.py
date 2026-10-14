@@ -384,6 +384,19 @@ async def dilution(symbol: str):
     return profile
 
 
+@app.get("/api/industry/{symbol}")
+async def industry_movers(symbol: str):
+    """The industry's biggest gainers today, for sympathy plays."""
+    symbol = symbol.strip().upper()
+    if not SYMBOL_RE.match(symbol):
+        raise HTTPException(422, "Invalid ticker symbol")
+    try:
+        return await engine.industry_movers(symbol)
+    except Exception as exc:
+        log.warning("industry movers for %s failed: %s", symbol, describe(exc))
+        raise HTTPException(502, "Yahoo's industry screen is unavailable right now") from exc
+
+
 @app.get("/api/ticker/{symbol}")
 async def ticker_detail(symbol: str, range: str = "1d"):
     symbol = symbol.strip().upper()

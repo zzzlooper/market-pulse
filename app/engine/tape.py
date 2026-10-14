@@ -17,21 +17,20 @@ TAPE_INTERVAL = 60.0    # how often new symbols get their daily bars and float l
 TAPE_MAX_SYMBOLS = 150  # watchlist, gappers and movers
 FLOAT_BATCH = 20        # float lookups per round: one Yahoo request each
 TAPE_TRIES = 3          # a symbol Yahoo has nothing on is given up on for the day after this
-ROTATION = 1.0          # volume / float that counts as having traded the whole float
-DAY2_MIN = 0.30         # the last session's close-to-close gain that makes today day 2
 LULD_COOLDOWN = 900     # seconds between band warnings for one stock and direction
 LULD_SEND_EVERY = 30    # the bands go to the browsers at most this often, unless one gets near
+SYMPATHY_SEND_EVERY = 60  # the sympathy moves go to the browsers at least this often while they change
 
 
-def day2_move(days: list[dict], today: str) -> dict | None:
+def day2_move(days: list[dict], today: str, min_gain: float = 0.30) -> dict | None:
     """From daily bars ({"date", "low", "close"}, oldest first): the last session's gain if it was
-    a big one, so today is its day 2."""
+    at least min_gain, so today is its day 2."""
     past = [d for d in days if d["date"] < today and d["close"]]
     if len(past) < 2:
         return None
     before, last = past[-2], past[-1]
     gain = last["close"] / before["close"] - 1
-    return {"date": last["date"], "change_pct": round(gain * 100, 1)} if gain >= DAY2_MIN else None
+    return {"date": last["date"], "change_pct": round(gain * 100, 1)} if gain >= min_gain else None
 
 
 class TapeMixin:
@@ -50,6 +49,10 @@ class TapeMixin:
         self.breakouts = Breakouts()
         self.luld: dict[str, dict] = {}                    # symbol -> estimated bands, today
         self.market_caps: dict[str, float] = {}            # symbol -> market cap, for the LULD tier
+        self.industries: dict[str, str] = {}               # symbol -> Yahoo industry, for sympathy moves
+        self.sympathy: dict[str, dict] = {}                # symbol -> its industry's leader today
+        self._sympathy_alerted: set[str] = set()
+        self._sympathy_sent: tuple[float, frozenset] = (0.0, frozenset())
         self._luld_bands = Bands()
         self._luld_warned: dict[tuple[str, str], float] = {}
         self._luld_sent: tuple[float, frozenset] = (0.0, frozenset())
@@ -62,6 +65,7 @@ class TapeMixin:
             self._tape_day = today
             self.ssr, self.day2, self._tape_tries, self._tape_done = {}, {}, {}, set()
             self.luld, self._luld_warned = {}, {}
+            self.sympathy, self._sympathy_alerted = {}, set()
             self._luld_bands.forget()
             self._rotation_last, self._rotation_fired = {}, set()
         return today
@@ -95,13 +99,15 @@ class TapeMixin:
             if new:
                 self.ssr.update(new)
                 await self.hub.broadcast({"type": "ssr", "data": dict(self.ssr)})
-            if runners := {r["symbol"]: move for r in rows if (move := day2_move(r["days"], today))}:
+            min_gain = self.settings.day2_min_pct / 100
+            if runners := {r["symbol"]: move for r in rows if (move := day2_move(r["days"], today, min_gain))}:
                 self.day2.update(runners)
                 await self.hub.broadcast({"type": "day2", "data": dict(self.day2)})
         if todo := self._tape_todo("float", symbols)[:FLOAT_BATCH]:
             rows = await self._call("fetch_floats", market.fetch_floats, todo)
             self._tape_got("float", todo, {r["symbol"] for r in rows})
             self.market_caps.update({r["symbol"]: r["market_cap"] for r in rows if r.get("market_cap")})
+            self.industries.update({r["symbol"]: r["industry"] for r in rows if r.get("industry")})
             new = {r["symbol"]: int(r["float_shares"]) for r in rows
                    if r.get("float_shares") and self.floats.get(r["symbol"]) != int(r["float_shares"])}
             if new:
@@ -127,20 +133,58 @@ class TapeMixin:
                 continue
             rotation = volume / float_shares
             before, self._rotation_last[symbol] = self._rotation_last.get(symbol), rotation
-            if (before is not None and before < ROTATION <= rotation and symbol not in self._rotation_fired
+            multiple = self.settings.rotation_multiple
+            if (before is not None and before < multiple <= rotation and symbol not in self._rotation_fired
                     and self.state.rotation_alerts):
                 self._rotation_fired.add(symbol)
+                how_much = "its whole float" if multiple == 1 else f"{multiple:g}× its float"
                 fired.append(self.alerts.event(row, "rotation", (
-                    f"{symbol} has traded its whole float: {shares_text(volume)} shares today, "
+                    f"{symbol} has traded {how_much}: {shares_text(volume)} shares today, "
                     f"{rotation:.1f}× the {shares_text(float_shares)}-share float")))
         if ssr_changed:
             await self.hub.broadcast({"type": "ssr", "data": dict(self.ssr)})
         if fired:
             await self._publish_alerts(self.alerts.record(fired))
         todays = [r for r in rows if r.get("session") in (None, today)]
+        await self._check_sympathy()
         await self._check_breakouts(todays, regular=regular)
         if regular:
             await self._check_luld(todays)
+
+    async def _check_sympathy(self) -> None:
+        """Sympathy moves among the stocks followed today (watchlist, movers): in each industry the
+        biggest gainer up sympathy_lead_pct or more leads, and its peers up sympathy_min_pct or more
+        move with it. One alert per stock a day, with the breakouts (same switch, same phone category)."""
+        today, s = self._tape_today(), self.settings
+        moves: dict[str, dict] = {}
+        for row in [*self.quotes, *(r for rows in self.movers.values() for r in rows)]:
+            if row.get("session") in (None, today) and row.get("change_pct") is not None:
+                moves.setdefault(row["symbol"], row)
+        leaders: dict[str, tuple[str, float]] = {}
+        for symbol, row in moves.items():
+            industry = self.industries.get(symbol)
+            if industry and row["change_pct"] >= s.sympathy_lead_pct and row["change_pct"] > leaders.get(industry, ("", 0))[1]:
+                leaders[industry] = (symbol, row["change_pct"])
+        sympathy, fired = {}, []
+        for symbol, row in moves.items():
+            industry = self.industries.get(symbol)
+            lead = leaders.get(industry) if industry else None
+            if not lead or lead[0] == symbol or row["change_pct"] < s.sympathy_min_pct:
+                continue
+            sympathy[symbol] = {"industry": industry, "leader": lead[0], "leader_pct": round(lead[1], 1),
+                                "change_pct": round(row["change_pct"], 1)}
+            if symbol not in self._sympathy_alerted and self.state.breakout_alerts:
+                self._sympathy_alerted.add(symbol)
+                fired.append(self.alerts.event(row, "sympathy", (
+                    f"{symbol} {row['change_pct']:+.1f}% in sympathy with {lead[0]} {lead[1]:+.0f}% ({industry})")))
+        self.sympathy = sympathy
+        now, pairs = clock.time(), frozenset((k, v["leader"]) for k, v in sympathy.items())
+        sent_at, sent = self._sympathy_sent
+        if pairs != sent or (pairs and now - sent_at >= SYMPATHY_SEND_EVERY):
+            self._sympathy_sent = (now, pairs)
+            await self.hub.broadcast({"type": "sympathy", "data": dict(sympathy)})
+        if fired:
+            await self._publish_alerts(self.alerts.record(fired))
 
     async def _check_luld(self, rows: list[dict]) -> None:
         """Estimate each stock's LULD bands (app/luld.py) and warn when the price nears one, for
@@ -151,7 +195,8 @@ class TapeMixin:
             if not symbol or not price or symbol.startswith("^") or "=" in symbol:
                 continue
             tier_ = tier(row.get("market_cap") or self.market_caps.get(symbol))
-            self.luld[symbol] = state = self._luld_bands.update(symbol, price, now, tier_)
+            self.luld[symbol] = state = self._luld_bands.update(symbol, price, now, tier_,
+                                                                self.settings.luld_near_pct / 100)
             side = state["near"]
             if not side or now - self._luld_warned.get((symbol, side), float("-inf")) < LULD_COOLDOWN:
                 continue
@@ -182,8 +227,11 @@ class TapeMixin:
                 continue
             found = self.breakouts.update(symbol, price, day=today, now=now, regular=regular,
                                           high=row.get("high") if regular else None,
-                                          pre_high=self.pre_highs.get(symbol))
+                                          pre_high=self.pre_highs.get(symbol),
+                                          min_pullback=self.settings.breakout_pullback_pct / 100)
             if self.state.breakout_alerts:
+                if (theme := self.sympathy.get(symbol)) and found:  # part of a theme: say whose
+                    found = [(k, f"{m} · in sympathy with {theme['leader']} {theme['leader_pct']:+.0f}%") for k, m in found]
                 fired += [self.alerts.event(row, kind, message) for kind, message in found]
         if fired:
             await self._publish_alerts(self.alerts.record(fired))

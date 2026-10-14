@@ -6,6 +6,7 @@
 const detail = {
   symbol: null, range: "1d", data: null, error: null, timer: null, seq: 0, hover: null, hoverY: null, geom: null,
   dilution: null, dilutionError: null,  // from /api/dilution, loaded once per open (cached 6h server-side)
+  industry: null, industryAt: 0,        // from /api/industry: the industry's movers today (cached 2 min server-side)
 };
 const DETAIL_REFRESH_MS = 30_000;
 
@@ -46,9 +47,11 @@ function pushDrawer(name, hash) {
 async function openDetail(symbol) {
   pushDrawer("detail", `#ticker=${encodeURIComponent(symbol)}`);
   if (symbol !== detail.symbol) {
-    Object.assign(detail, { symbol, data: null, error: null, hover: null, hoverY: null, dilution: null, dilutionError: null });
+    Object.assign(detail, { symbol, data: null, error: null, hover: null, hoverY: null, dilution: null, dilutionError: null,
+      industry: null, industryAt: 0 });
     renderDetail();
     loadDilution(symbol);
+    loadIndustry(symbol);
   }
   $("#detail").hidden = $("#detail-backdrop").hidden = false;
   clearInterval(detail.timer);
@@ -77,11 +80,47 @@ async function loadDetail() {
     Object.assign(detail, { data, error: null });
     prepareBars(data.chart.bars);
     firstLoad ? renderDetail() : (updateDetailPrice(), updateDetailStats(), drawDetailChart());
+    if (!firstLoad && Date.now() - detail.industryAt > 120_000) loadIndustry(symbol);
   } catch (err) {
     if (seq !== detail.seq) return;
     detail.error = err.message;
     if (!detail.data) renderDetail();
   }
+}
+
+async function loadIndustry(symbol) {
+  detail.industryAt = Date.now();
+  try {
+    const data = await api("GET", `/api/industry/${encodeURIComponent(symbol)}`);
+    if (symbol !== detail.symbol) return;
+    detail.industry = data;
+  } catch (err) {
+    if (symbol !== detail.symbol) return;
+    detail.industry = { error: err.message };
+  }
+  renderIndustry();
+}
+
+// Today's biggest gainers in the stock's industry: a theme in play, and who leads it.
+function renderIndustry() {
+  const el = $("#detail-industry");
+  if (!el) return;
+  const d = detail.industry;
+  if (!d) {
+    el.innerHTML = `<h3>Same industry today</h3><p class="muted">Loading…</p>`;
+    return;
+  }
+  if (d.error || !d.industry) {
+    el.innerHTML = `<h3>Same industry today</h3><p class="muted">${esc(d.error ?? "Yahoo lists no industry for this stock")}</p>`;
+    return;
+  }
+  const rows = d.movers.map((m) => `<li${m.symbol === detail.symbol ? ` class="self"` : ""}>
+      <a class="sym" data-sym="${esc(m.symbol)}">${esc(m.symbol)}</a>
+      <span class="${dir(m.change_pct)}">${fmtPct(m.change_pct)}</span>
+      <span class="muted">${fmtPrice(m.price)} · ${fmtBig(m.market_cap, "$")}</span>
+      <span class="muted name">${esc(m.name)}</span></li>`).join("");
+  el.innerHTML = `<h3>Same industry today <small>${esc(d.industry)} · biggest gainers, US-listed, $1+</small></h3>
+    <ul class="industry-movers">${rows || `<li class="muted">Nothing listed</li>`}</ul>`;
 }
 
 async function loadDilution(symbol) {
@@ -145,6 +184,7 @@ function renderDetail() {
     </div>
     <div id="detail-stats" class="stats"></div>
     <section id="detail-dilution" class="dilution"></section>
+    <section id="detail-industry" class="industry"></section>
     <div class="detail-cols">
       <section><h3>News <small>times ET</small></h3><ul id="detail-news" class="detail-list"></ul></section>
       <section>
@@ -163,6 +203,7 @@ function renderDetail() {
   updateDetailPrice();
   updateDetailStats();
   renderDilution();
+  renderIndustry();
   updateDetailLists();
   drawDetailChart();
 }
@@ -295,7 +336,7 @@ function updateDetailPrice() {
   const live = q?.live ? `<span class="live-dot" title="Real-time (Finnhub)"></span>` : "";
   const delayed = q?.live ? "" : `<small class="muted">delayed ~15 min</small>`;
   el.innerHTML = `${live}<strong>${fmtPrice(price)}</strong>
-    <span class="${dir(pct)}">${fmtPct(pct)}</span>${haltBadge(detail.symbol)}${warrantBadge(detail.symbol, price)}${ssrBadge(detail.symbol)}${splitBadge(detail.symbol)}${day2Badge(detail.symbol)}${luldBadge(detail.symbol)} ${delayed}`;
+    <span class="${dir(pct)}">${fmtPct(pct)}</span>${haltBadge(detail.symbol)}${warrantBadge(detail.symbol, price)}${ssrBadge(detail.symbol)}${splitBadge(detail.symbol)}${day2Badge(detail.symbol)}${symBadge(detail.symbol)}${luldBadge(detail.symbol)} ${delayed}`;
 }
 
 function updateDetailWatch() {

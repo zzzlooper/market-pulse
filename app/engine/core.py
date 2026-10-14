@@ -130,6 +130,7 @@ class Engine(PricesMixin, FeedsMixin, RiskMixin, CatalystsMixin, DailyMixin, Gap
             "halts": self.halts.latest(),
             "phone": self.phone.status(),
             "rvol_threshold": self.settings.rvol_threshold,
+            "thresholds": self._thresholds(),
             "price_source": "finnhub" if self.finnhub else "yahoo",
             "health": self._health(),
             "risk": self.risk,
@@ -141,6 +142,7 @@ class Engine(PricesMixin, FeedsMixin, RiskMixin, CatalystsMixin, DailyMixin, Gap
             "halt_info": self.halt_info,
             "day2": self.day2,
             "luld": self.luld,
+            "sympathy": self.sympathy,
             "floats": self.floats,
         }
 
@@ -336,6 +338,12 @@ class Engine(PricesMixin, FeedsMixin, RiskMixin, CatalystsMixin, DailyMixin, Gap
         self.state.phone_alerts.update(categories)
         await self._config_changed()
 
+    def _thresholds(self) -> dict:
+        """The settings the browser needs to draw badges the way the server alerts on them."""
+        s = self.settings
+        return {"rvol_threshold": s.rvol_threshold, "rotation_multiple": s.rotation_multiple,
+                "sympathy_min_pct": s.sympathy_min_pct, "sympathy_lead_pct": s.sympathy_lead_pct}
+
     def _config(self) -> dict:
         return self.state.to_dict()
 
@@ -353,6 +361,21 @@ class Engine(PricesMixin, FeedsMixin, RiskMixin, CatalystsMixin, DailyMixin, Gap
             self._wake_finnhub.set()
 
     # --- ticker detail ----------------------------------------------------------------------
+
+    async def industry_movers(self, symbol: str) -> dict:
+        """Today's biggest gainers in symbol's industry (Yahoo's screen), for the ticker panel.
+        Industry None when Yahoo has none for it (ETFs, funds, some foreign stocks) or its company
+        data can't be read; raises only if the screen itself fails."""
+        industry = self.industries.get(symbol)
+        if not industry:
+            try:
+                industry = (await self._call("fetch_profile", market.fetch_profile, symbol) or {}).get("industry")
+            except Exception as exc:
+                log.info("industry of %s unknown: %s", symbol, describe(exc))
+        if not industry:
+            return {"industry": None, "movers": []}
+        movers = await self._call("fetch_industry_movers", market.fetch_industry_movers, industry)
+        return {"industry": industry, "movers": movers}
 
     async def ticker_detail(self, symbol: str, range_: str = "1d") -> dict | None:
         """Yahoo profile + intraday bars + latest known quote for one symbol. News, halts and
@@ -437,4 +460,5 @@ class Engine(PricesMixin, FeedsMixin, RiskMixin, CatalystsMixin, DailyMixin, Gap
             self.sec.set_user_agent(self.settings.sec_user_agent)
         log.info("settings changed from the dashboard: %s", ", ".join(sorted(changes)))  # names only
         await self.hub.broadcast({"type": "phone", "data": self.phone.status()})
+        await self.hub.broadcast({"type": "thresholds", "data": self._thresholds()})
         return {"saved": sorted(changes), "restart_required": restart}

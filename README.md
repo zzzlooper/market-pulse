@@ -35,6 +35,13 @@ isn't a web address rather than silently ignoring, say, a misplaced `access_toke
   saved one back. *Generate* makes a strong access token or ntfy topic and shows it once, to
   copy to your phone. No setting's value is ever logged.
 - Changes apply at once, except the Finnhub key, which needs a restart.
+- **Signal thresholds** tune the signals: the pullback before a new high of day counts
+  (`breakout_pullback_pct`, 5), the gain that makes day 2 (`day2_min_pct`, 30), float rotation
+  (`rotation_multiple`, 1×), how near a LULD band warns (`luld_near_pct`, 25% of the band), when
+  a stock leads its industry and when its peers move in sympathy (`sympathy_lead_pct`, 30;
+  `sympathy_min_pct`, 5), and how many measured alerts before a track record is quoted
+  (`record_min`, 10). Each is checked against a sensible range. The track records in the
+  Reactions tab show which settings give alerts worth acting on.
 - Without an access token the app answers only requests addressed to `localhost`/`127.0.0.1`,
   and it always refuses changes sent from other websites. A page you visit can't change your
   settings, even by pointing its own domain at your computer (DNS rebinding).
@@ -477,6 +484,15 @@ There's deliberately no offline cache: nothing from the dashboard is stored on t
   setups. From the daily bars already read for SSR, for the watchlist, the movers and the
   gappers; before the open the movers lists still hold yesterday's session, so yesterday's
   runners are covered. The brief marks day-2 gappers: *ACME +22.0% · day 2 (+45% yesterday)*.
+- **Sympathy movers**: in each industry, the biggest gainer up 30% or more today leads it, and
+  same-industry stocks up 5% or more get a **SYM** badge (hover for the leader), among the
+  stocks the app follows (watchlist, movers, gappers; industries from Yahoo's company data, read
+  once a day with the float). The first time a stock moves in sympathy in a day it alerts
+  (*DYNA +12.0% in sympathy with CRUX +41% (Biotechnology)*, with the breakouts: same switch,
+  same phone category), and a breakout alert on it names the leader too.
+  - The ticker panel's **Same industry today** lists the industry's biggest gainers across
+    the whole US market from Yahoo's screen (Nasdaq and NYSE listed, $1 or more; no OTC),
+    refreshed every 2 minutes while open: the theme in play, and who's next.
 - **Breakouts** (`app/breakouts.py`): alerts at the moments momentum traders act, for
   watchlist stocks, gappers and movers, after the open:
   - **through the pre-market high**: the highest pre-market trade, from the gap scanner's
@@ -606,12 +622,12 @@ app/
     daily.py      the end-of-day recap
     gaps.py       the pre-market gap scanner and its brief
     earnings.py   the watchlist's next earnings dates
-    tape.py       the short sale restriction, float rotation, breakouts, day-2 runners and LULD bands
+    tape.py       SSR, float rotation, breakouts, day-2 runners, LULD bands and sympathy moves
     resumptions.py  halt resumptions: the heads-up a minute before, and how trading resumed
   main.py     FastAPI routes, access token and /ws endpoint
 static/       single-page dashboard: plain scripts sharing globals, no build step, loaded in this order
   core.js     state, formatting, the market clock, server calls
-  tables.js   table rows and badges (HALTED, DIL, WAR, SSR, ROT, RS, D2, LULD, ER, sentiment): watchlist, movers, unusual
+  tables.js   table rows and badges (HALTED, DIL, WAR, SSR, ROT, RS, D2, SYM, LULD, ER, sentiment): watchlist, movers, unusual
   tabs.js     left-panel tabs: halts, pre-market gaps, catalyst reactions
   news.js     news feed, filters, keyword highlighting
   alerts.js   alert rules and log, the Phone box, desktop notifications and sound

@@ -71,6 +71,14 @@ class Settings:
     record: bool = False
     record_keep: int = 10
     reactions_keep_days: int = 365  # older reaction history is deleted daily; 0 keeps it all
+    # Signal thresholds (Setup → Signal thresholds); the README says what each signal does.
+    breakout_pullback_pct: float = 5.0   # a new high of day counts after a pullback at least this deep
+    day2_min_pct: float = 30.0           # the last session's gain that makes today day 2
+    rotation_multiple: float = 1.0       # volume / float that counts as having traded the float
+    luld_near_pct: float = 25.0          # this share of the band's width from a LULD band counts as near
+    record_min: int = 10                 # alerts measured to the close before a track record is quoted
+    sympathy_lead_pct: float = 30.0      # a stock up this much today leads its industry
+    sympathy_min_pct: float = 5.0        # a same-industry stock up this much moves in sympathy
 
 
 # Settings that may come from same-named upper-case env vars (which win), so secrets and

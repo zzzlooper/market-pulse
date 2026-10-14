@@ -18,7 +18,7 @@ function quoteRow(r, extra = "", flashable = false) {
     : "";
   const stale = r.stale ? ` class="stale" title="No fresh price from Yahoo; showing the last one received"` : "";
   return `<tr${stale}>
-    <td><a class="sym" data-sym="${esc(r.symbol)}" title="${esc(r.name)}">${esc(r.symbol)}</a>${haltBadge(r.symbol)}${riskBadge(r.symbol)}${warrantBadge(r.symbol, r.price)}${ssrBadge(r.symbol)}${rotationBadge(r)}${splitBadge(r.symbol)}${day2Badge(r.symbol)}${luldBadge(r.symbol)}${erBadge(r.symbol)}</td>
+    <td><a class="sym" data-sym="${esc(r.symbol)}" title="${esc(r.name)}">${esc(r.symbol)}</a>${haltBadge(r.symbol)}${riskBadge(r.symbol)}${warrantBadge(r.symbol, r.price)}${ssrBadge(r.symbol)}${rotationBadge(r)}${splitBadge(r.symbol)}${day2Badge(r.symbol)}${symBadge(r.symbol)}${luldBadge(r.symbol)}${erBadge(r.symbol)}</td>
     <td class="${flash}">${live}${fmtPrice(r.price)}</td>
     <td class="${dir(r.change_pct)}">${fmtPct(r.change_pct)}</td>
     <td>${fmtVol(r.volume)}</td>
@@ -132,6 +132,15 @@ function luldBadge(sym) {
   return ` <span class="luld-badge ${l.near}" title="${esc(tip)}">LULD ${l.near === "up" ? "↑" : "↓"}${l.away_pct.toFixed(1)}%</span>`;
 }
 
+// SYM: up with its industry's leader today (the leader up sympathy_lead_pct, this one sympathy_min_pct).
+function symBadge(sym) {
+  const s = state.sympathy?.[sym];
+  if (!s) return "";
+  const tip = `Up ${s.change_pct.toFixed(1)}% in sympathy with ${s.leader} ${s.leader_pct >= 0 ? "+" : ""}` +
+    `${s.leader_pct.toFixed(0)}% (${s.industry}). The ticker panel lists the industry's movers.`;
+  return ` <span class="sym-badge" title="${esc(tip)}">SYM</span>`;
+}
+
 // D2: up 30% or more in the last session; today is its second day.
 function day2Badge(sym) {
   const d = state.day2?.[sym];
@@ -150,7 +159,7 @@ function floatRotation(row) {
 
 function rotationBadge(row) {
   const r = floatRotation(row);
-  if (r == null || r < 1) return "";
+  if (r == null || r < (state.thresholds?.rotation_multiple ?? 1)) return "";
   const tip = `Volume today ${fmtVol(row.volume)} is ${r.toFixed(1)}× the float of ${fmtBig(state.floats[row.symbol])} shares: ` +
     "every share available to trade has changed hands at least once.";
   return ` <span class="rot-badge" title="${esc(tip)}">ROT ${r.toFixed(1)}×</span>`;

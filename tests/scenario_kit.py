@@ -141,10 +141,17 @@ class Day:
                 for s, days in sessions.items()]
         self.record(hhmm, f"call fetch_daily {json.dumps([sorted(sessions)])}", {"r": rows})
 
-    def floats(self, hhmm: str, **shares: int | None) -> None:
-        """Shares in the public float per symbol, as Yahoo's company data gives them."""
-        rows = [{"symbol": s, "float_shares": n} for s, n in shares.items()]
+    def floats(self, hhmm: str, industry: dict | None = None, **shares: int | None) -> None:
+        """Shares in the public float per symbol, as Yahoo's company data gives them, with
+        industry[symbol] when given."""
+        rows = [{"symbol": s, "float_shares": n, "industry": (industry or {}).get(s)} for s, n in shares.items()]
         self.record(hhmm, f"call fetch_floats {json.dumps([sorted(shares)])}", {"r": rows})
+
+    def industry(self, hhmm: str, name: str, **change_pct: float) -> None:
+        """Yahoo's screen of an industry's biggest gainers: symbol=change % (prices from 10.00)."""
+        rows = [{"symbol": s, "name": COMPANIES.get(s, (s,))[0], "price": round(10 * (1 + p / 100), 2), "change_pct": p,
+                 "market_cap": 250_000_000} for s, p in change_pct.items()]
+        self.record(hhmm, f"call fetch_industry_movers {json.dumps([name])}", {"r": rows})
 
     def premarket(self, hhmm: str, pre_high: dict | None = None, **gaps: tuple[float, int]) -> None:
         """Pre-market gap rows as the scanner's Yahoo download returns them:

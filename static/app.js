@@ -32,6 +32,11 @@ function handle({ type, data }) {
     case "pre_highs": state.pre_highs = data; refreshDetail("quotes"); break;
     case "halt_info": state.halt_info = data; renderHalts(); refreshDetail("halts"); break;
     case "luld": state.luld = data; renderWatchlist(); renderMovers(); renderUnusual(); renderGaps(); refreshDetail("quotes"); break;
+    case "sympathy": state.sympathy = data; renderWatchlist(); renderMovers(); renderUnusual(); renderGaps(); break;
+    case "thresholds":
+      Object.assign(state, { thresholds: data, rvol_threshold: data.rvol_threshold });
+      renderWatchlist(); renderMovers(); renderUnusual();
+      break;
     case "day2": state.day2 = data; renderWatchlist(); renderMovers(); renderUnusual(); renderGaps(); refreshDetail("quotes"); break;
     case "floats": state.floats = data; renderWatchlist(); renderMovers(); renderUnusual(); refreshDetail("quotes"); break;
     case "news": addNews(data); break;

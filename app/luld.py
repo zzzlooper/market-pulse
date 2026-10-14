@@ -54,9 +54,10 @@ class Bands:
     def __init__(self) -> None:
         self._prices: dict[str, deque[tuple[float, float]]] = {}
 
-    def update(self, symbol: str, price: float, now: float, tier_: int) -> dict:
+    def update(self, symbol: str, price: float, now: float, tier_: int, near_share: float = NEAR) -> dict:
         """Add a regular-hours price; returns {"ref", "lower", "upper", "tier", "near", "away_pct"}.
-        near is "up" or "down" within NEAR of a band (or past it), else None; away_pct is how far
+        near is "up" or "down" within near_share of the band's width from a band (or past it), else
+        None; away_pct is how far
         the price would have to move to reach the nearer band."""
         seen = self._prices.setdefault(symbol, deque())
         seen.append((now, price))
@@ -66,7 +67,7 @@ class Bands:
         width = band(ref, tier_, datetime.fromtimestamp(now, ET))
         lower, upper = max(ref - width, 0.0), ref + width
         to_upper, to_lower = upper - price, price - lower
-        near = "up" if to_upper <= width * NEAR else "down" if to_lower <= width * NEAR else None
+        near = "up" if to_upper <= width * near_share else "down" if to_lower <= width * near_share else None
         away = min(to_upper, to_lower) / price * 100 if price else None
         return {"ref": round(ref, 4), "lower": round(lower, 4), "upper": round(upper, 4), "tier": tier_,
                 "near": near, "away_pct": round(max(away, 0.0), 2) if away is not None else None}

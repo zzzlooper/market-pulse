@@ -33,11 +33,19 @@ def made_up_morning(folder):
     day.chart("ACME", lambda hhmm: 10.0 if hhmm < "07:00" else 7.8)
     day.chart("BOLT", lambda hhmm: 10.0 if hhmm < "09:30" else 10.5)
     day.profile("BOLT", "low")
+    day.profile("DYNA", "low")
+    day.chart("DYNA", lambda hhmm: 11.2)
     day.earnings("04:00", BOLT=("2026-10-13", "07:00", False), FERN=("2026-10-16", "16:05", False))
     day.daily("04:00", ACME=[("2026-10-09", 9.6, 10.0), ("2026-10-12", 8.5, 9.0)],  # fell 15% yesterday: SSR today
               CRUX=[("2026-10-09", 9.0, 8.0), ("2026-10-12", 8.0, 10.0)])           # up 25%... not day 2
     day.daily("04:00", DYNA=[("2026-10-09", 6.0, 6.0), ("2026-10-12", 6.0, 9.0)])    # up 50%: day 2
-    day.floats("04:00", BOLT=800_000, FERN=50_000_000)  # BOLT has traded 1M shares: its float, 1.3 times
+    day.floats("04:00", BOLT=800_000, FERN=50_000_000,  # BOLT has traded 1M shares: its float, 1.3 times
+               ACME=None, CRUX=None, DYNA=None,
+               industry={"ACME": "Aerospace & Defense", "BOLT": "Electrical Equipment & Parts", "FERN": "Packaged Foods",
+                         "CRUX": "Biotechnology", "DYNA": "Biotechnology"})
+    day.industry("04:00", "Aerospace & Defense", ACME=-22.0)
+    day.industry("04:00", "Electrical Equipment & Parts", BOLT=5.0)
+    day.industry("04:00", "Biotechnology", CRUX=41.0, DYNA=12.0)  # DYNA moves with CRUX
     return day.build(["BOLT", "FERN"])
 
 
@@ -188,6 +196,14 @@ def test_a_stock_that_traded_its_whole_float_gets_a_rot_badge(page, world):
     assert rot == [["BOLT", "ROT 1.3×", ("Volume today 1.0M is 1.3× the float of 800.00K shares: every share "
                                          "available to trade has changed hands at least once.")]]
     assert page.eval("document.querySelector('#rotation-alerts').checked") is True
+    # Setup → Signal thresholds: at 2× the float, 1.3× is no longer a rotation; RVOL follows too.
+    page.eval("handle({type: 'thresholds', data: {rvol_threshold: 0.5, rotation_multiple: 2, sympathy_min_pct: 5,"
+              " sympathy_lead_pct: 30}})")
+    assert page.eval("document.querySelectorAll('#watchlist .rot-badge').length") == 0
+    assert page.text("#rvol-note").startswith("RVOL ≥ 0.5×")
+    page.eval("handle({type: 'thresholds', data: {rvol_threshold: 2, rotation_multiple: 1, sympathy_min_pct: 5,"
+              " sympathy_lead_pct: 30}})")
+    assert page.eval("document.querySelectorAll('#watchlist .rot-badge').length") == 1
     assert page.text("#gaps-note").startswith("Gaps ≥ 3%")
 
 
@@ -325,6 +341,32 @@ def test_setup_saves_a_secret_but_never_shows_it_back(page, world):
     html = page.eval("document.documentElement.outerHTML")
     assert TOPIC not in html and page.eval("document.querySelector('#set-ntfy_topic').value") == ""
     assert TOPIC not in world[0].get("/api/settings").text
+
+
+def test_sympathy_movers_are_badged_and_the_panel_lists_the_industry(page, world):
+    open_dashboard(page, world)
+    sym = page.wait("document.querySelector('#movers a.sym[data-sym=DYNA]')?.parentElement.querySelector('.sym-badge')?.title",
+                    timeout=20)
+    assert sym == ("Up 12.0% in sympathy with CRUX +41% (Biotechnology). The ticker panel lists the industry's movers.")
+    page.click("#movers a.sym[data-sym=DYNA]")
+    rows = page.wait("document.querySelectorAll('.industry-movers li').length === 2"
+                     " && [...document.querySelectorAll('.industry-movers li')].map(li => li.innerText.split(/\\s+/).slice(0, 2).join(' '))")
+    assert rows == ["CRUX +41.00%", "DYNA +12.00%"]
+    assert page.eval("document.querySelector('#detail-industry h3').textContent").startswith("Same industry today Biotechnology")
+    assert page.eval("document.querySelector('.industry-movers li.self a').textContent") == "DYNA"
+
+
+def test_signal_thresholds_can_be_tuned_in_setup(page, world):
+    open_dashboard(page, world)
+    page.click("#setup-btn")
+    page.wait("!!document.querySelector('#set-breakout_pullback_pct')")
+    group = page.eval("document.querySelector('#set-breakout_pullback_pct').closest('.set-group').textContent")
+    assert group.split()[:2] == ["Signal", "thresholds"]
+    for label in ("New high of day counts after a pullback of (%)", "Day 2 after a gain of (%)",
+                  "Float rotation at volume / float of", "Near a LULD band within (% of the band)",
+                  "A stock leads its industry when up (%)", "Moving in sympathy when up (%)",
+                  "Quote an alert's track record after (measured)"):
+        assert label in group
 
 
 def test_with_an_access_token_the_page_asks_for_it_first(tmp_path, world):

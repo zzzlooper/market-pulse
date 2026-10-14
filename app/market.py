@@ -186,8 +186,9 @@ def fetch_daily(symbols: list[str]) -> list[dict]:
 
 
 def fetch_floats(symbols: list[str]) -> list[dict]:
-    """Shares in the public float and the market cap per symbol, from Yahoo's company data
-    (None when unknown). The market cap guesses a stock's LULD tier."""
+    """Shares in the public float, the market cap and the industry per symbol, from Yahoo's
+    company data (None when unknown). The market cap guesses a stock's LULD tier; the industry
+    finds sympathy movers."""
     from concurrent.futures import ThreadPoolExecutor
 
     def one(symbol: str) -> dict | None:
@@ -196,7 +197,8 @@ def fetch_floats(symbols: list[str]) -> list[dict]:
         except Exception as exc:  # one unknown symbol shouldn't sink the rest
             log.info("float for %s unavailable: %s", symbol, exc)
             return None
-        return {"symbol": symbol, "float_shares": info.get("floatShares"), "market_cap": info.get("marketCap")}
+        return {"symbol": symbol, "float_shares": info.get("floatShares"), "market_cap": info.get("marketCap"),
+                "industry": info.get("industry")}
     with ThreadPoolExecutor(max_workers=4) as pool:
         return [row for row in pool.map(one, symbols) if row]
 
@@ -269,6 +271,23 @@ def fetch_earnings(symbols: list[str]) -> list[dict]:
             return None
     with ThreadPoolExecutor(max_workers=4) as pool:
         return [row for row in pool.map(one, symbols) if row]
+
+
+INDUSTRY_TTL = 120   # an industry's movers, shared by every panel open on one of its stocks
+US_EXCHANGES = ("NMS", "NCM", "NGM", "NYQ", "ASE")  # Nasdaq tiers, NYSE, NYSE American: no OTC
+
+
+def fetch_industry_movers(industry: str, count: int = 10) -> list[dict]:
+    """Today's biggest gainers in a Yahoo industry ("Biotechnology"), US-listed and $1 or more."""
+    def load() -> list[dict]:
+        query = yf.EquityQuery("and", [
+            yf.EquityQuery("eq", ["industry", industry]), yf.EquityQuery("eq", ["region", "us"]),
+            yf.EquityQuery("gte", ["intradayprice", 1]), yf.EquityQuery("is-in", ["exchange", *US_EXCHANGES])])
+        result = yf.screen(query, sortField="percentchange", sortAsc=False, size=count)
+        return [{"symbol": q["symbol"], "name": q.get("shortName") or "", "price": q.get("regularMarketPrice"),
+                 "change_pct": q.get("regularMarketChangePercent"), "market_cap": q.get("marketCap")}
+                for q in result.get("quotes", []) if q.get("symbol")]
+    return _cached(("industry", industry, count), INDUSTRY_TTL, load)
 
 
 def fetch_profile(symbol: str) -> dict:

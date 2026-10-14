@@ -15,6 +15,8 @@ const state = {
   halt_info: {},  // halt id -> how trading resumed: first trade, the price before the halt, the move
   day2: {},       // symbol -> { date, change_pct }: a big gainer in the last session
   luld: {},       // symbol -> { ref, lower, upper, tier, near, away_pct }: estimated LULD bands, regular hours
+  sympathy: {},   // symbol -> { industry, leader, leader_pct, change_pct }: moving with its industry's leader
+  thresholds: {},  // the signal settings the badges follow (Setup → Signal thresholds)
 };
 const lastPrice = new Map();   // symbol -> price, to flash changes
 const MAX_NEWS = 500;
