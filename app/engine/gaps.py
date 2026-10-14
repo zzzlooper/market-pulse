@@ -1,10 +1,11 @@
-"""The pre-market gap scanner and its 09:15 brief. The gap rules are in app/gaps.py."""
+"""The pre-market gap scanner, the morning game plan and the 09:15 brief. The gap rules are in
+app/gaps.py, the plan's in app/plan.py."""
 from __future__ import annotations
 
 import asyncio
 import logging
 
-from .. import market
+from .. import market, plan
 from ..clock import clock
 from ..gaps import build_brief, candidates, scanning, select
 from ..recap import next_run
@@ -24,6 +25,7 @@ class GapsMixin:
         self._gaps_traded = False  # any pre-market trade today: no brief on a holiday
         self._wake_gaps = asyncio.Event()  # new catalysts or movers: rescan now, not in a minute
         self.pre_highs: dict[str, float] = {}  # today, for every stock scanned, gapping or not
+        self._gaps_sent: list[dict] | None = None  # what the browsers last got
 
     async def _update_gaps(self) -> str | None:
         now = clock.now(market.ET)
@@ -46,12 +48,25 @@ class GapsMixin:
         if {g["symbol"] for g in gaps} - {g["symbol"] for g in self.gaps}:
             self._wake_tape.set()  # new gappers: is SSR in effect on them today?
         self.gaps = gaps
-        await self.hub.broadcast({"type": "gaps", "data": self.gaps})
+        if gaps != self._gaps_sent:  # pre-market prices move, but often a scan finds nothing new
+            self._gaps_sent = gaps
+            await self.hub.broadcast({"type": "gaps", "data": self.gaps})
         return None
 
+    def game_plan(self) -> dict:
+        """Today's gappers with everything known about each (app/plan.py), for the Plan view."""
+        now = clock.now(market.ET)
+        today = now.date().isoformat()
+        entries = plan.build(
+            self.gaps, watchlist=list(self.state.watchlist), floats=self.floats, market_caps=self.market_caps,
+            ssr=self.ssr, risk=self.risk, day2=self.day2, pre_highs=self.pre_highs, sympathy=self.sympathy,
+            industries=self.industries, halts=self.halts.latest(), earnings=self.earnings, today=today)
+        return {"day": today, "scanning": scanning(now), "gap_min_pct": self.settings.gap_min_pct, "entries": entries}
+
     def gap_brief(self) -> dict:
+        extras = {e["symbol"]: plan.brief_extras(e) for e in self.game_plan()["entries"]}
         return build_brief(clock.today(market.ET), self.gaps, self.risk, self.settings.gap_min_pct,
-                           self.settings.public_url, earnings=self._earnings_brief(), day2=self.day2)
+                           self.settings.public_url, earnings=self._earnings_brief(), day2=self.day2, extras=extras)
 
     async def _gap_brief_loop(self) -> None:
         while True:

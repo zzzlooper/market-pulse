@@ -26,6 +26,7 @@
   <div id="health-list" hidden></div>
   <button id="halt-pill" class="pill halted" type="button" hidden title="Show today's active halts"></button>
   <span class="spacer"></span>
+  <button id="plan-btn" type="button" title="Today's gappers with everything known about each">Plan</button>
   <button id="setup-btn" type="button" title="First-run checklist and settings">Setup</button>
   <button id="notify-btn" type="button">Enable alerts</button>
   <span id="clock" title="New York time"></span>
@@ -227,6 +228,8 @@ resumed, and warnings when a stock nears its estimated LULD band">Halts, resumpt
 <aside id="detail" hidden aria-label="Ticker detail"></aside>
 <div id="setup-backdrop" hidden></div>
 <aside id="setup" hidden aria-label="Setup and settings"></aside>
+<div id="plan-backdrop" hidden></div>
+<aside id="plan" hidden aria-label="Today's game plan"></aside>
 
 <div id="toast" hidden></div>
 <dialog id="login">
@@ -249,5 +252,6 @@ resumed, and warnings when a stock nears its estimated LULD band">Halts, resumpt
 <script src="app.js"></script>
 <script src="detail.js"></script>
 <script src="setup.js"></script>
+<script src="plan.js"></script>
 </body>
 </html>

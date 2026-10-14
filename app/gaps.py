@@ -106,7 +106,8 @@ def select(rows: list[dict], context: dict[str, dict], min_pct: float, min_minut
 
 
 def build_brief(day: date, gaps: list[dict], risk: dict[str, dict | None], min_pct: float,
-                public_url: str = "", earnings: list[str] = (), day2: dict[str, dict] | None = None) -> dict:
+                public_url: str = "", earnings: list[str] = (), day2: dict[str, dict] | None = None,
+                extras: dict[str, list[str]] | None = None) -> dict:
     """The 09:15 phone note: the biggest gappers with what's behind them, and today's reverse
     splits among the stocks with a risk profile (watchlist and movers)."""
     lines = []
@@ -118,6 +119,7 @@ def build_brief(day: date, gaps: list[dict], risk: dict[str, dict | None], min_p
             why.append("watchlist")
         if run := (day2 or {}).get(g["symbol"]):
             why.append(f"day 2 ({run['change_pct']:+.0f}% yesterday)")
+        why += (extras or {}).get(g["symbol"], [])
         level = (risk.get(g["symbol"]) or {}).get("level")
         if level in ("high", "medium"):
             why.append(f"dilution risk {level.upper()}")

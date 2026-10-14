@@ -129,7 +129,7 @@ if [ "${1:-}" = "--enable" ]; then
   "$SYSTEMCTL" --user restart market-pulse.service  # pick up a changed unit or settings
   SCHEME=http; [ "$HTTPS" = 1 ] && SCHEME=https
   echo "Running. Open $SCHEME://localhost:$PORT  ·  logs: journalctl --user -u market-pulse -f"
-  [ "$HTTPS" = 1 ] && echo "On your phone: open Setup there, or $SCHEME://<this computer's address>:$PORT/market-pulse-ca.crt, and install the certificate once (README: HTTPS)." || true
+  [ "$HTTPS" = 1 ] && echo "On your phone: open Setup there, or $SCHEME://<this computer's address>:$PORT/market-pulse-ca.crt, and install the certificate once (docs/setup.md: HTTPS)." || true
 else
   echo "Start it with: systemctl --user enable --now market-pulse"
 fi

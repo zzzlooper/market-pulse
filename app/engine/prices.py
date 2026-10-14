@@ -22,6 +22,7 @@ class PricesMixin:
         self.movers: dict[str, list[dict]] = {key: [] for key in market.SCREENS}
         self.unusual: list[dict] = []
         self._ticks = asyncio.Event()  # set by the Finnhub feed whenever a price changes
+        self._sent_prices: dict[str, float | None] = {}  # what the browsers last got, per symbol
         self._wake_quotes = asyncio.Event()
         self._wake_finnhub = asyncio.Event()
 
@@ -52,12 +53,19 @@ class PricesMixin:
         while True:
             await self._ticks.wait()
             self._ticks.clear()
-            await self._publish_quotes()
+            await self._publish_quotes(ticks=True)
             await asyncio.sleep(TICK_FLUSH_SECONDS)
 
-    async def _publish_quotes(self) -> None:
+    async def _publish_quotes(self, ticks: bool = False) -> None:
+        """The watchlist to the browsers: in full after a Yahoo refresh, and between them, for
+        Finnhub's real-time trades, only the rows whose price moved (up to twice a second)."""
         quotes = self.quotes
-        await self.hub.broadcast({"type": "quotes", "data": quotes})
+        if ticks:
+            if moved := [q for q in quotes if self._sent_prices.get(q["symbol"]) != q.get("price")]:
+                await self.hub.broadcast({"type": "quote_ticks", "data": moved})
+        else:
+            await self.hub.broadcast({"type": "quotes", "data": quotes})
+        self._sent_prices = {q["symbol"]: q.get("price") for q in quotes}
         await self._publish_alerts(self.alerts.check_quotes(quotes, self.state.alert_rules))
         await self._check_levels(quotes)
         await self._check_tape(quotes)

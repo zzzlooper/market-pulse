@@ -175,9 +175,12 @@ def test_reverse_splits_and_day_2_runners_are_badged(page, world):
 
 def test_estimated_luld_bands_show_in_the_panel_and_a_badge_when_near(page, world):
     open_dashboard(page, world)
-    page.wait("!!state.luld.BOLT", timeout=20)  # regular hours: the watchlist quotes feed the estimate
     page.click("#watchlist a.sym[data-sym=BOLT]")
-    stat = page.wait("[...document.querySelectorAll('#detail-stats div')].find(d => d.textContent.includes('LULD'))?.innerText")
+    # Only stocks near a band are pushed to the page; the panel gets the bands with the ticker's data.
+    assert page.eval("Object.keys(state.luld)") == []
+    stat = page.wait("[...document.querySelectorAll('#detail-stats div')].find(d => d.textContent.includes('LULD'))"
+                     "?.innerText.includes('–1') && [...document.querySelectorAll('#detail-stats div')]"
+                     ".find(d => d.textContent.includes('LULD')).innerText", timeout=20)
     assert stat.split() == ["LULD", "bands", "est.", "9.45–11.55"]  # 10.50 ± 10%
     page.eval("document.dispatchEvent(new KeyboardEvent('keydown', {key: 'Escape'}))")
     # A stock near a band (the server's message, as it would send it):
@@ -432,6 +435,38 @@ def test_the_backup_api_turns_away_what_isnt_a_backup(world):
     assert server.post("/api/backup/preview", json={"state": {}}).status_code == 422
     assert server.post("/api/backup/preview", content=b"x" * 300_000,
                        headers={"content-type": "application/json"}).status_code == 413
+
+
+def test_the_game_plan_lists_the_gappers_with_their_flags_and_opens_a_ticker(page, world):
+    open_dashboard(page, world)
+    page.wait("state.gaps.length >= 4", timeout=20)
+    page.click("#plan-btn")
+    cards = page.wait("document.querySelectorAll('.plan-card').length >= 4"
+                      " && [...document.querySelectorAll('.plan-card .plan-head .sym')].map(a => a.textContent)")
+    assert cards == ["CRUX", "ACME", "DYNA", "BOLT"]  # with a catalyst first, then by gap
+    flags = page.wait("[...document.querySelectorAll('.plan-card')].find(c => c.querySelector('.sym').textContent === 'BOLT')"
+                      ".querySelectorAll('.flag').length >= 3"
+                      " && [...[...document.querySelectorAll('.plan-card')].find(c => c.querySelector('.sym').textContent"
+                      " === 'BOLT').querySelectorAll('.flag')].map(f => f.textContent)", timeout=20)
+    assert "low float" in flags and "watchlist" in flags
+    page.click(".plan-card .plan-head .sym[data-sym=ACME]")
+    page.wait("!document.querySelector('#detail').hidden && document.querySelector('#plan').hidden")
+    page.eval("history.back()")
+    page.wait("document.querySelector('#detail').hidden && !document.querySelector('#plan').hidden")
+    page.eval("document.dispatchEvent(new KeyboardEvent('keydown', {key: 'Escape'}))")
+    page.wait("document.querySelector('#plan').hidden")
+    page.goto(world[0].url + "/?from=bookmark#plan")  # a fresh load, as from a bookmark
+    page.wait("!document.querySelector('#plan').hidden && document.querySelectorAll('.plan-card').length >= 1", timeout=20)
+
+
+def test_real_time_ticks_update_just_their_rows(page, world):
+    open_dashboard(page, world)
+    page.eval("handle({type: 'quote_ticks', data: [{...state.quotes.find(q => q.symbol === 'BOLT'), price: 11.11, live: true,"
+              " price_time: Math.floor(appNow() / 1000)}]})")
+    rows = page.eval("[...document.querySelectorAll('#watchlist tr')].map(r => r.innerText)")
+    assert any(r.startswith("BOLT") and "\t11.11\t" in r for r in rows)
+    assert any(r.startswith("FERN") and "\t9.80\t" in r for r in rows)  # untouched
+    assert page.eval("state.quotes.length") == 2
 
 
 def test_with_an_access_token_the_page_asks_for_it_first(tmp_path, world):

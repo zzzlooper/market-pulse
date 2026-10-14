@@ -18,8 +18,7 @@ TAPE_MAX_SYMBOLS = 150  # watchlist, gappers and movers
 FLOAT_BATCH = 20        # float lookups per round: one Yahoo request each
 TAPE_TRIES = 3          # a symbol Yahoo has nothing on is given up on for the day after this
 LULD_COOLDOWN = 900     # seconds between band warnings for one stock and direction
-LULD_SEND_EVERY = 30    # the bands go to the browsers at most this often, unless one gets near
-SYMPATHY_SEND_EVERY = 60  # the sympathy moves go to the browsers at least this often while they change
+LULD_SEND_EVERY = 30    # the near-a-band stocks go to the browsers at most this often, unless one changes
 
 
 def day2_move(days: list[dict], today: str, min_gain: float = 0.30) -> dict | None:
@@ -52,7 +51,7 @@ class TapeMixin:
         self.industries: dict[str, str] = {}               # symbol -> Yahoo industry, for sympathy moves
         self.sympathy: dict[str, dict] = {}                # symbol -> its industry's leader today
         self._sympathy_alerted: set[str] = set()
-        self._sympathy_sent: tuple[float, frozenset] = (0.0, frozenset())
+        self._sympathy_sent: frozenset = frozenset()
         self._luld_bands = Bands()
         self._luld_warned: dict[tuple[str, str], float] = {}
         self._luld_sent: tuple[float, frozenset] = (0.0, frozenset())
@@ -154,22 +153,27 @@ class TapeMixin:
     async def _check_sympathy(self) -> None:
         """Sympathy moves among the stocks followed today (watchlist, movers): in each industry the
         biggest gainer up sympathy_lead_pct or more leads, and its peers up sympathy_min_pct or more
-        move with it. One alert per stock a day, with the breakouts (same switch, same phone category)."""
+        move with it. One alert per stock a day, with the breakouts (same switch, same phone category).
+        Once in, a stock stays until it falls well back (a leader below 80% of the threshold, a
+        follower below half), so one hovering at a threshold doesn't flicker in and out."""
         today, s = self._tape_today(), self.settings
         moves: dict[str, dict] = {}
         for row in [*self.quotes, *(r for rows in self.movers.values() for r in rows)]:
             if row.get("session") in (None, today) and row.get("change_pct") is not None:
                 moves.setdefault(row["symbol"], row)
+        led = {v["leader"] for v in self.sympathy.values()}
         leaders: dict[str, tuple[str, float]] = {}
         for symbol, row in moves.items():
             industry = self.industries.get(symbol)
-            if industry and row["change_pct"] >= s.sympathy_lead_pct and row["change_pct"] > leaders.get(industry, ("", 0))[1]:
+            bar = s.sympathy_lead_pct * (0.8 if symbol in led else 1)
+            if industry and row["change_pct"] >= bar and row["change_pct"] > leaders.get(industry, ("", 0))[1]:
                 leaders[industry] = (symbol, row["change_pct"])
         sympathy, fired = {}, []
         for symbol, row in moves.items():
             industry = self.industries.get(symbol)
             lead = leaders.get(industry) if industry else None
-            if not lead or lead[0] == symbol or row["change_pct"] < s.sympathy_min_pct:
+            bar = s.sympathy_min_pct * (0.5 if symbol in self.sympathy else 1)
+            if not lead or lead[0] == symbol or row["change_pct"] < bar:
                 continue
             sympathy[symbol] = {"industry": industry, "leader": lead[0], "leader_pct": round(lead[1], 1),
                                 "change_pct": round(row["change_pct"], 1)}
@@ -178,13 +182,15 @@ class TapeMixin:
                 fired.append(self.alerts.event(row, "sympathy", (
                     f"{symbol} {row['change_pct']:+.1f}% in sympathy with {lead[0]} {lead[1]:+.0f}% ({industry})")))
         self.sympathy = sympathy
-        now, pairs = clock.time(), frozenset((k, v["leader"]) for k, v in sympathy.items())
-        sent_at, sent = self._sympathy_sent
-        if pairs != sent or (pairs and now - sent_at >= SYMPATHY_SEND_EVERY):
-            self._sympathy_sent = (now, pairs)
+        # Sent when who moves with whom changes; each one's move is in the quotes and movers anyway.
+        if (pairs := frozenset((k, v["leader"]) for k, v in sympathy.items())) != self._sympathy_sent:
+            self._sympathy_sent = pairs
             await self.hub.broadcast({"type": "sympathy", "data": dict(sympathy)})
         if fired:
             await self._publish_alerts(fired)
+
+    def luld_near(self) -> dict[str, dict]:
+        return {s: st for s, st in self.luld.items() if st["near"]}
 
     async def _check_luld(self, rows: list[dict]) -> None:
         """Estimate each stock's LULD bands (app/luld.py) and warn when the price nears one, for
@@ -210,11 +216,12 @@ class TapeMixin:
                 f"{symbol} is {state['away_pct']:.1f}% from its estimated {name} band of {money(edge)} "
                 f"(reference {money(state['ref'])}, ±{pct}%): it pauses for 5 minutes there "
                 "if it can't get back inside within 15 seconds")))
-        near = frozenset(s for s, st in self.luld.items() if st["near"])
+        # The browsers get the stocks near a band (the badges); the ticker panel asks for its own bands.
+        near = frozenset((s, st["near"]) for s, st in self.luld.items() if st["near"])
         sent_at, sent_near = self._luld_sent
-        if near != sent_near or now - sent_at >= LULD_SEND_EVERY:
+        if near != sent_near or (near and now - sent_at >= LULD_SEND_EVERY):
             self._luld_sent = (now, near)
-            await self.hub.broadcast({"type": "luld", "data": dict(self.luld)})
+            await self.hub.broadcast({"type": "luld", "data": self.luld_near()})
         if fired:
             await self._publish_alerts(fired)
 

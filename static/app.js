@@ -27,6 +27,13 @@ function handle({ type, data }) {
     case "alerts": addAlerts(data); break;
     case "alert_counts": loadAlertKinds(); break;
     case "quotes": state.quotes = data; renderWatchlist(); break;
+    case "quote_ticks": {  // real-time trades: only the rows whose price moved
+      const moved = new Map(data.map((q) => [q.symbol, q]));
+      state.quotes = state.quotes.map((q) => moved.get(q.symbol) ?? q);
+      for (const q of data) if (!state.quotes.some((r) => r.symbol === q.symbol)) state.quotes.push(q);
+      renderWatchlist();
+      break;
+    }
     case "movers": state.movers = data; renderMovers(); break;
     case "unusual": state.unusual = data; renderUnusual(); break;
     case "ssr": state.ssr = data; renderWatchlist(); renderMovers(); renderUnusual(); renderGaps(); refreshDetail("quotes"); break;
@@ -53,6 +60,7 @@ function handle({ type, data }) {
       break;
   }
   if (["quotes", "config", "news", "halts", "alerts"].includes(type)) refreshDetail(type);
+  if (type === "quote_ticks") refreshDetail("quotes");
 }
 
 let socket = null;

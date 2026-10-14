@@ -43,7 +43,7 @@ EDITABLE: dict[str, Field] = {
     "ntfy_server": Field("ntfy server", "url", hint="https://ntfy.sh unless you run your own."),
     "ntfy_token": Field("ntfy access token", "secret", hint="Only for protected topics or your own server."),
     "telegram_bot_token": Field("Telegram bot token", "secret", hint="From @BotFather."),
-    "telegram_chat_id": Field("Telegram chat id", "secret", hint="See README: Phone alerts."),
+    "telegram_chat_id": Field("Telegram chat id", "secret", hint="See docs/setup.md: Phone alerts."),
     "access_token": Field("Access token", "secret",
                           hint="Needed before opening the dashboard from your phone. Use Generate."),
     "public_url": Field("Address your phone uses", "url", hint="e.g. http://192.168.1.20:8000, so tapped alerts open the ticker."),
@@ -68,7 +68,7 @@ EDITABLE: dict[str, Field] = {
     "sympathy_lead_pct": Field("A stock leads its industry when up (%)", "number", low=5, high=1000, hint="Default 30."),
     "sympathy_min_pct": Field("Moving in sympathy when up (%)", "number", low=1, high=500, hint="Default 5."),
     "record": Field("Record the day's data for replay", "bool", live=False,
-                    hint="Saved in data/recordings, readable by you only; see README: Record and replay."),
+                    hint="Saved in data/recordings, readable by you only; see docs/setup.md: Record and replay."),
 }
 GENERATED = {"access_token": lambda: secrets.token_urlsafe(24),
              "ntfy_topic": lambda: "mp-" + secrets.token_urlsafe(12)}

@@ -161,7 +161,7 @@ def authorized(cookie: str | None, header: str | None) -> bool:
 async def require_token(request: Request, call_next):
     if not host_allowed(request.headers.get("host")):
         return PlainTextResponse("Market Pulse only answers on localhost until an access token is set "
-                                 "(see README: Opening it from your phone).", status_code=403)
+                                 "(see docs/setup.md: Opening it from your phone).", status_code=403)
     # Browsers send Origin with every cross-site POST/PUT/DELETE: refuse ones from other sites,
     # so a page you visit can't change your watchlist or settings.
     origin = request.headers.get("origin")
@@ -384,6 +384,12 @@ async def dilution(symbol: str):
     if profile is None:
         raise HTTPException(404, f"{symbol} doesn't file with the SEC (ETFs, indices and many foreign stocks don't)")
     return profile
+
+
+@app.get("/api/plan")
+async def game_plan():
+    """Today's gappers with everything known about each: the morning game plan."""
+    return JSONResponse(engine.game_plan(), headers=NO_STORE)
 
 
 @app.get("/api/industry/{symbol}")

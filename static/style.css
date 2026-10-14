@@ -301,12 +301,25 @@ button:disabled { opacity: .5; cursor: default; border-color: var(--border); }
 .halt-row.resumed .sym { color: var(--muted); }
 
 /* --- ticker detail drawer --- */
-#detail-backdrop, #setup-backdrop { position: fixed; inset: 0; background: #0008; z-index: 10; }
-#setup {
+#detail-backdrop, #setup-backdrop, #plan-backdrop { position: fixed; inset: 0; background: #0008; z-index: 10; }
+#setup, #plan {
   position: fixed; top: 0; right: 0; bottom: 0; width: min(560px, 100vw); z-index: 11;
   background: var(--panel); border-left: 1px solid var(--border); box-shadow: -8px 0 24px #0006;
   overflow-y: auto; padding: 14px 18px 24px;
 }
+#plan { width: min(640px, 100vw); }
+.plan-card { border: 1px solid var(--border); border-radius: 6px; padding: 8px 10px; margin: 10px 0; font-size: 13px; }
+.plan-card .plan-head { display: flex; gap: 8px; align-items: baseline; flex-wrap: wrap; font-variant-numeric: tabular-nums; }
+.plan-card .plan-head .sym { font-size: 15px; font-weight: 700; }
+.plan-card .catalyst { margin: 4px 0; }
+.plan-card .flags { display: flex; gap: 4px; flex-wrap: wrap; margin: 6px 0; }
+.flag { font-size: 11px; padding: 0 5px; border-radius: 3px; border: 1px solid var(--border); cursor: help; }
+.flag.good { color: var(--up); border-color: var(--up); }
+.flag.warn { color: var(--down); border-color: var(--down); }
+.plan-card .levels { list-style: none; margin: 4px 0; padding: 0; font-size: 12px; font-variant-numeric: tabular-nums; }
+.plan-card .levels li.offering b { color: #58a6ff; }
+.plan-card .levels li.warrant b { color: #f0883e; }
+.plan-card .peers { margin: 4px 0 0; font-size: 12px; }
 #setup-btn.attention { border-color: var(--down); color: var(--down); }
 #replay-banner { background: #8957e5; color: #fff; font-weight: 700; font-size: 12px; text-align: center;
   padding: 3px 8px; letter-spacing: 0.03em; }
@@ -531,7 +544,7 @@ tr.stale td { opacity: .45; }
   .keywords .inline-form input { width: 140px; }
 
   /* Drawers take the whole screen, with their title bar and close button always in view. */
-  #detail, #setup { width: 100vw; left: 0; padding: 0 12px 24px; overflow-x: hidden; }
+  #detail, #setup, #plan { width: 100vw; left: 0; padding: 0 12px 24px; overflow-x: hidden; }
   .detail-head {
     position: sticky; top: 0; z-index: 2; background: var(--panel);
     flex-wrap: wrap; padding: 10px 0 8px; margin-bottom: 4px; border-bottom: 1px solid var(--border);

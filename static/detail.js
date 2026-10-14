@@ -376,7 +376,7 @@ function updateDetailStats() {
     stat("Gap", fmtPct(p.gap_pct), dir(p.gap_pct)),
     stat("PM high", fmtPrice(state.pre_highs?.[detail.symbol]),
       q?.price != null && q.price >= state.pre_highs?.[detail.symbol] ? "up" : ""),
-    luldStat(state.luld?.[detail.symbol]),
+    luldStat(state.luld?.[detail.symbol] ?? detail.data.luld),
     stat("Day range", range(p.day_low, p.day_high)),
     stat("52-wk range", range(p.week52_low, p.week52_high)),
     stat("Volume", fmtVol(volume)),

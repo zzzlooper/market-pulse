@@ -358,6 +358,9 @@ class Run:
                              health=SourceHealth(clock.time), io=self.player)
         self.phone: list[dict] = []
         self.now = ""
+        # One event loop for the whole run, as in the app: SEC's request lock and the phone queue
+        # belong to the loop that first used them.
+        self._runner = asyncio.Runner()
 
     async def _step(self, hhmm: str) -> None:
         e = self.engine
@@ -380,7 +383,7 @@ class Run:
         async def go():
             for hhmm in times:
                 await self._step(hhmm)
-        asyncio.run(go())
+        self._runner.run(go())
         return self
 
     def brief(self, hhmm: str = "09:15") -> bool:
@@ -392,11 +395,11 @@ class Run:
             while not self.engine.phone._queue.empty():
                 self.phone.append({**self.engine.phone._queue.get_nowait(), "at": hhmm})
             return sent
-        return asyncio.run(go())
+        return self._runner.run(go())
 
     def recap(self, hhmm: str = "16:30") -> dict:
         clock.freeze(ts(hhmm))
-        return asyncio.run(self.engine.recap_note())
+        return self._runner.run(self.engine.recap_note())
 
     def close(self) -> None:
         async def go():
@@ -406,7 +409,8 @@ class Run:
             await e.halts.aclose()
             await e.phone.aclose()
             e.reactions.close()
-        asyncio.run(go())
+        self._runner.run(go())
+        self._runner.close()
         clock.reset()
 
     # --- what you'd see ---------------------------------------------------------------------------

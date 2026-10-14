@@ -71,7 +71,7 @@ class Settings:
     record: bool = False
     record_keep: int = 10
     reactions_keep_days: int = 365  # older reaction history is deleted daily; 0 keeps it all
-    # Signal thresholds (Setup → Signal thresholds); the README says what each signal does.
+    # Signal thresholds (Setup → Signal thresholds); docs/signals.md says what each signal does.
     breakout_pullback_pct: float = 5.0   # a new high of day counts after a pullback at least this deep
     day2_min_pct: float = 30.0           # the last session's gain that makes today day 2
     rotation_multiple: float = 1.0       # volume / float that counts as having traded the float

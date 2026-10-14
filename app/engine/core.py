@@ -148,7 +148,7 @@ class Engine(PricesMixin, FeedsMixin, RiskMixin, CatalystsMixin, DailyMixin, Gap
             "pre_highs": self.pre_highs,
             "halt_info": self.halt_info,
             "day2": self.day2,
-            "luld": self.luld,
+            "luld": self.luld_near(),
             "sympathy": self.sympathy,
             "floats": self.floats,
         }
@@ -501,7 +501,8 @@ class Engine(PricesMixin, FeedsMixin, RiskMixin, CatalystsMixin, DailyMixin, Gap
         quote = next((r for r in rows if r["symbol"] == symbol and r.get("price") is not None), None)
         if quote is None and range_ == "1d":
             quote = market.quote_from_bars(symbol, chart["bars"], profile)
-        return {"symbol": symbol, "profile": profile, "chart": chart, "quote": quote, "errors": errors}
+        return {"symbol": symbol, "profile": profile, "chart": chart, "quote": quote, "errors": errors,
+                "luld": self.luld.get(symbol)}  # estimated bands, regular hours
 
     # --- your data -------------------------------------------------------------------------
 

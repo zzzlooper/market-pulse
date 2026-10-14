@@ -211,7 +211,7 @@ def main(argv: list[str] | None = None) -> int:
     print(f"CA fingerprint (check it on your phone): {info['fingerprint']}")
     if not args.quiet:
         print(f"\nOn the phone, open https://<address above>:{port}/market-pulse-ca.crt, install the certificate,")
-        print("and trust it (iPhone: Settings > General > About > Certificate Trust Settings). See README.")
+        print("and trust it (iPhone: Settings > General > About > Certificate Trust Settings). See docs/setup.md: HTTPS.")
     return 0
 
 

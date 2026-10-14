@@ -10,7 +10,7 @@ sec_user_agent = "market-pulse/0.7 you@example.com"
 finnhub_api_key = ""
 finnhub_quotes_interval = 300   # REST snapshot refresh; trades stream over WebSocket in between
 
-# Phone alerts (optional, see README). Set ntfy, Telegram, or both.
+# Phone alerts (optional, see docs/setup.md). Set ntfy, Telegram, or both.
 # On public ntfy.sh anyone who knows the topic can read it: use a long random name.
 # ntfy_topic = "mp-change-me-to-something-random"
 # ntfy_server = "https://ntfy.sh"
@@ -56,7 +56,7 @@ gap_min_minutes = 5        # minutes with pre-market trades before a gap counts
 gap_max_symbols = 80
 gap_brief_time = "09:15"
 
-# Record what the data sources answer, to replay later: python -m app.replay (see README).
+# Record what the data sources answer, to replay later: python -m app.replay (see docs/setup.md).
 record = false
 record_keep = 10
 
