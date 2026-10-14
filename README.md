@@ -40,6 +40,10 @@ it. Then click **Enable alerts** to get desktop notifications and a sound.
 
 ## Documentation
 
+- [Running it yourself](docs/getting-started.md): install, first run, phone alerts, the
+  background service, phone access, updating, troubleshooting.
+- [Using it](docs/using-it.md): a trading day from the pre-market plan to the after-close
+  review, and what each badge means.
 - [Setting up](docs/setup.md): settings and privacy, real-time prices, phone alerts, the
   background service, record and replay, opening it from your phone, HTTPS, backups.
 - [The dashboard](docs/dashboard.md): what's on screen, the ticker panel, the game plan,

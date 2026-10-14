@@ -261,7 +261,7 @@ def checklist(settings: Settings, *, channels: list[str], phone_error: str | Non
         add("access", "ok", "Access token set", "Every device signs in once with it.")
     else:
         add("access", "info", "Open it from your phone (optional)",
-            "Generate an access token first, then start it with MP_HOST=0.0.0.0 (see README).",
+            "Generate an access token first, then start it with MP_HOST=0.0.0.0 (see docs/setup.md).",
             {"field": "access_token"})
 
     # Encryption: only worth a line once the dashboard is (or is meant to be) used from elsewhere.

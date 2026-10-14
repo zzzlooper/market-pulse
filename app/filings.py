@@ -27,7 +27,7 @@ import feedparser
 
 from . import sentiment
 from .config import Settings
-from .health import SourceError
+from .health import SourceError, describe
 from .news import FAILING_AFTER, _clean, _published
 from .sec import SecClient
 from .splits import detect as detect_split
@@ -494,7 +494,7 @@ class FilingsFeed:
         try:
             head = await self.sec.get_head(self._submission_url(entry), HEAD_BYTES)
         except Exception as exc:
-            log.info("first pages of %s filing unreadable: %s", item["tickers"][0], exc)
+            log.info("first pages of %s filing unreadable: %s", item["tickers"][0], describe(exc))
             head = None
         if split:
             item["filing"]["reverse_split"] = rs = detect_split(head) if head else None

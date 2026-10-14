@@ -23,6 +23,7 @@ import httpx
 
 from .clock import clock
 from .filings import DILUTION, ITEMS_8K
+from .health import describe
 from .market import ET
 from .sec import SecClient
 from .splits import current as split_current
@@ -387,7 +388,7 @@ class DilutionProfiles:
             try:
                 head = await self.sec.get_head(candidate["doc"], HEAD_BYTES)
             except Exception as exc:
-                log.info("first pages of %s %s unreadable: %s", candidate["form"], candidate["filed"], exc)
+                log.info("first pages of %s %s unreadable: %s", candidate["form"], candidate["filed"], describe(exc))
                 return {"warrants": None, "split": None}
             self._docs[key] = {"warrants": detect(head), "split": detect_split(head)}
             while len(self._docs) > 2000:
