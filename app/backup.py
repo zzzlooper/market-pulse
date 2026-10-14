@@ -5,7 +5,8 @@ phone categories, muted alert kinds, and the Setup values you've changed from th
 (signal thresholds, recap time…). Never a secret: no access token, ntfy topic or token,
 Telegram ids, Finnhub key or SEC contact email. Nor this computer's address (public_url),
 nor the day's snoozes. Restoring shows every change first, checks every value as the dashboard
-would, and ignores anything else in the file.
+would, and ignores anything else in the file. (Settings set by environment variables are all
+secrets, so a restore never meets one.)
 """
 from __future__ import annotations
 

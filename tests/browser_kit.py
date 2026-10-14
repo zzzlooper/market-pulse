@@ -91,6 +91,9 @@ class ReplayServer:
     def get(self, path: str, **kw) -> httpx.Response:
         return httpx.get(self.url + path, timeout=5, verify=self.verify, **kw)
 
+    def post(self, path: str, **kw) -> httpx.Response:
+        return httpx.post(self.url + path, timeout=5, verify=self.verify, **kw)
+
     def stop(self) -> None:
         self._proc.terminate()
         try:
@@ -201,6 +204,12 @@ class Page:
         """A finger tap at viewport coordinates, as on a phone (see phone())."""
         self.send("Input.dispatchTouchEvent", {"type": "touchStart", "touchPoints": [{"x": x, "y": y}]})
         self.send("Input.dispatchTouchEvent", {"type": "touchEnd", "touchPoints": []})
+
+    def choose_file(self, selector: str, path: Path) -> None:
+        """Pick a file in an <input type=file>, as the file dialog would (fires its change event)."""
+        root = self.send("DOM.getDocument")["root"]["nodeId"]
+        node = self.send("DOM.querySelector", {"nodeId": root, "selector": selector})["nodeId"]
+        self.send("DOM.setFileInputFiles", {"nodeId": node, "files": [str(path)]})
 
     def text(self, selector: str = "body") -> str:
         return self.eval(f"document.querySelector({json.dumps(selector)})?.innerText ?? ''")

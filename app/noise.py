@@ -22,10 +22,10 @@ COUNT_DAYS = 8  # today and the 7 days before
 
 # kind -> (label, group), in the order the panel lists them.
 KINDS: dict[str, tuple[str, str]] = {
-    "above": ("Price above (your rules)", "Your rules"),
-    "below": ("Price below (your rules)", "Your rules"),
-    "move": ("Moves ±% (your rules)", "Your rules"),
-    "rvol": ("RVOL (your rules)", "Your rules"),
+    "above": ("Price above", "Your rules"),
+    "below": ("Price below", "Your rules"),
+    "move": ("Moves ±%", "Your rules"),
+    "rvol": ("RVOL", "Your rules"),
     "unusual": ("Entered unusual volume", "Volume"),
     "rotation": ("Traded its whole float", "Volume"),
     "pmh": ("Broke pre-market high", "Breakouts"),

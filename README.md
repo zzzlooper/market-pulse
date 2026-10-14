@@ -64,16 +64,31 @@ every non-local request sent to a dead proxy (`tests/browser_kit.py`).
 
 **Your data** (in Setup) lists everything Market Pulse keeps on this computer, with its size,
 counts and dates, but never its contents: your watchlist and rules, settings saved in Setup
-(by name only), the reaction history, recordings, where the log goes, and what this browser
-stored. Paths are shown relative to the project, never in full (that would show your user
+(by name only), the reaction history, recordings, the alert counts, where the log goes, and what
+this browser stored. Paths are shown relative to the project, never in full (that would show your user
 name).
 
-- *Delete* clears the reaction history, the recordings (except one being written) or the
-  settings saved in Setup, after a confirmation. Deleted history is compacted out of the
+- *Delete* clears the reaction history, the recordings (except one being written), the alert
+  counts or the settings saved in Setup, after a confirmation. Deleted history is compacted out of the
   database file, not just marked free.
 - The reaction history is kept `reactions_keep_days` (365; 0 = forever) and pruned daily.
 - *Forget* clears what this browser stored and signs it out, e.g. on a borrowed device.
 - Every file under `data/` is readable by you only.
+
+**Backup** (Setup → Your data; `app/backup.py`): *Download backup* saves your setup as a
+file, to restore here or on another computer: the watchlist, news keywords, alert rules, the
+alert switches, phone categories, muted alert kinds, and the Setup values you've changed from
+the defaults (signal thresholds, recap time…).
+
+- Never in it: any secret (access token, ntfy topic and token, Telegram ids, Finnhub key, your
+  SEC contact email), this computer's address (`public_url`) or the day's snoozes.
+- *Restore from a file…* reads it and lists every change (*now* and *then*) before anything
+  changes; *Restore these* applies them. Every value is checked as the dashboard would check
+  it: tickers, rule types and values, setting ranges. A secret in the file, an unknown entry
+  or a setting this version doesn't have is left out and said so. Alert rules get new ids.
+- The file is plain JSON. It names the stocks you watch and your rule levels, so keep it as
+  private as you'd keep the dashboard.
+
 ### Real-time prices (optional)
 
 Get a free key at https://finnhub.io/register, then either set `finnhub_api_key` in
@@ -358,6 +373,18 @@ There's deliberately no offline cache: nothing from the dashboard is stored on t
     hovering around a level alerts at most every 30 minutes.
   - Alerts go to the log in the panel, a desktop notification and a lower-pitched beep than
     news alerts.
+  - **Alert kinds** (`app/noise.py`), under the switches: every kind of alert (your rules,
+    unusual volume, float rotation, breakouts, sympathy, warrant and offering levels, halts,
+    resumptions, LULD) with how many fired today and in the last 7 days, how many went to the
+    phone today, and its track record (median move to the close, as in the Reactions tab).
+    Untick *Show* to keep a kind off this page, *Phone* to keep it off the phone.
+    - *snooze* on any alert in the log: no alerts about that stock, anywhere, for the rest of
+      the day (ET). Snoozed stocks are listed here, with × to wake one up early.
+    - `phone_cap_per_kind` (Setup → Alert tuning; 0 = no cap): at most that many alerts of one
+      kind reach the phone a day; past it they still show here.
+    - Muted and snoozed alerts are still counted and measured, so a kind's track record says
+      what you'd be missing before you turn it back on. The counts are kept 8 days in
+      `data/alert_counts.json`: kinds and numbers only, no tickers.
   - With Finnhub configured, rules are checked on every real-time price update; otherwise on
     each Yahoo refresh (~15 s, prices delayed). Default rules: all tickers ±5%, RVOL ≥ 3×.
     Rules are saved in `data/state.json`.
@@ -604,6 +631,8 @@ app/
   ssr.py      the short sale restriction (Rule 201): triggered today, carried over from yesterday
   luld.py     limit up / limit down bands, estimated from the last 5 minutes of prices
   splits.py   reverse splits from an 8-K's first pages: the ratio and the day it takes effect
+  noise.py    alert noise control: muted kinds, snoozed stocks, the phone cap, daily counts
+  backup.py   backing up your setup to a file and restoring it (never a secret)
   breakouts.py  through the pre-market high, a new high of day after a pullback
   serve.py    python -m app.serve [--https]: starts the app, as the background service does
   clock.py    the market clock: real time, or a replayed day's time and speed

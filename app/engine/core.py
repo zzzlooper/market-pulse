@@ -355,11 +355,8 @@ class Engine(PricesMixin, FeedsMixin, RiskMixin, CatalystsMixin, DailyMixin, Gap
         return backup_export(self.state, self.settings, clock.today(market.ET).isoformat())
 
     def _restore_plan(self, data) -> tuple[dict, dict, dict]:
+        # Only secrets can come from environment variables, and a backup never restores one.
         state, settings, notes = backup_read(data)
-        stored = self.dashboard.load()
-        for name in [n for n in settings if self.dashboard.source(n, stored) == "environment"]:
-            settings.pop(name)
-            notes.append(f"Left out {EDITABLE[name].label}: set by an environment variable here")
         plan = {"changes": backup_changes(self.state, self.settings, state, settings), "notes": notes}
         return plan, state, settings
 

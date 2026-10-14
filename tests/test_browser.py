@@ -369,6 +369,71 @@ def test_signal_thresholds_can_be_tuned_in_setup(page, world):
         assert label in group
 
 
+def test_the_alert_kinds_panel_counts_and_mutes_and_a_stock_can_be_snoozed(page, world):
+    open_dashboard(page, world)
+    page.click("#alert-kinds-box summary")
+    rows = page.wait("document.querySelectorAll('#alert-kinds tbody tr:not(.group)').length")
+    assert rows == 18
+    groups = page.eval("[...document.querySelectorAll('#alert-kinds tr.group')].map(r => r.textContent)")
+    assert groups == ["Your rules", "Volume", "Breakouts", "Levels from filings", "Halts"]
+    phone = "#alert-kinds [data-mute-kind=pmh][data-where=phone]"
+    try:
+        page.click(phone)  # off
+        page.wait(f"!document.querySelector('{phone}').checked && state.alert_mutes.pmh?.phone === true")
+        kinds = {k["kind"]: k for k in world[0].get("/api/alert-kinds").json()["kinds"]}
+        assert kinds["pmh"]["phone"] is False and kinds["pmh"]["browser"] is True
+    finally:
+        page.eval("api('PUT', '/api/alert-kinds/pmh', {phone: true, browser: true})")
+        page.wait("!state.alert_mutes.pmh")
+    # Snooze from the log (an alert as the server would send it):
+    page.eval("""handle({type: 'alerts', data: [{id: 'a1', time: new Date(appNow()).toISOString(), symbol: 'FERN',
+        kind: 'move', message: 'FERN down 6.0% today', price: 9.4}]})""")
+    try:
+        page.click("#alert-log [data-snooze=FERN]")
+        page.wait("state.snoozed.FERN === etDate() && !document.querySelector('#alert-log [data-snooze=FERN]')")
+        page.wait("!!document.querySelector('#alert-kinds [data-unsnooze=FERN]')")
+        page.click("#alert-kinds [data-unsnooze=FERN]")
+        page.wait("!state.snoozed.FERN && !!document.querySelector('#alert-log [data-snooze=FERN]')")
+    finally:
+        page.eval("state.snoozed.FERN && api('DELETE', '/api/snooze/FERN')")
+
+
+def test_a_backup_downloads_without_secrets_and_restores_after_a_preview(page, world, tmp_path):
+    server = world[0]
+    download = server.get("/api/backup")
+    assert download.headers["content-disposition"].startswith('attachment; filename="market-pulse-backup-')
+    assert download.headers["cache-control"] == "no-store"
+    original = download.json()
+    assert set(original) == {"market_pulse_backup", "app", "exported", "state", "settings"}
+    assert TOKEN not in download.text and TOPIC not in download.text
+    edited = {**original, "state": {**original["state"], "keywords": [*original["state"]["keywords"], "uplisting"]},
+              "settings": {**original["settings"], "ntfy_topic": "mp-must-not-come-back-0000"}}
+    (tmp_path / "backup.json").write_text(json.dumps(edited))
+    open_dashboard(page, world)
+    page.click("#setup-btn")
+    page.wait("!!document.querySelector('[data-restore-file]')")
+    try:
+        page.choose_file("[data-restore-file]", tmp_path / "backup.json")
+        preview = page.wait("document.querySelector('#restore-preview').innerText")
+        assert preview.startswith("1 change from backup.json:")
+        assert "Keywords" in preview and "uplisting" in preview
+        assert "never restored" in preview and "mp-must-not-come-back" not in preview
+        page.click("[data-restore-apply]")
+        page.wait("state.keywords.includes('uplisting')")
+        assert "mp-must-not-come-back" not in server.get("/api/settings").text
+    finally:
+        page.eval(f"api('POST', '/api/backup/restore', {json.dumps(original)})")
+        page.wait("!state.keywords.includes('uplisting')")
+
+
+def test_the_backup_api_turns_away_what_isnt_a_backup(world):
+    server = world[0]
+    assert server.post("/api/backup/preview", content=b"not json", headers={"content-type": "application/json"}).status_code == 422
+    assert server.post("/api/backup/preview", json={"state": {}}).status_code == 422
+    assert server.post("/api/backup/preview", content=b"x" * 300_000,
+                       headers={"content-type": "application/json"}).status_code == 413
+
+
 def test_with_an_access_token_the_page_asks_for_it_first(tmp_path, world):
     _, browser, recording, _ = world
     # Top-level settings before [feeds]: after it, TOML would file the token under feeds.

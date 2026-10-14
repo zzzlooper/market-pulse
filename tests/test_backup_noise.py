@@ -66,3 +66,80 @@ def test_mute_snooze_and_the_phone_cap(tmp_path):
         assert "ACME" not in e.alert_counts.path.read_text()  # counts hold kinds, never tickers
     finally:
         run.close()
+
+
+def test_a_kind_muted_everywhere_is_still_counted_and_measured(tmp_path):
+    run = Run(Day(tmp_path), watchlist=["BOLT"])
+    e = run.engine
+    try:
+        e.state.phone_alerts["breakouts"] = True
+        asyncio.run(e.set_alert_mute("hod", browser=False, phone=False))
+        asyncio.run(e._publish_alerts([e.alerts.event({"symbol": "ACME", "price": 5.0}, "hod", "ACME new high")]))
+        assert list(e.alerts.recent) == [] and e.phone._queue.qsize() == 0
+        assert not [m for m in run.hub.messages if m["type"] == "alerts"]
+        assert {k["kind"]: k for k in e.alert_kinds()}["hod"]["today"] == 1
+        assert [r["label"] for r in e.reactions.since(0)] == ["new high of day after a pullback"]  # still measured
+    finally:
+        run.close()
+
+
+def test_an_alert_whose_phone_category_is_off_doesnt_count_against_the_cap(tmp_path):
+    run = Run(Day(tmp_path), watchlist=["BOLT"], phone_cap_per_kind=1)
+    e = run.engine
+    try:
+        def fire(symbol):
+            asyncio.run(e._publish_alerts([e.alerts.event({"symbol": symbol, "price": 5.0}, "pmh", f"{symbol} broke")]))
+        fire("ACME")                              # Breakouts are off on the phone by default
+        e.state.phone_alerts["breakouts"] = True
+        fire("CRUX")
+        assert e.phone._queue.qsize() == 1 and e.alert_counts.phoned("pmh", e.alerts._clock().date().isoformat()) == 1
+    finally:
+        run.close()
+
+
+def test_the_counts_file_is_yours_only_drops_old_days_and_can_be_deleted(tmp_path):
+    from datetime import date
+
+    from app.noise import AlertCounts
+    counts = AlertCounts(tmp_path / "alert_counts.json")
+    counts.add("pmh", "2026-09-01", phoned=True)   # long ago
+    counts.add("pmh", "2026-10-07", phoned=False)  # 6 days ago: in the week
+    counts.add("pmh", "2026-10-13", phoned=True)
+    counts.save(date(2026, 10, 13))
+    assert oct(counts.path.stat().st_mode & 0o777) == "0o600"
+    assert sorted(json.loads(counts.path.read_text())) == ["2026-10-07", "2026-10-13"]
+    assert AlertCounts(counts.path).summary(date(2026, 10, 13)) == {"pmh": {"today": 1, "week": 2, "phoned_today": 1}}
+    assert counts.clear() == 2 and not counts.path.exists()
+
+
+def test_deleting_the_counts_from_your_data(tmp_path):
+    run = Run(Day(tmp_path), watchlist=["BOLT"])
+    e = run.engine
+    try:
+        asyncio.run(e._publish_alerts([e.alerts.event({"symbol": "ACME", "price": 5.0}, "pmh", "ACME broke")]))
+        assert e.alert_counts.path.exists()
+        asyncio.run(e.delete_data("alert_counts"))
+        assert not e.alert_counts.path.exists() and {k["kind"]: k for k in e.alert_kinds()}["pmh"]["today"] == 0
+    finally:
+        run.close()
+
+
+def test_a_preview_changes_nothing(tmp_path):
+    run = Run(Day(tmp_path), watchlist=["BOLT"])
+    try:
+        plan = run.engine.restore_preview({"market_pulse_backup": 1, "state": {"watchlist": ["ACME"]}})
+        assert plan["changes"] == [{"what": "Watchlist", "now": ["BOLT"], "then": ["ACME"]}]
+        assert run.engine.state.watchlist == ["BOLT"]
+    finally:
+        run.close()
+
+
+def test_a_snooze_lasts_until_the_end_of_the_day(tmp_path):
+    run = Run(Day(tmp_path), watchlist=["BOLT"])
+    e = run.engine
+    try:
+        e.state.snoozed = {"ACME": "2026-10-12"}  # snoozed yesterday
+        asyncio.run(e._publish_alerts([e.alerts.event({"symbol": "ACME", "price": 5.0}, "pmh", "ACME broke")]))
+        assert [a["symbol"] for a in e.alerts.recent] == ["ACME"]  # a new day: back
+    finally:
+        run.close()
