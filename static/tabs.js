@@ -162,6 +162,13 @@ async function loadReactions() {
     $("#reactions-alerts").innerHTML = reactionRows(r.alerts,
       "No alerts yet: breakouts, level crossings, float rotations, resumptions and your rules are measured as they fire");
     $("#reactions-risk").innerHTML = reactionRows(r.offerings_by_risk, "No offerings tracked yet");
+    $("#reactions-gaps").innerHTML = reactionRows(r.gaps,
+      "No gappers yet: each morning's game plan is measured from 09:30 to 10:00 and the close");
+    const l = r.luld;
+    $("#reactions-luld").textContent = !l.n ? "No LULD pause of a followed stock yet: each one is compared as it happens."
+      : `${l.n} pause${l.n === 1 ? "" : "s"}: the estimate was off by ${l.median_error_pct}% (median), within 1% in ` +
+        `${Math.round(l.within_1_pct * 100)}% and within 3% in ${Math.round(l.within_3_pct * 100)}% of them ` +
+        `(worst ${l.worst_error_pct}%). Flagged near the band beforehand: ${Math.round(l.warned_share * 100)}%.`;
     $("#reactions-recent").innerHTML = r.recent.map((e) => {
       const ret = e.returns;
       const moves = ["5m", "30m", "close"].map((h) => (ret[h] == null ? "" :

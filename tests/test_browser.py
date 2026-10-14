@@ -307,6 +307,9 @@ def test_reactions_tab_loads_its_report_and_the_recap_preview(page, world):
         const real = api;
         api = async (method, url) => url.startsWith('/api/reactions?') ? {
             days: 30, tracked: 3, catalysts: 1, by_type: [], offerings_by_risk: [], by_context: [], recent: [],
+            gaps: [{group: 'gap up · low float', n: 4, measured: 4, median_5m: 1.0, median_30m: 6.5, median_close: -3.0,
+                    down_share: 0.75}],
+            luld: {n: 9, median_error_pct: 0.8, within_1_pct: 0.67, within_3_pct: 1, warned_share: 0.44, worst_error_pct: 2.1},
             alerts: [{group: 'broke pre-market high', n: 2, measured: 2, median_5m: 3.2, median_30m: -1.5,
                       median_close: -6.0, down_share: 1}]} : real(method, url);
         try { await loadReactions(); } finally { api = real; }
@@ -314,6 +317,10 @@ def test_reactions_tab_loads_its_report_and_the_recap_preview(page, world):
     assert page.text("#reactions-note") == "1 catalysts, 2 alerts tracked"
     assert page.text("#reactions-alerts tr").split() == ["broke", "pre-market", "high", "2", "·", "2", "+3.2%",
                                                           "-1.5%", "-6.0%", "100%"]
+    assert page.text("#reactions-gaps tr").split() == ["gap", "up", "·", "low", "float", "4", "·", "4", "+1.0%",
+                                                        "+6.5%", "-3.0%", "75%"]
+    assert page.text("#reactions-luld") == ("9 pauses: the estimate was off by 0.8% (median), within 1% in 67% and within "
+                                            "3% in 100% of them (worst 2.1%). Flagged near the band beforehand: 44%.")
     assert page.wait("document.querySelector('#recap-preview').textContent.startsWith('Market Pulse · close recap')")
 
 
@@ -457,6 +464,10 @@ def test_the_game_plan_lists_the_gappers_with_their_flags_and_opens_a_ticker(pag
     page.wait("document.querySelector('#plan').hidden")
     page.goto(world[0].url + "/?from=bookmark#plan")  # a fresh load, as from a bookmark
     page.wait("!document.querySelector('#plan').hidden && document.querySelectorAll('.plan-card').length >= 1", timeout=20)
+    # Once enough gappers like it were measured, a card says how they did:
+    page.eval("""plan.data.entries[0].records = [{group: 'gap up · low float', measured: 14, median_30m: 2.1,
+        median_close: -3.4, down_share: 0.6}]; renderPlan()""")
+    assert page.text(".plan-card .record") == "gap up · low float: 10:00 +2.10%, close -3.40%, 60% faded (14 in 30 days)"
 
 
 def test_real_time_ticks_update_just_their_rows(page, world):
@@ -572,7 +583,8 @@ def test_setup_lists_your_data_and_deletes_the_reaction_history_after_confirming
     page.wait("document.querySelectorAll('.data-list li').length >= 7")
     rows = page.eval("[...document.querySelectorAll('.data-list li b')].map(b => b.textContent)")
     assert rows == ["Watchlist, keywords, alert rules, mutes and snoozes", "Settings saved in Setup",
-                    "Catalyst reaction history", "Recordings for replay", "HTTPS certificates", "Alert counts", "Log",
+                    "Catalyst reaction history", "Recordings for replay", "HTTPS certificates", "LULD estimate checks",
+                    "Alert counts", "Log",
                     "This browser"]
     html = page.eval("document.querySelector('#setup').innerHTML")
     assert "/home/" not in html and "/tmp/" not in html  # paths are shown relative, never in full

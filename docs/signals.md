@@ -137,6 +137,19 @@ data health. Back to the [README](../README.md).
     in the last 30 days, each new one says how that kind has done, e.g. *ACME broke its
     pre-market high of $5.00 (now $5.10) · track record: 30 min +2.0%, close -4.0%, 58% closed
     lower (median of 12 in 30 days)*, on screen and on the phone. Until then they say nothing.
+  - **Gappers: after the open**: every stock in the morning's game plan is measured from the
+    open (the first minute's close at 09:30) to 10:00 and to the close, with its game-plan flags
+    and catalyst. The table groups them: *gap up*, *gap up · low float*, *gap up · with a filing*,
+    *gap up · SSR*, *day 2*, *reverse split done/ahead*, *dilution high*, *no catalyst*… (a
+    gapper counts in each of its groups), with the share that *faded* (closed below the open).
+    It answers which of the plan's flags actually followed through, and the plan's cards quote
+    their groups' records once `record_min` of them were measured (see *Game plan*).
+  - **LULD band estimates**: each LULD pause in the halt feed carries the official price that
+    triggered it. For a stock the app follows, it's compared with the band the app estimated
+    just before the pause (not after: during a halt the quotes repeat the last price): how far
+    off it was, how often within 1% and 3%, the worst case, and whether the app had flagged the
+    stock near that band in the 15 minutes before. Kept in `data/luld_checks.json`, the last 500,
+    with no tickers.
   - The tab shows the median move per catalyst type over 7/30/90 days, with *n* (tracked ·
     measured to the close) and the share that closed lower, and the same for offerings
     grouped by the stock's dilution risk. That's the check on the risk score: if *high* doesn't

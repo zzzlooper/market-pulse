@@ -108,6 +108,9 @@ The signals and filings are in [signals.md](signals.md). Back to the [README](..
   minute while open; after 10:00 it keeps the morning's list.
   - The 09:15 brief carries the plan's main flags too: *CRUX +38.0% · …topline data, low float*.
   - The order is meant to be followed, not a score. It's a starting point for your own checks.
+  - Every gapper is measured after the open (see [signals.md](signals.md): Gappers). Once enough
+    gappers like a card's were measured (`record_min`, 10), the card says how they did: *gap up ·
+    low float: 10:00 +2.10%, close -3.40%, 60% faded (14 in 30 days)*.
 - **Price & volume alerts** (bottom-right panel): rules like *AAPL above 350*,
   *all watchlist tickers move ±5%* or *RVOL ≥ 3×*. Leave the ticker blank to apply a rule to
   the whole watchlist. A toggle adds *alert when a stock enters the unusual-volume list*,
@@ -170,6 +173,9 @@ The signals and filings are in [signals.md](signals.md). Back to the [README](..
     - An estimate: the reference price is the average of the prices this app saw (every tick
       with Finnhub, a reading a minute or so with Yahoo), not of every trade. Yahoo's prices are
       delayed ~15 minutes, so without Finnhub a warning can arrive after the pause.
+    - How good the estimate is gets checked on every LULD pause of a stock the app follows,
+      against the official pause price; the Reactions tab shows the result (see
+      [signals.md](signals.md): LULD band estimates).
   - Open `http://localhost:8000/#halts` to start on the Halts tab.
 - **Sentiment**: every headline is scored −1…+1 by a local finance lexicon (`app/sentiment.py`),
   with no API calls. Items at ±0.35 or beyond get a ▲ bullish / ▼ bearish badge, and hovering

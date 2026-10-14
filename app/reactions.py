@@ -15,6 +15,7 @@ event type, the headline shown in the feed, time and prices. No personal informa
 """
 from __future__ import annotations
 
+import json
 import os
 import sqlite3
 import statistics
@@ -42,7 +43,8 @@ CREATE TABLE IF NOT EXISTS events (
     at INTEGER NOT NULL,     -- event time, epoch seconds
     base REAL, p5m REAL, p30m REAL, pclose REAL, close_day TEXT,
     m5m INTEGER NOT NULL DEFAULT 0, m30m INTEGER NOT NULL DEFAULT 0,  -- horizon measured (price may be NULL: no trading)
-    done INTEGER NOT NULL DEFAULT 0
+    done INTEGER NOT NULL DEFAULT 0,
+    flags TEXT               -- a gapper's game-plan flags, JSON: ["low float", "SSR", ...]
 );
 CREATE INDEX IF NOT EXISTS events_at ON events(at);
 CREATE INDEX IF NOT EXISTS events_pending ON events(done, at);
@@ -110,10 +112,12 @@ def _median(values: list[float]) -> float | None:
 
 
 def summarize(rows: list[dict], key) -> list[dict]:
-    """Median reaction per group, most frequent first. key(row) -> group name or None."""
+    """Median reaction per group, most frequent first. key(row) -> a group name, a list of them
+    (a row in several groups), or None."""
     groups: dict[str, list[dict]] = {}
     for row in rows:
-        if (name := key(row)) is not None:
+        names = key(row)
+        for name in ([names] if isinstance(names, str) else names or []):
             groups.setdefault(name, []).append(returns(row))
     out = []
     for name, rs in groups.items():
@@ -142,6 +146,10 @@ class ReactionStore:
         self._db = sqlite3.connect(path, check_same_thread=False)
         self._db.row_factory = sqlite3.Row
         self._db.executescript(SCHEMA)
+        columns = {r["name"] for r in self._db.execute("PRAGMA table_info(events)")}
+        if "flags" not in columns:  # a history from before v0.27
+            self._db.execute("ALTER TABLE events ADD COLUMN flags TEXT")
+            self._db.commit()
         if new:
             os.chmod(path, 0o600)  # yours only, whatever the umask
 
@@ -153,8 +161,8 @@ class ReactionStore:
         """Store a new event; False if this id is already tracked (e.g. after a restart)."""
         with self._lock:
             cur = self._db.execute(
-                "INSERT OR IGNORE INTO events (id, symbol, kind, label, title, context, risk, at) "
-                "VALUES (:id, :symbol, :kind, :label, :title, :context, :risk, :at)", event)
+                "INSERT OR IGNORE INTO events (id, symbol, kind, label, title, context, risk, at, flags) "
+                "VALUES (:id, :symbol, :kind, :label, :title, :context, :risk, :at, :flags)", {"flags": None, **event})
             self._db.commit()
             return cur.rowcount == 1
 
@@ -235,7 +243,7 @@ def now_ts() -> int:
 
 
 CSV_COLUMNS = ("time_et", "symbol", "type", "catalyst", "context", "dilution_risk",
-               "move_5m_pct", "move_30m_pct", "move_close_pct", "close_day", "headline")
+               "move_5m_pct", "move_30m_pct", "move_close_pct", "close_day", "headline", "flags")
 FORMULA_START = ("=", "+", "-", "@", "\t", "\r")
 
 
@@ -259,5 +267,6 @@ def to_csv(rows: list[dict]) -> str:
         moves = [f"{r[h]:.2f}" if r[h] is not None else "" for h in ("5m", "30m", "close")]
         when = datetime.fromtimestamp(row["at"], ET).strftime("%Y-%m-%d %H:%M")
         writer.writerow([when, *(_text_cell(row[k]) for k in ("symbol", "kind", "label", "context", "risk")),
-                         *moves, row["close_day"] or "", _text_cell(row["title"])])
+                         *moves, row["close_day"] or "", _text_cell(row["title"]),
+                         "; ".join(json.loads(row["flags"])) if row.get("flags") else ""])
     return out.getvalue()

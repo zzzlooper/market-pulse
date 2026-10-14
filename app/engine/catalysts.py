@@ -4,6 +4,7 @@ Reactions tab's report. The measuring rules themselves are in app/reactions.py."
 from __future__ import annotations
 
 import asyncio
+import json
 import logging
 import time
 from datetime import datetime
@@ -25,6 +26,11 @@ from ..reactions import (
 )
 
 log = logging.getLogger(__name__)
+
+
+def gap_groups(row: dict) -> list[str]:
+    """A tracked gapper counts in "gap up" and in "gap up · <each of its flags>"."""
+    return [row["label"], *(f"{row['label']} · {tag}" for tag in json.loads(row["flags"] or "[]"))]
 
 REACTIONS_INTERVAL = 120.0  # how often pending catalyst reactions are measured
 REACTION_FETCHES = 20       # chart downloads per round, so Yahoo isn't hammered after a burst
@@ -66,6 +72,7 @@ class CatalystsMixin:
         self._risk_queue: asyncio.Queue[tuple[str, str]] = asyncio.Queue()  # offerings awaiting a risk level
         self._pruned_on = None  # the day old history was last deleted
         self._records: tuple[float, dict[str, dict]] | None = None  # (monotonic time, label -> stats)
+        self._gap_stats: tuple[float, dict[str, dict]] | None = None  # the same, for gappers
 
     def _context(self, symbol: str) -> str:
         if symbol in self.state.watchlist:
@@ -73,7 +80,7 @@ class CatalystsMixin:
         return "mover" if symbol in self._movers_by_symbol() else "other"
 
     def _track(self, event_id: str, symbol: str, kind: str, label: str, title: str, when: str,
-               risk: str | None = None) -> bool:
+               risk: str | None = None, flags: list[str] | None = None) -> bool:
         """Start tracking an event; False if it's too old, not a stock, or already tracked."""
         try:
             at = int(datetime.fromisoformat(when).timestamp())
@@ -82,7 +89,8 @@ class CatalystsMixin:
         if now_ts() - at > TRACK_MAX_AGE or symbol.startswith("^") or "=" in symbol:
             return False
         return self.reactions.add({"id": event_id, "symbol": symbol, "kind": kind, "label": label,
-                                   "title": title[:200], "context": self._context(symbol), "risk": risk, "at": at})
+                                   "title": title[:200], "context": self._context(symbol), "risk": risk, "at": at,
+                                   "flags": json.dumps(flags) if flags is not None else None})
 
     async def _fill_offering_risk(self) -> None:
         """Look up the dilution risk of each tracked offering, one at a time. The level is read
@@ -143,6 +151,14 @@ class CatalystsMixin:
     def reactions_csv(self, days: int) -> str:
         return to_csv(self.reactions.since(now_ts() - days * 86400))
 
+    def _gap_records(self) -> dict[str, dict]:
+        """How gappers followed through over the last RECORD_DAYS, by "gap up · low float" etc."""
+        mono = time.monotonic()
+        if self._gap_stats is None or mono - self._gap_stats[0] > RECORD_REFRESH:
+            rows = [r for r in self.reactions.since(now_ts() - RECORD_DAYS * 86400) if r["kind"] == "gap"]
+            self._gap_stats = (mono, {g["group"]: g for g in summarize(rows, gap_groups)})
+        return self._gap_stats[1]
+
     def _track_records(self) -> dict[str, dict]:
         """How each kind of alert followed through over the last RECORD_DAYS, by label."""
         mono = time.monotonic()
@@ -178,13 +194,15 @@ class CatalystsMixin:
     def reactions_report(self, days: int) -> dict:
         rows = self.reactions.since(now_ts() - days * 86400)
         keep = ("symbol", "kind", "label", "title", "context", "risk", "at", "close_day")
-        catalysts = [r for r in rows if r["kind"] != "alert"]
+        catalysts = [r for r in rows if r["kind"] not in ("alert", "gap")]
         return {
             "days": days,
             "tracked": len(rows),
             "catalysts": len(catalysts),
             "by_type": summarize(catalysts, lambda r: r["label"]),
             "alerts": summarize([r for r in rows if r["kind"] == "alert"], lambda r: r["label"]),
+            "gaps": summarize([r for r in rows if r["kind"] == "gap"], gap_groups),
+            "luld": self.luld_checks.summary(),
             "offerings_by_risk": summarize([r for r in rows if r["kind"] == "dilution"],
                                            lambda r: r["risk"] or "unknown"),
             "by_context": summarize(catalysts, lambda r: r["context"]),

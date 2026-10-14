@@ -314,9 +314,9 @@ def test_csv_export_has_market_data_only_and_defuses_formula_headlines(tmp_path,
     assert acme == {"time_et": "2026-10-13 10:00", "symbol": "ACME", "type": "dilution", "catalyst": "offering from shelf",
                     "context": "mover", "dilution_risk": "high", "move_5m_pct": "-0.50", "move_30m_pct": "-3.00",
                     "move_close_pct": "-14.00", "close_day": "2026-10-13",
-                    "headline": "Acme Rocket Corp: offering from shelf (424B5)"}
-    assert table[2][-1] == "'" + '=HYPERLINK("http://bad.example","click")'  # shown as text, never run
-    assert table[3][-1] == "'-5% guidance cut"
+                    "headline": "Acme Rocket Corp: offering from shelf (424B5)", "flags": ""}
+    assert table[2][CSV_COLUMNS.index("headline")] == "'" + '=HYPERLINK("http://bad.example","click")'  # text, never run
+    assert table[3][CSV_COLUMNS.index("headline")] == "'-5% guidance cut"
     assert table[2][6:9] == ["", "", ""]  # not measured yet
 
 

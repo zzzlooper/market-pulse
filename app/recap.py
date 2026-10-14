@@ -32,7 +32,7 @@ def build_recap(day: date, quotes: list[dict], halts: list[dict], events: list[d
     """A phone note (see notify.py). halts and events are today's; watched is the watchlist.
     Events are the tracked catalysts and the app's own alerts (kind "alert"), kept apart here."""
     alerts = [e for e in events if e["kind"] == "alert"]
-    events = [e for e in events if e["kind"] != "alert"]
+    events = [e for e in events if e["kind"] not in ("alert", "gap")]  # gappers: in the Reactions tab
     lines = []
     moves = sorted((q for q in quotes if q.get("change_pct") is not None), key=lambda q: -abs(q["change_pct"]))
     if moves:

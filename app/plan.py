@@ -89,6 +89,29 @@ def entry(gap: dict, *, watchlist: list[str], floats: dict, market_caps: dict, s
     }
 
 
+def tags(e: dict) -> list[str]:
+    """What a gapper's follow-through is grouped by in the Reactions tab: its catalyst and flags."""
+    cat = e["catalyst"]
+    out = ["with a filing" if cat and cat.get("filing") else "with a headline" if cat else "no catalyst"]
+    for f in e["flags"]:
+        text = f["text"]
+        if text.startswith("day 2"):
+            out.append("day 2")
+        elif text.startswith("RS "):
+            out.append("reverse split ahead" if text.endswith("ahead") else "reverse split done")
+        elif text.startswith("halted"):
+            out.append("halted")
+        elif text.startswith("earnings"):
+            out.append("earnings today")
+        elif text in ("low float", "SSR", "dilution high", "dilution medium"):
+            out.append(text)
+    return out
+
+
+def direction(e: dict) -> str:
+    return "gap up" if e["gap_pct"] > 0 else "gap down"
+
+
 def build(gaps: list[dict], **context) -> list[dict]:
     """The plan, in order: with a catalyst first, then by gap size (either way)."""
     entries = [entry(g, **context) for g in gaps]

@@ -22,6 +22,7 @@ from ..datastore import (
     alert_counts_item,
     delete_recordings,
     log_item,
+    luld_checks_item,
     reactions_item,
     recordings_item,
     settings_item,
@@ -520,6 +521,7 @@ class Engine(PricesMixin, FeedsMixin, RiskMixin, CatalystsMixin, DailyMixin, Gap
             reactions_item(self.reactions.path, self.reactions.stats(), self.settings.reactions_keep_days),
             recordings_item(folder, self.settings.record_keep, active),
             tls_item(TLS_DIR, tls_status(TLS_DIR)),
+            luld_checks_item(self.luld_checks.path, self.luld_checks.summary()["n"]),
             alert_counts_item(self.alert_counts.path,
                               sum(c["week"] for c in self.alert_counts.summary(clock.today(market.ET)).values())),
             log_item(),
@@ -535,6 +537,8 @@ class Engine(PricesMixin, FeedsMixin, RiskMixin, CatalystsMixin, DailyMixin, Gap
             delete_recordings(*self._recordings)
         elif store == "alert_counts":
             self.alert_counts.clear()
+        elif store == "luld_checks":
+            self.luld_checks.clear()
         elif store == "dashboard_settings":
             self.dashboard.path.unlink(missing_ok=True)
             fresh = self.dashboard.effective({})  # back to config.toml, environment and defaults

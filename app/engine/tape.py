@@ -4,12 +4,14 @@ breakouts (alerts, rules in app/breakouts.py)."""
 from __future__ import annotations
 
 import asyncio
+from collections import deque
+from datetime import datetime
 
 from .. import market
 from ..breakouts import Breakouts, money
 from ..clock import clock
 from ..halts import relevant
-from ..luld import Bands, tier
+from ..luld import Bands, Checks, tier
 from ..ssr import carried_over, triggered
 from ..warrants import shares_text
 
@@ -19,6 +21,7 @@ FLOAT_BATCH = 20        # float lookups per round: one Yahoo request each
 TAPE_TRIES = 3          # a symbol Yahoo has nothing on is given up on for the day after this
 LULD_COOLDOWN = 900     # seconds between band warnings for one stock and direction
 LULD_SEND_EVERY = 30    # the near-a-band stocks go to the browsers at most this often, unless one changes
+LULD_HISTORY = 120      # estimates kept per stock, to compare a pause with the one from before it
 
 
 def day2_move(days: list[dict], today: str, min_gain: float = 0.30) -> dict | None:
@@ -54,6 +57,9 @@ class TapeMixin:
         self._sympathy_sent: frozenset = frozenset()
         self._luld_bands = Bands()
         self._luld_warned: dict[tuple[str, str], float] = {}
+        self._luld_near_at: dict[tuple[str, str], float] = {}  # (symbol, side) -> last time seen near it
+        self._luld_history: dict[str, deque] = {}  # symbol -> (time, estimate), the last few minutes
+        self.luld_checks = Checks(self.state.path.parent / "luld_checks.json")  # mode 600
         self._luld_sent: tuple[float, frozenset] = (0.0, frozenset())
         self._wake_tape = asyncio.Event()
 
@@ -63,7 +69,7 @@ class TapeMixin:
         if today != self._tape_day:
             self._tape_day = today
             self.ssr, self.day2, self._tape_tries, self._tape_done = {}, {}, {}, set()
-            self.luld, self._luld_warned = {}, {}
+            self.luld, self._luld_warned, self._luld_history = {}, {}, {}
             self.sympathy, self._sympathy_alerted = {}, set()
             self._luld_bands.forget()
             self._rotation_last, self._rotation_fired = {}, set()
@@ -189,6 +195,23 @@ class TapeMixin:
         if fired:
             await self._publish_alerts(fired)
 
+    def _check_luld_estimate(self, halt: dict) -> dict | None:
+        """A LULD pause just appeared with its official pause price: how far off was the band
+        estimated for that stock, and had the app seen it near that band within 15 minutes?"""
+        symbol = halt["symbol"].replace(".", "-")  # Nasdaq BRK.B is Yahoo BRK-B
+        halted = datetime.fromisoformat(halt["halted_at"]).timestamp()
+        # The estimate from before the pause: during it, quotes repeat the last price and would
+        # pull the reference toward it.
+        before = [state for t, state in self._luld_history.get(symbol, ()) if t < halted]
+        if not before or not halt.get("pause_price"):
+            return None  # not a stock the app follows, or no price in the feed
+        state, official = before[-1], halt["pause_price"]
+        side = "up" if official > state["ref"] else "down"
+        estimate = state["upper"] if side == "up" else state["lower"]
+        near_at = self._luld_near_at.get((symbol, side))
+        warned = near_at is not None and halted - LULD_COOLDOWN <= near_at <= halted
+        return self.luld_checks.add(halt["halted_at"][:10], side, estimate, official, warned)
+
     def luld_near(self) -> dict[str, dict]:
         return {s: st for s, st in self.luld.items() if st["near"]}
 
@@ -203,7 +226,10 @@ class TapeMixin:
             tier_ = tier(row.get("market_cap") or self.market_caps.get(symbol))
             self.luld[symbol] = state = self._luld_bands.update(symbol, price, now, tier_,
                                                                 self.settings.luld_near_pct / 100)
+            self._luld_history.setdefault(symbol, deque(maxlen=LULD_HISTORY)).append((now, state))
             side = state["near"]
+            if side:
+                self._luld_near_at[(symbol, side)] = now
             if not side or now - self._luld_warned.get((symbol, side), float("-inf")) < LULD_COOLDOWN:
                 continue
             if not relevant({"symbol": symbol}, self.state.watchlist, self.state.halt_alerts):

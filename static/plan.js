@@ -46,6 +46,8 @@ function planPeers(p) {
   return `<p class="peers">${esc(p.industry)}: ${text}</p>`;
 }
 
+const fmtRecord = (v) => (v == null ? "–" : `<span class="${dir(v)}">${fmtPct(v)}</span>`);
+
 function planCard(e) {
   const when = e.at_open ? "at the open" : `${e.pre_minutes} min traded pre-market`;
   const cat = e.catalyst
@@ -62,6 +64,9 @@ function planCard(e) {
     ${e.flags.length ? `<div class="flags">${e.flags.map((f) => `<span class="flag ${esc(f.tone)}" title="${esc(f.why)}">${esc(f.text)}</span>`).join("")}</div>` : ""}
     ${e.levels.length ? `<ul class="levels">${e.levels.map(planLevel).join("")}</ul>` : ""}
     ${planPeers(e.peers)}
+    ${(e.records ?? []).map((g) => `<p class="record"><b>${esc(g.group)}</b>: 10:00 ${fmtRecord(g.median_30m)},
+      close ${fmtRecord(g.median_close)}, ${Math.round((g.down_share ?? 0) * 100)}% faded
+      <small class="muted">(${g.measured} in 30 days)</small></p>`).join("")}
   </article>`;
 }
 

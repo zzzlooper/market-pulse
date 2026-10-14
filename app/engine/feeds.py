@@ -80,6 +80,8 @@ class FeedsMixin:
         if changed:
             await self.hub.broadcast({"type": "halts", "data": self.halts.latest()})
         for halt in new:
+            if halt["reason_code"] in ("LUDP", "LUDS"):
+                self._check_luld_estimate(halt)
             self._track(f"halt:{halt['symbol']}:{halt['halted_at']}", halt["symbol"], "halt",
                         HALT_LABELS.get(halt["category"], "halt"), f"{halt['symbol']} halted · {halt['reason']}",
                         halt["halted_at"])

@@ -19,8 +19,12 @@ guessed from the market cap. With Yahoo's delayed prices a warning can come afte
 """
 from __future__ import annotations
 
+import json
+import os
+import statistics
 from collections import deque
 from datetime import datetime, time
+from pathlib import Path
 
 from .market import ET
 
@@ -75,3 +79,45 @@ class Bands:
     def forget(self) -> None:
         """A new session: yesterday's prices don't make today's reference."""
         self._prices.clear()
+
+
+CHECKS_KEPT = 500
+
+
+class Checks:
+    """How the estimates compare with the official bands: each LULD pause in Nasdaq's halt feed
+    carries the price that triggered it, compared with the band estimated just before. Kept in
+    data/luld_checks.json, the last CHECKS_KEPT: the day, the side, the error and whether a
+    warning came first. No tickers."""
+
+    def __init__(self, path: Path):
+        self.path = path
+        try:
+            self._rows: list[dict] = json.loads(path.read_text())
+        except (OSError, ValueError):
+            self._rows = []
+
+    def add(self, day: str, side: str, estimate: float, official: float, warned: bool) -> dict:
+        row = {"day": day, "side": side, "error_pct": round((estimate / official - 1) * 100, 2), "warned": warned}
+        self._rows = [*self._rows, row][-CHECKS_KEPT:]
+        self.path.parent.mkdir(parents=True, exist_ok=True)
+        tmp = self.path.with_suffix(".tmp")
+        tmp.write_text(json.dumps(self._rows))
+        os.chmod(tmp, 0o600)
+        tmp.replace(self.path)
+        return row
+
+    def summary(self) -> dict:
+        errors = [abs(r["error_pct"]) for r in self._rows]
+        if not errors:
+            return {"n": 0}
+        return {"n": len(errors), "median_error_pct": round(statistics.median(errors), 2),
+                "within_1_pct": round(sum(e <= 1 for e in errors) / len(errors), 2),
+                "within_3_pct": round(sum(e <= 3 for e in errors) / len(errors), 2),
+                "warned_share": round(sum(r["warned"] for r in self._rows) / len(errors), 2),
+                "worst_error_pct": max(errors)}
+
+    def clear(self) -> int:
+        n, self._rows = len(self._rows), []
+        self.path.unlink(missing_ok=True)
+        return n

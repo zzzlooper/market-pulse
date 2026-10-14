@@ -14,7 +14,7 @@ from .config import ROOT
 from .market import ET
 from .setup import EDITABLE
 
-DELETABLE = ("reactions", "recordings", "dashboard_settings", "alert_counts")
+DELETABLE = ("reactions", "recordings", "dashboard_settings", "alert_counts", "luld_checks")
 
 
 def shown_path(path: Path) -> str:
@@ -116,6 +116,15 @@ def alert_counts_item(path: Path, fired_week: int) -> dict:
         "deletable": path.exists(), "detail": f"{_count(fired_week, 'alert')} in the last 8 days, by kind",
         "note": "Kinds of alert and how many fired or went to the phone each day: no tickers.",
         "confirm": "Delete the alert counts? The Alerts panel's counts start from zero.",
+    }
+
+
+def luld_checks_item(path: Path, n: int) -> dict:
+    return {
+        "id": "luld_checks", "label": "LULD estimate checks", "path": shown_path(path), "size": _size(path),
+        "deletable": n > 0, "detail": f"{_count(n, 'pause')} compared with the band estimated before it",
+        "note": "The day, the side, how far off the estimate was and whether it was flagged near: no tickers.",
+        "confirm": "Delete the LULD checks? The accuracy in the Reactions tab starts from zero.",
     }
 
 

@@ -4,6 +4,8 @@ from __future__ import annotations
 
 import asyncio
 import logging
+from datetime import datetime
+from datetime import time as dtime
 
 from .. import market, plan
 from ..clock import clock
@@ -13,6 +15,7 @@ from ..recap import next_run
 log = logging.getLogger(__name__)
 
 GAP_INTERVAL = 60.0
+GAP_TRACK_FROM = dtime(9, 31)  # gappers are measured from the open, once its first minute is in
 
 
 class GapsMixin:
@@ -26,6 +29,7 @@ class GapsMixin:
         self._wake_gaps = asyncio.Event()  # new catalysts or movers: rescan now, not in a minute
         self.pre_highs: dict[str, float] = {}  # today, for every stock scanned, gapping or not
         self._gaps_sent: list[dict] | None = None  # what the browsers last got
+        self._gaps_tracked: set[str] = set()       # gapper events started today
 
     async def _update_gaps(self) -> str | None:
         now = clock.now(market.ET)
@@ -33,6 +37,7 @@ class GapsMixin:
             return None  # idle outside 04:00–10:00 ET on weekdays; the list stays up for the day
         if self._gaps_day != now.date():
             self.gaps, self._gaps_day, self._gaps_traded, self.pre_highs = [], now.date(), False, {}
+            self._gaps_tracked = set()
         s = self.settings
         context = candidates(self.state.watchlist, self._latest_news(), self.movers, now, s.gap_max_symbols)
         # No rows is normal at 04:01 (nothing has traded yet) and all day on a holiday.
@@ -51,7 +56,22 @@ class GapsMixin:
         if gaps != self._gaps_sent:  # pre-market prices move, but often a scan finds nothing new
             self._gaps_sent = gaps
             await self.hub.broadcast({"type": "gaps", "data": self.gaps})
+        if now.time() >= GAP_TRACK_FROM:
+            self._track_gappers(now)
         return None
+
+    def _track_gappers(self, now) -> None:
+        """Measure each gapper from the open (the first minute's close) to 10:00 and the close,
+        with its flags, so the Reactions tab can say which flags followed through."""
+        opened = datetime.combine(now.date(), market.OPEN, market.ET).isoformat()
+        for e in self.game_plan()["entries"]:
+            event_id = f"gap:{e['symbol']}:{now.date().isoformat()}"
+            if event_id in self._gaps_tracked:
+                continue
+            self._gaps_tracked.add(event_id)
+            level = (self.risk.get(e["symbol"]) or {}).get("level")
+            self._track(event_id, e["symbol"], "gap", plan.direction(e),
+                        f"{e['symbol']} gapped {e['gap_pct']:+.1f}%", opened, level, plan.tags(e))
 
     def game_plan(self) -> dict:
         """Today's gappers with everything known about each (app/plan.py), for the Plan view."""
@@ -61,6 +81,11 @@ class GapsMixin:
             self.gaps, watchlist=list(self.state.watchlist), floats=self.floats, market_caps=self.market_caps,
             ssr=self.ssr, risk=self.risk, day2=self.day2, pre_highs=self.pre_highs, sympathy=self.sympathy,
             industries=self.industries, halts=self.halts.latest(), earnings=self.earnings, today=today)
+        records, enough = self._gap_records(), self.settings.record_min
+        for e in entries:  # how gappers like it did, once enough were measured to the close
+            groups = [f"{plan.direction(e)} · {tag}" for tag in plan.tags(e)]
+            e["records"] = [{k: g[k] for k in ("group", "measured", "median_30m", "median_close", "down_share")}
+                            for name in groups if (g := records.get(name)) and g["measured"] >= enough]
         return {"day": today, "scanning": scanning(now), "gap_min_pct": self.settings.gap_min_pct, "entries": entries}
 
     def gap_brief(self) -> dict:

@@ -320,6 +320,7 @@ button:disabled { opacity: .5; cursor: default; border-color: var(--border); }
 .plan-card .levels li.offering b { color: #58a6ff; }
 .plan-card .levels li.warrant b { color: #f0883e; }
 .plan-card .peers { margin: 4px 0 0; font-size: 12px; }
+.plan-card .record { margin: 4px 0 0; font-size: 12px; }
 #setup-btn.attention { border-color: var(--down); color: var(--down); }
 #replay-banner { background: #8957e5; color: #fff; font-weight: 700; font-size: 12px; text-align: center;
   padding: 3px 8px; letter-spacing: 0.03em; }
