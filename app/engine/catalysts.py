@@ -31,6 +31,10 @@ REACTION_FETCHES = 20       # chart downloads per round, so Yahoo isn't hammered
 REACTION_BACKOFF = 1800.0   # an event with nothing new to measure waits this long
 TRACK_MAX_AGE = 5 * 86400   # older events can't be measured (5-day bars are the furthest back)
 
+RECORD_DAYS = 30        # an alert's track record covers this many days
+RECORD_MIN = 10         # and is quoted once this many have been measured to the close
+RECORD_REFRESH = 600.0  # seconds the track records are reused before being recomputed
+
 # The alerts whose follow-through is measured, and the group each is reported under: did the
 # stock keep going after a breakout, a level crossing, a float rotation, a resumption?
 TRACKED_ALERTS = {
@@ -42,6 +46,8 @@ TRACKED_ALERTS = {
     "rotation": "traded its whole float",
     "unusual": "entered unusual volume",
     "resumed": "resumed after a halt",
+    "luld_up": "near the limit-up band",
+    "luld_down": "near the limit-down band",
     "above": "your rules: price above",
     "below": "your rules: price below",
     "move": "your rules: move ±%",
@@ -59,6 +65,7 @@ class CatalystsMixin:
         self._reaction_retry: dict[str, float] = {}  # event id -> monotonic time to try again
         self._risk_queue: asyncio.Queue[tuple[str, str]] = asyncio.Queue()  # offerings awaiting a risk level
         self._pruned_on = None  # the day old history was last deleted
+        self._records: tuple[float, dict[str, dict]] | None = None  # (monotonic time, label -> stats)
 
     def _context(self, symbol: str) -> str:
         if symbol in self.state.watchlist:
@@ -136,11 +143,37 @@ class CatalystsMixin:
     def reactions_csv(self, days: int) -> str:
         return to_csv(self.reactions.since(now_ts() - days * 86400))
 
+    def _track_records(self) -> dict[str, dict]:
+        """How each kind of alert followed through over the last RECORD_DAYS, by label."""
+        mono = time.monotonic()
+        if self._records is None or mono - self._records[0] > RECORD_REFRESH:
+            rows = [r for r in self.reactions.since(now_ts() - RECORD_DAYS * 86400) if r["kind"] == "alert"]
+            self._records = (mono, {g["group"]: g for g in summarize(rows, lambda r: r["label"])})
+        return self._records[1]
+
+    def _add_track_records(self, fired: list[dict]) -> None:
+        """Quote, in each alert, how that kind of alert has followed through: is it worth acting on?
+        Only once enough have been measured to the close."""
+        if not any(e["kind"] in TRACKED_ALERTS for e in fired):
+            return
+        records = self._track_records()
+        for e in fired:
+            g = records.get(TRACKED_ALERTS.get(e["kind"], ""))
+            if not g or g["measured"] < RECORD_MIN:
+                continue
+            parts = [f"{label} {v:+.1f}%" for label, v in (("30 min", g["median_30m"]), ("close", g["median_close"]))
+                     if v is not None]
+            if g["down_share"] is not None:
+                parts.append(f"{g['down_share'] * 100:.0f}% closed lower")
+            e["record"] = {k: g[k] for k in ("measured", "median_30m", "median_close", "down_share")}
+            e["message"] += f" · track record: {', '.join(parts)} (median of {g['measured']} in {RECORD_DAYS} days)"
+
     def _track_alerts(self, fired: list[dict]) -> None:
         """Start measuring what the stock did after each alert that fired."""
         for e in fired:
             if label := TRACKED_ALERTS.get(e["kind"]):
-                self._track(f"alert:{e['id']}", e["symbol"], "alert", label, e["message"], e["time"])
+                message = e["message"].split(" · track record: ")[0]  # what happened, not what usually does
+                self._track(f"alert:{e['id']}", e["symbol"], "alert", label, message, e["time"])
 
     def reactions_report(self, days: int) -> dict:
         rows = self.reactions.since(now_ts() - days * 86400)

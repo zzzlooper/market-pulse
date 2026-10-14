@@ -6,8 +6,10 @@ from __future__ import annotations
 import asyncio
 
 from .. import market
-from ..breakouts import Breakouts
+from ..breakouts import Breakouts, money
 from ..clock import clock
+from ..halts import relevant
+from ..luld import Bands, tier
 from ..ssr import carried_over, triggered
 from ..warrants import shares_text
 
@@ -17,6 +19,8 @@ FLOAT_BATCH = 20        # float lookups per round: one Yahoo request each
 TAPE_TRIES = 3          # a symbol Yahoo has nothing on is given up on for the day after this
 ROTATION = 1.0          # volume / float that counts as having traded the whole float
 DAY2_MIN = 0.30         # the last session's close-to-close gain that makes today day 2
+LULD_COOLDOWN = 900     # seconds between band warnings for one stock and direction
+LULD_SEND_EVERY = 30    # the bands go to the browsers at most this often, unless one gets near
 
 
 def day2_move(days: list[dict], today: str) -> dict | None:
@@ -44,6 +48,11 @@ class TapeMixin:
         self._rotation_last: dict[str, float] = {}         # symbol -> last volume / float seen
         self._rotation_fired: set[str] = set()             # today
         self.breakouts = Breakouts()
+        self.luld: dict[str, dict] = {}                    # symbol -> estimated bands, today
+        self.market_caps: dict[str, float] = {}            # symbol -> market cap, for the LULD tier
+        self._luld_bands = Bands()
+        self._luld_warned: dict[tuple[str, str], float] = {}
+        self._luld_sent: tuple[float, frozenset] = (0.0, frozenset())
         self._wake_tape = asyncio.Event()
 
     def _tape_today(self) -> str:
@@ -52,6 +61,8 @@ class TapeMixin:
         if today != self._tape_day:
             self._tape_day = today
             self.ssr, self.day2, self._tape_tries, self._tape_done = {}, {}, {}, set()
+            self.luld, self._luld_warned = {}, {}
+            self._luld_bands.forget()
             self._rotation_last, self._rotation_fired = {}, set()
         return today
 
@@ -90,6 +101,7 @@ class TapeMixin:
         if todo := self._tape_todo("float", symbols)[:FLOAT_BATCH]:
             rows = await self._call("fetch_floats", market.fetch_floats, todo)
             self._tape_got("float", todo, {r["symbol"] for r in rows})
+            self.market_caps.update({r["symbol"]: r["market_cap"] for r in rows if r.get("market_cap")})
             new = {r["symbol"]: int(r["float_shares"]) for r in rows
                    if r.get("float_shares") and self.floats.get(r["symbol"]) != int(r["float_shares"])}
             if new:
@@ -125,7 +137,41 @@ class TapeMixin:
             await self.hub.broadcast({"type": "ssr", "data": dict(self.ssr)})
         if fired:
             await self._publish_alerts(self.alerts.record(fired))
-        await self._check_breakouts([r for r in rows if r.get("session") in (None, today)], regular=regular)
+        todays = [r for r in rows if r.get("session") in (None, today)]
+        await self._check_breakouts(todays, regular=regular)
+        if regular:
+            await self._check_luld(todays)
+
+    async def _check_luld(self, rows: list[dict]) -> None:
+        """Estimate each stock's LULD bands (app/luld.py) and warn when the price nears one, for
+        the stocks the halt-alert setting covers. At most every 15 minutes per stock and side."""
+        now, fired = clock.time(), []
+        for row in rows:
+            symbol, price = row.get("symbol"), row.get("price")
+            if not symbol or not price or symbol.startswith("^") or "=" in symbol:
+                continue
+            tier_ = tier(row.get("market_cap") or self.market_caps.get(symbol))
+            self.luld[symbol] = state = self._luld_bands.update(symbol, price, now, tier_)
+            side = state["near"]
+            if not side or now - self._luld_warned.get((symbol, side), float("-inf")) < LULD_COOLDOWN:
+                continue
+            if not relevant({"symbol": symbol}, self.state.watchlist, self.state.halt_alerts):
+                continue
+            self._luld_warned[(symbol, side)] = now
+            edge = state["upper"] if side == "up" else state["lower"]
+            name = "limit-up" if side == "up" else "limit-down"
+            pct = round((state["upper"] - state["ref"]) / state["ref"] * 100)
+            fired.append(self.alerts.event(row, f"luld_{side}", (
+                f"{symbol} is {state['away_pct']:.1f}% from its estimated {name} band of {money(edge)} "
+                f"(reference {money(state['ref'])}, ±{pct}%): it pauses for 5 minutes there "
+                "if it can't get back inside within 15 seconds")))
+        near = frozenset(s for s, st in self.luld.items() if st["near"])
+        sent_at, sent_near = self._luld_sent
+        if near != sent_near or now - sent_at >= LULD_SEND_EVERY:
+            self._luld_sent = (now, near)
+            await self.hub.broadcast({"type": "luld", "data": dict(self.luld)})
+        if fired:
+            await self._publish_alerts(self.alerts.record(fired))
 
     async def _check_breakouts(self, rows: list[dict], regular: bool) -> None:
         """Feed today's prices to the breakout rules; alert on what they find, unless switched off."""

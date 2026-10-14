@@ -375,6 +375,21 @@ There's deliberately no offline cache: nothing from the dashboard is stored on t
     at or after the resumption against the last trade before the halt (the pause price if the
     chart has none), so it waits for Yahoo's bar, up to 30 minutes. A resumption that happened
     before the app started isn't reported. Both go to the phone with the halts, as high priority.
+  - **LULD bands** (`app/luld.py`), estimated: in regular hours a stock may only trade within
+    a band around the average price of its last 5 minutes, and at a band it pauses (the LUDP
+    halts). The bands are 10% above $3 (5% for Tier 1: S&P 500 and Russell 1000 stocks, guessed
+    here as a market cap of $4B or more), 20% from $0.75 to $3, and the lesser of $0.15 or 75%
+    below that; doubled from 15:35 for Tier 1 and for Tier 2 at $3 or less (no doubling at the
+    open since 2020).
+    - A **LULD ↑1.3%** badge marks a stock within a quarter of the band's width of a band; hover
+      for the bands. The ticker panel shows the estimated bands all session.
+    - For the stocks the halt-alert setting covers, a warning when one nears a band: *BOLT is
+      2.2% from its estimated limit-up band of $11.29 (reference $10.26, ±10%): it pauses for 5
+      minutes there if it can't get back inside within 15 seconds*. At most every 15 minutes per
+      stock and side; to the phone with the halts.
+    - An estimate: the reference price is the average of the prices this app saw (every tick
+      with Finnhub, a reading a minute or so with Yahoo), not of every trade. Yahoo's prices are
+      delayed ~15 minutes, so without Finnhub a warning can arrive after the pause.
   - Open `http://localhost:8000/#halts` to start on the Halts tab.
 - **Sentiment**: every headline is scored −1…+1 by a local finance lexicon (`app/sentiment.py`),
   with no API calls. Items at ±0.35 or beyond get a ▲ bullish / ▼ bearish badge, and hovering
@@ -506,6 +521,10 @@ There's deliberately no offline cache: nothing from the dashboard is stored on t
     your own price/volume rules. Grouped by alert, it shows which ones the stock followed
     through on and which were noise, e.g. whether pre-market-high breaks held to the close.
     They're kept apart from the catalysts, and the recap gets one line for them.
+  - **Track records in the alerts**: once 10 alerts of a kind have been measured to the close
+    in the last 30 days, each new one says how that kind has done, e.g. *ACME broke its
+    pre-market high of $5.00 (now $5.10) · track record: 30 min +2.0%, close -4.0%, 58% closed
+    lower (median of 12 in 30 days)*, on screen and on the phone. Until then they say nothing.
   - The tab shows the median move per catalyst type over 7/30/90 days, with *n* (tracked ·
     measured to the close) and the share that closed lower, and the same for offerings
     grouped by the stock's dilution risk. That's the check on the risk score: if *high* doesn't
@@ -567,6 +586,7 @@ app/
   tls.py      HTTPS: a name-constrained local CA and the server certificate it signs
   warrants.py warrant overhang signals and the offering price from a filing's first pages
   ssr.py      the short sale restriction (Rule 201): triggered today, carried over from yesterday
+  luld.py     limit up / limit down bands, estimated from the last 5 minutes of prices
   splits.py   reverse splits from an 8-K's first pages: the ratio and the day it takes effect
   breakouts.py  through the pre-market high, a new high of day after a pullback
   serve.py    python -m app.serve [--https]: starts the app, as the background service does
@@ -586,12 +606,12 @@ app/
     daily.py      the end-of-day recap
     gaps.py       the pre-market gap scanner and its brief
     earnings.py   the watchlist's next earnings dates
-    tape.py       the short sale restriction, float rotation, breakouts and day-2 runners (SSR, ROT, D2)
+    tape.py       the short sale restriction, float rotation, breakouts, day-2 runners and LULD bands
     resumptions.py  halt resumptions: the heads-up a minute before, and how trading resumed
   main.py     FastAPI routes, access token and /ws endpoint
 static/       single-page dashboard: plain scripts sharing globals, no build step, loaded in this order
   core.js     state, formatting, the market clock, server calls
-  tables.js   table rows and badges (HALTED, DIL, WAR, SSR, ROT, RS, D2, ER, sentiment): watchlist, movers, unusual
+  tables.js   table rows and badges (HALTED, DIL, WAR, SSR, ROT, RS, D2, LULD, ER, sentiment): watchlist, movers, unusual
   tabs.js     left-panel tabs: halts, pre-market gaps, catalyst reactions
   news.js     news feed, filters, keyword highlighting
   alerts.js   alert rules and log, the Phone box, desktop notifications and sound

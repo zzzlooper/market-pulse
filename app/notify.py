@@ -42,6 +42,8 @@ ALERT_KINDS = {
     "hod": ("breakouts", "high", "chart_with_upwards_trend"),
     "resuming": ("halts", "high", "hourglass_flowing_sand"),
     "resumed": ("halts", "high", "arrow_forward"),
+    "luld_up": ("halts", "high", "warning"),
+    "luld_down": ("halts", "high", "warning"),
 }
 
 
@@ -51,7 +53,7 @@ def from_alert(event: dict, public_url: str = "") -> dict:
               "warrant": "warrants in the money", "offering_below": "below offering price",
               "offering_above": "back above offering price", "rotation": "float rotated",
               "pmh": "broke pre-market high", "hod": "new high of day", "resuming": "resumes in a minute",
-              "resumed": "resumed"}
+              "resumed": "resumed", "luld_up": "near limit-up band", "luld_down": "near limit-down band"}
     return {
         "category": category,
         "title": f"{event['symbol']} · {titles.get(event['kind'], 'price alert')}",

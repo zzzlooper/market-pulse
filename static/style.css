@@ -240,6 +240,10 @@ button:disabled { opacity: .5; cursor: default; border-color: var(--border); }
 .rs-badge { color: #0d1117; background: #39c5cf; }
 .rs-badge.done { color: #39c5cf; background: none; border: 1px solid #39c5cf; }
 .d2-badge { color: #f0883e; border: 1px solid #f0883e; }
+.luld-badge { font-size: 9px; font-weight: 700; padding: 0 3px; border-radius: 2px; cursor: help; vertical-align: 1px;
+  white-space: nowrap; border: 1px dashed currentColor; }
+.luld-badge.up { color: var(--up); }
+.luld-badge.down { color: var(--down); }
 .ssr-badge { font-size: 9px; font-weight: 700; padding: 0 3px; border-radius: 2px; cursor: help;
   vertical-align: 1px; letter-spacing: 0.03em; color: #d2a8ff; border: 1px solid #d2a8ff99; }
 .rot-badge { font-size: 9px; font-weight: 700; padding: 0 3px; border-radius: 2px; cursor: help;

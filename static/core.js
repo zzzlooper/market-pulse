@@ -14,6 +14,7 @@ const state = {
   pre_highs: {},  // symbol -> today's pre-market high, for every stock the gap scanner covers
   halt_info: {},  // halt id -> how trading resumed: first trade, the price before the halt, the move
   day2: {},       // symbol -> { date, change_pct }: a big gainer in the last session
+  luld: {},       // symbol -> { ref, lower, upper, tier, near, away_pct }: estimated LULD bands, regular hours
 };
 const lastPrice = new Map();   // symbol -> price, to flash changes
 const MAX_NEWS = 500;

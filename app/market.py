@@ -186,7 +186,8 @@ def fetch_daily(symbols: list[str]) -> list[dict]:
 
 
 def fetch_floats(symbols: list[str]) -> list[dict]:
-    """Shares in the public float per symbol, from Yahoo's company data (None when unknown)."""
+    """Shares in the public float and the market cap per symbol, from Yahoo's company data
+    (None when unknown). The market cap guesses a stock's LULD tier."""
     from concurrent.futures import ThreadPoolExecutor
 
     def one(symbol: str) -> dict | None:
@@ -195,7 +196,7 @@ def fetch_floats(symbols: list[str]) -> list[dict]:
         except Exception as exc:  # one unknown symbol shouldn't sink the rest
             log.info("float for %s unavailable: %s", symbol, exc)
             return None
-        return {"symbol": symbol, "float_shares": info.get("floatShares")}
+        return {"symbol": symbol, "float_shares": info.get("floatShares"), "market_cap": info.get("marketCap")}
     with ThreadPoolExecutor(max_workers=4) as pool:
         return [row for row in pool.map(one, symbols) if row]
 

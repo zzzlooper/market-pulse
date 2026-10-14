@@ -140,6 +140,7 @@ class Engine(PricesMixin, FeedsMixin, RiskMixin, CatalystsMixin, DailyMixin, Gap
             "pre_highs": self.pre_highs,
             "halt_info": self.halt_info,
             "day2": self.day2,
+            "luld": self.luld,
             "floats": self.floats,
         }
 
@@ -256,6 +257,7 @@ class Engine(PricesMixin, FeedsMixin, RiskMixin, CatalystsMixin, DailyMixin, Gap
 
     async def _publish_alerts(self, fired: list[dict]) -> None:
         if fired:
+            self._add_track_records(fired)
             log.info("alerts: %s", "; ".join(e["message"] for e in fired))
             await self.hub.broadcast({"type": "alerts", "data": fired})
             self.phone.enqueue([from_alert(e, self.settings.public_url) for e in fired], self.state.phone_alerts)

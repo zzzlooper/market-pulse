@@ -131,7 +131,7 @@ function renderGaps() {
       ? `<span class="clamp" title="${esc(`${fmtTime(g.catalyst.at)} · ${g.catalyst.text}`)}">${
         g.catalyst.filing ? `<b>${esc(g.catalyst.text)}</b>` : esc(g.catalyst.text)}</span>`
       : `<span class="muted">${esc(g.why)}</span>`;
-    return `<tr><td><a class="sym" data-sym="${esc(g.symbol)}">${esc(g.symbol)}</a>${haltBadge(g.symbol)}${riskBadge(g.symbol)}${warrantBadge(g.symbol, g.price)}${ssrBadge(g.symbol)}${splitBadge(g.symbol)}${day2Badge(g.symbol)}${erBadge(g.symbol)}</td>
+    return `<tr><td><a class="sym" data-sym="${esc(g.symbol)}">${esc(g.symbol)}</a>${haltBadge(g.symbol)}${riskBadge(g.symbol)}${warrantBadge(g.symbol, g.price)}${ssrBadge(g.symbol)}${splitBadge(g.symbol)}${day2Badge(g.symbol)}${luldBadge(g.symbol)}${erBadge(g.symbol)}</td>
       <td class="${dir(g.gap_pct)}">${fmtPct(g.gap_pct)}</td><td>${fmtPrice(g.price)}</td>
       <td>${g.at_open ? `<small class="muted">open</small>` : g.pre_minutes}</td><td class="why">${why}</td></tr>`;
   }).join("");

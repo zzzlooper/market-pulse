@@ -31,6 +31,7 @@ function handle({ type, data }) {
     case "ssr": state.ssr = data; renderWatchlist(); renderMovers(); renderUnusual(); renderGaps(); refreshDetail("quotes"); break;
     case "pre_highs": state.pre_highs = data; refreshDetail("quotes"); break;
     case "halt_info": state.halt_info = data; renderHalts(); refreshDetail("halts"); break;
+    case "luld": state.luld = data; renderWatchlist(); renderMovers(); renderUnusual(); renderGaps(); refreshDetail("quotes"); break;
     case "day2": state.day2 = data; renderWatchlist(); renderMovers(); renderUnusual(); renderGaps(); refreshDetail("quotes"); break;
     case "floats": state.floats = data; renderWatchlist(); renderMovers(); renderUnusual(); refreshDetail("quotes"); break;
     case "news": addNews(data); break;

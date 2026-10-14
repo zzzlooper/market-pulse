@@ -18,7 +18,7 @@ function quoteRow(r, extra = "", flashable = false) {
     : "";
   const stale = r.stale ? ` class="stale" title="No fresh price from Yahoo; showing the last one received"` : "";
   return `<tr${stale}>
-    <td><a class="sym" data-sym="${esc(r.symbol)}" title="${esc(r.name)}">${esc(r.symbol)}</a>${haltBadge(r.symbol)}${riskBadge(r.symbol)}${warrantBadge(r.symbol, r.price)}${ssrBadge(r.symbol)}${rotationBadge(r)}${splitBadge(r.symbol)}${day2Badge(r.symbol)}${erBadge(r.symbol)}</td>
+    <td><a class="sym" data-sym="${esc(r.symbol)}" title="${esc(r.name)}">${esc(r.symbol)}</a>${haltBadge(r.symbol)}${riskBadge(r.symbol)}${warrantBadge(r.symbol, r.price)}${ssrBadge(r.symbol)}${rotationBadge(r)}${splitBadge(r.symbol)}${day2Badge(r.symbol)}${luldBadge(r.symbol)}${erBadge(r.symbol)}</td>
     <td class="${flash}">${live}${fmtPrice(r.price)}</td>
     <td class="${dir(r.change_pct)}">${fmtPct(r.change_pct)}</td>
     <td>${fmtVol(r.volume)}</td>
@@ -114,6 +114,22 @@ function splitBadge(sym) {
     `Every ${rs.ratio} shares become one, so the float is ${rs.ratio}× smaller: freshly split stocks often run, ` +
     "and offerings often follow.";
   return ` <span class="rs-badge${done ? " done" : ""}" title="${esc(tip)}">RS 1:${rs.ratio}</span>`;
+}
+
+// LULD: near an estimated limit-up/limit-down band, where a volatility pause comes (app/luld.py).
+function luldText(l) {
+  const pct = Math.round(((l.upper - l.ref) / l.ref) * 100);
+  return `Estimated LULD bands ${fmtPrice(l.lower)}–${fmtPrice(l.upper)} around ${fmtPrice(l.ref)} ` +
+    `(average of the last 5 minutes; Tier ${l.tier}, ±${pct}%)`;
+}
+
+function luldBadge(sym) {
+  const l = state.luld?.[sym];
+  if (!l?.near) return "";
+  const side = l.near === "up" ? "limit-up" : "limit-down";
+  const tip = `${l.away_pct.toFixed(1)}% from the ${side} band. ${luldText(l)}. At a band the stock pauses ` +
+    "for 5 minutes if it can't get back inside within 15 seconds. An estimate from the prices this app sees.";
+  return ` <span class="luld-badge ${l.near}" title="${esc(tip)}">LULD ${l.near === "up" ? "↑" : "↓"}${l.away_pct.toFixed(1)}%</span>`;
 }
 
 // D2: up 30% or more in the last session; today is its second day.

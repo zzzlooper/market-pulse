@@ -31,6 +31,8 @@ def made_up_morning(folder):
     day.halt("09:35", "BOLT", "LUDP")
     day.halt("09:38", "DYNA", "LUDP", resumes="09:55")  # a mover, resuming while the tests run
     day.chart("ACME", lambda hhmm: 10.0 if hhmm < "07:00" else 7.8)
+    day.chart("BOLT", lambda hhmm: 10.0 if hhmm < "09:30" else 10.5)
+    day.profile("BOLT", "low")
     day.earnings("04:00", BOLT=("2026-10-13", "07:00", False), FERN=("2026-10-16", "16:05", False))
     day.daily("04:00", ACME=[("2026-10-09", 9.6, 10.0), ("2026-10-12", 8.5, 9.0)],  # fell 15% yesterday: SSR today
               CRUX=[("2026-10-09", 9.0, 8.0), ("2026-10-12", 8.0, 10.0)])           # up 25%... not day 2
@@ -161,6 +163,22 @@ def test_reverse_splits_and_day_2_runners_are_badged(page, world):
     assert page.eval("!!document.querySelector('#movers a.sym[data-sym=DYNA]').parentElement.querySelector('.d2-badge')")
     assert page.eval("splitWhen({effective: '2026-10-10', filed: '2026-10-01'})") == "effective Oct 10, 2026 (3 days ago)"
     assert page.eval("splitWhen({effective: null, filed: '2026-10-01'})") == "announced Oct 1, 2026, date not found in the filing"
+
+
+def test_estimated_luld_bands_show_in_the_panel_and_a_badge_when_near(page, world):
+    open_dashboard(page, world)
+    page.wait("!!state.luld.BOLT", timeout=20)  # regular hours: the watchlist quotes feed the estimate
+    page.click("#watchlist a.sym[data-sym=BOLT]")
+    stat = page.wait("[...document.querySelectorAll('#detail-stats div')].find(d => d.textContent.includes('LULD'))?.innerText")
+    assert stat.split() == ["LULD", "bands", "est.", "9.45–11.55"]  # 10.50 ± 10%
+    page.eval("document.dispatchEvent(new KeyboardEvent('keydown', {key: 'Escape'}))")
+    # A stock near a band (the server's message, as it would send it):
+    page.eval("""handle({type: 'luld', data: {...state.luld,
+        FERN: {ref: 9.6, lower: 8.64, upper: 10.56, tier: 2, near: 'up', away_pct: 1.3}}})""")
+    badge = page.wait("[...document.querySelectorAll('#watchlist .luld-badge')].map(b => [b.textContent, b.title])")
+    assert badge == [["LULD ↑1.3%", ("1.3% from the limit-up band. Estimated LULD bands 8.64–10.56 around 9.60 (average "
+                                     "of the last 5 minutes; Tier 2, ±10%). At a band the stock pauses for 5 minutes if "
+                                     "it can't get back inside within 15 seconds. An estimate from the prices this app sees.")]]
 
 
 def test_a_stock_that_traded_its_whole_float_gets_a_rot_badge(page, world):

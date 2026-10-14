@@ -53,7 +53,7 @@ function addAlerts(events) {
                  warrant: "warrants in the money", offering_below: "below offering price",
                  offering_above: "back above offering price", rotation: "float rotated",
                  pmh: "broke pre-market high", hod: "new high of day", resuming: "resumes in a minute",
-                 resumed: "resumed" };
+                 resumed: "resumed", luld_up: "near limit-up band", luld_down: "near limit-down band" };
   notify(events.map((a) => ({ title: `${a.symbol} · ${what[a.kind] ?? "price alert"}`, body: a.message, tag: a.id })), 660);
 }
 

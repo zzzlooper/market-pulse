@@ -295,12 +295,18 @@ function updateDetailPrice() {
   const live = q?.live ? `<span class="live-dot" title="Real-time (Finnhub)"></span>` : "";
   const delayed = q?.live ? "" : `<small class="muted">delayed ~15 min</small>`;
   el.innerHTML = `${live}<strong>${fmtPrice(price)}</strong>
-    <span class="${dir(pct)}">${fmtPct(pct)}</span>${haltBadge(detail.symbol)}${warrantBadge(detail.symbol, price)}${ssrBadge(detail.symbol)}${splitBadge(detail.symbol)}${day2Badge(detail.symbol)} ${delayed}`;
+    <span class="${dir(pct)}">${fmtPct(pct)}</span>${haltBadge(detail.symbol)}${warrantBadge(detail.symbol, price)}${ssrBadge(detail.symbol)}${splitBadge(detail.symbol)}${day2Badge(detail.symbol)}${luldBadge(detail.symbol)} ${delayed}`;
 }
 
 function updateDetailWatch() {
   const btn = $("#detail-watch");
   if (btn) btn.textContent = state.watchlist.includes(detail.symbol) ? "★ On watchlist" : "☆ Add to watchlist";
+}
+
+function luldStat(l) {
+  if (!l) return `<div title="Estimated from the prices of the last 5 minutes, in regular hours"><span>LULD bands</span><b>–</b></div>`;
+  return `<div title="${esc(luldText(l))}. An estimate from the prices this app sees."><span>LULD bands <small>est.</small></span>` +
+    `<b class="${l.near ? "hot" : ""}">${fmtPrice(l.lower)}–${fmtPrice(l.upper)}</b></div>`;
 }
 
 function floatStat(float, volume) {
@@ -329,6 +335,7 @@ function updateDetailStats() {
     stat("Gap", fmtPct(p.gap_pct), dir(p.gap_pct)),
     stat("PM high", fmtPrice(state.pre_highs?.[detail.symbol]),
       q?.price != null && q.price >= state.pre_highs?.[detail.symbol] ? "up" : ""),
+    luldStat(state.luld?.[detail.symbol]),
     stat("Day range", range(p.day_low, p.day_high)),
     stat("52-wk range", range(p.week52_low, p.week52_high)),
     stat("Volume", fmtVol(volume)),
