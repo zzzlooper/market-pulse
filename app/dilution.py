@@ -25,6 +25,8 @@ from .clock import clock
 from .filings import DILUTION, ITEMS_8K
 from .market import ET
 from .sec import SecClient
+from .splits import current as split_current
+from .splits import detect as detect_split
 from .warrants import HEAD_BYTES, describe_sold, detect
 
 log = logging.getLogger(__name__)
@@ -34,6 +36,8 @@ CONCEPT_URL = "https://data.sec.gov/api/xbrl/companyconcept/CIK{cik}/{taxonomy}/
 INDEX_URL = "https://www.sec.gov/Archives/edgar/data/{cik}/{folder}/{accession}-index.htm"
 DOC_URL = "https://www.sec.gov/Archives/edgar/data/{cik}/{folder}/{doc}"
 WARRANT_FILINGS = 3          # newest offering-type filings read for warrants, per profile
+SPLIT_FILINGS = 2            # newest 8-Ks with item 3.03 or 5.03 read for a reverse split
+SPLIT_LOOKBACK = timedelta(days=60)
 WARRANT_OVERHANG_PCT = 10.0  # outstanding warrant shares at least this share of the float scores
 WARRANT_LEVELS = 6           # exercise prices watched per stock
 COMPANY_URL = "https://www.sec.gov/cgi-bin/browse-edgar?action=getcompany&CIK={cik}&owner=include&count=40"
@@ -138,6 +142,11 @@ def filing_history(submissions: dict, today: date) -> dict:
             for r in rows if r["doc"] and within(r, YEAR)
             and (r["form"] in OFFERING_FORMS | REGISTRATION_FORMS | {"424B3", "424B7"}
                  or (r["form"] == "8-K" and "3.02" in r["items"]))][:WARRANT_FILINGS],
+        # Recent 8-Ks that may announce a reverse split: a rights change or a charter amendment.
+        "split_candidates": [
+            {"form": r["form"], "filed": r["filed"], "accession": r["accession"], "doc": r["doc"]}
+            for r in rows if r["doc"] and r["form"] == "8-K" and within(r, SPLIT_LOOKBACK)
+            and {"3.03", "5.03"} & set(r["items"])][:SPLIT_FILINGS],
     }
 
 
@@ -314,7 +323,7 @@ class DilutionProfiles:
         self.sec = sec
         self._cache: OrderedDict[str, tuple[float, dict | None]] = OrderedDict()
         self._loading: dict[str, asyncio.Future] = {}
-        self._warrants: dict[str, dict | None] = {}  # accession -> warrant facts
+        self._docs: dict[str, dict] = {}  # accession -> {"warrants": facts, "split": facts}
 
     def is_fresh(self, symbol: str) -> bool:
         hit = self._cache.get(symbol.upper())
@@ -352,7 +361,13 @@ class DilutionProfiles:
         runway = cash_runway(cash, operating, today)
         growth = share_growth(shares, today)
         candidates = history.pop("warrant_candidates")
-        warrants = warrant_summary([(c, await self._warrant_facts(c)) for c in candidates])
+        warrants = warrant_summary([(c, (await self._doc_facts(c))["warrants"]) for c in candidates])
+        reverse_split = None
+        for c in history.pop("split_candidates"):  # newest first
+            split = (await self._doc_facts(c))["split"]
+            if split_current(split, c["filed"], today):
+                reverse_split = {**split, "form": c["form"], "filed": c["filed"]}
+                break
         return {
             "symbol": symbol,
             "sec_url": COMPANY_URL.format(cik=int(cik)),
@@ -361,20 +376,23 @@ class DilutionProfiles:
             "cash": runway,
             "shares": growth,
             "warrants": warrants,
+            "reverse_split": reverse_split,
         }
 
-    async def _warrant_facts(self, candidate: dict) -> dict | None:
-        """A filing's warrant facts, read once: filings don't change."""
+    async def _doc_facts(self, candidate: dict) -> dict:
+        """What a filing's first pages say about warrants and a reverse split, read once: filings
+        don't change. Unreadable now: nothing, and tried again with the next profile."""
         key = candidate["accession"]
-        if key not in self._warrants:
+        if key not in self._docs:
             try:
-                self._warrants[key] = detect(await self.sec.get_head(candidate["doc"], HEAD_BYTES))
-            except Exception as exc:  # unreadable now: try again with the next profile
-                log.info("warrants in %s %s unknown: %s", candidate["form"], candidate["filed"], exc)
-                return None
-            while len(self._warrants) > 2000:
-                self._warrants.pop(next(iter(self._warrants)))
-        return self._warrants[key]
+                head = await self.sec.get_head(candidate["doc"], HEAD_BYTES)
+            except Exception as exc:
+                log.info("first pages of %s %s unreadable: %s", candidate["form"], candidate["filed"], exc)
+                return {"warrants": None, "split": None}
+            self._docs[key] = {"warrants": detect(head), "split": detect_split(head)}
+            while len(self._docs) > 2000:
+                self._docs.pop(next(iter(self._docs)))
+        return self._docs[key]
 
     async def _concept(self, cik: str, candidates: tuple[tuple[str, str], ...]) -> dict | None:
         for taxonomy, concept in candidates:
@@ -395,5 +413,7 @@ def summary(profile: dict | None) -> dict | None:
 
     def levels(key: str) -> list[dict]:
         return [{**lv, "filed": lv["filed"].isoformat()} for lv in warrants.get(key, [])]
+    split = profile.get("reverse_split")
     return {"level": profile["level"], "points": profile["points"], "reasons": top,
-            "warrant_levels": levels("levels"), "offering_levels": levels("offering_levels")}
+            "warrant_levels": levels("levels"), "offering_levels": levels("offering_levels"),
+            "reverse_split": {**split, "filed": split["filed"].isoformat()} if split else None}

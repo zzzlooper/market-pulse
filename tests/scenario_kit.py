@@ -209,9 +209,11 @@ class Day:
                f"</nonDerivativeTransaction></nonDerivativeTable></ownershipDocument>")
         return self.filing(hhmm, "4", ticker, document=doc)
 
-    def profile(self, ticker: str, level: str, offering_text: str | None = None) -> None:
+    def profile(self, ticker: str, level: str, offering_text: str | None = None, split_text: str | None = None,
+                split_filed: str = "2026-10-09") -> None:
         """SEC history and financials that score `level` (high or low) for dilution risk.
-        offering_text: the document of the newest offering (a high profile's 424B5 of Aug 1)."""
+        offering_text: the document of the newest offering (a high profile's 424B5 of Aug 1).
+        split_text: an 8-K with items 3.03 and 5.03 filed on split_filed, and its document."""
         _, cik = COMPANIES[ticker]
         if level == "high":
             # Pending S-1, effective shelf, two offerings, private sales, ~2 months of cash,
@@ -224,11 +226,20 @@ class Day:
             cash, burn, shares = 900_000_000, 50_000_000, (100_000_000, 99_000_000)
         else:
             raise ValueError(level)
+        docs = {i: "" for i in range(len(rows))}
+        if offering_text:
+            docs[1] = "offering.htm"
+        if split_text:
+            rows.append(("8-K", split_filed, "3.03,5.03,9.01"))  # the API sorts by date; so does the app
+            docs[len(rows) - 1] = "split.htm"
+            folder = f"{cik}-26-9{len(rows) - 1:05d}".replace("-", "")
+            self.record(self.start, get(f"https://www.sec.gov/Archives/edgar/data/{int(cik)}/{folder}/split.htm"),
+                        {"s": 200, "ct": "text/html", "b": split_text})
         self.record(self.start, get(SUBMISSIONS_URL.format(cik=cik)), self._json({
             "cik": cik, "filings": {"files": [], "recent": {
                 "form": [r[0] for r in rows], "filingDate": [r[1] for r in rows], "items": [r[2] for r in rows],
                 "accessionNumber": [f"{cik}-26-9{i:05d}" for i in range(len(rows))],
-                "primaryDocument": ["offering.htm" if offering_text and r == rows[1] else "" for r in rows]}}}))
+                "primaryDocument": [docs[i] for i in range(len(rows))]}}}))
         if offering_text:
             folder = f"{cik}-26-9{1:05d}".replace("-", "")
             self.record(self.start, get(f"https://www.sec.gov/Archives/edgar/data/{int(cik)}/{folder}/offering.htm"),

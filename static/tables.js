@@ -18,7 +18,7 @@ function quoteRow(r, extra = "", flashable = false) {
     : "";
   const stale = r.stale ? ` class="stale" title="No fresh price from Yahoo; showing the last one received"` : "";
   return `<tr${stale}>
-    <td><a class="sym" data-sym="${esc(r.symbol)}" title="${esc(r.name)}">${esc(r.symbol)}</a>${haltBadge(r.symbol)}${riskBadge(r.symbol)}${warrantBadge(r.symbol, r.price)}${ssrBadge(r.symbol)}${rotationBadge(r)}${erBadge(r.symbol)}</td>
+    <td><a class="sym" data-sym="${esc(r.symbol)}" title="${esc(r.name)}">${esc(r.symbol)}</a>${haltBadge(r.symbol)}${riskBadge(r.symbol)}${warrantBadge(r.symbol, r.price)}${ssrBadge(r.symbol)}${rotationBadge(r)}${splitBadge(r.symbol)}${day2Badge(r.symbol)}${erBadge(r.symbol)}</td>
     <td class="${flash}">${live}${fmtPrice(r.price)}</td>
     <td class="${dir(r.change_pct)}">${fmtPct(r.change_pct)}</td>
     <td>${fmtVol(r.volume)}</td>
@@ -95,6 +95,34 @@ function ssrBadge(sym) {
     : `Short sale restriction all day today, carried over from the 10% drop on ${fmtDay(s.since)}. ` +
       "Shorts can't sell at or below the bid.";
   return ` <span class="ssr-badge" title="${esc(tip)}">SSR</span>`;
+}
+
+// RS: a reverse split announced in an 8-K, taking effect within 30 days or done in the last 5.
+function splitWhen(rs) {
+  if (!rs.effective) return `announced ${fmtDay(rs.filed)}, date not found in the filing`;
+  const days = Math.round((Date.parse(`${rs.effective}T00:00:00Z`) - Date.parse(`${etDate()}T00:00:00Z`)) / DAY_MS);
+  const rel = days === 0 ? "today" : days === 1 ? "tomorrow" : days === -1 ? "yesterday"
+    : days > 0 ? `in ${days} days` : `${-days} days ago`;
+  return `effective ${fmtDay(rs.effective)} (${rel})`;
+}
+
+function splitBadge(sym) {
+  const rs = state.risk[sym]?.reverse_split;
+  if (!rs) return "";
+  const done = rs.effective && rs.effective < etDate();
+  const tip = `1-for-${rs.ratio} reverse split, ${splitWhen(rs)}, per the ${rs.form} of ${fmtDay(rs.filed)}. ` +
+    `Every ${rs.ratio} shares become one, so the float is ${rs.ratio}× smaller: freshly split stocks often run, ` +
+    "and offerings often follow.";
+  return ` <span class="rs-badge${done ? " done" : ""}" title="${esc(tip)}">RS 1:${rs.ratio}</span>`;
+}
+
+// D2: up 30% or more in the last session; today is its second day.
+function day2Badge(sym) {
+  const d = state.day2?.[sym];
+  if (!d) return "";
+  const tip = `Day 2: up ${d.change_pct.toFixed(0)}% in the last session (${fmtDay(d.date)}). ` +
+    "Second-day continuation is a classic setup, and so is the fade.";
+  return ` <span class="d2-badge" title="${esc(tip)}">D2</span>`;
 }
 
 // ROT: today's volume has reached the stock's whole public float (Yahoo's figure).

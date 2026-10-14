@@ -139,6 +139,7 @@ class Engine(PricesMixin, FeedsMixin, RiskMixin, CatalystsMixin, DailyMixin, Gap
             "ssr": self.ssr,
             "pre_highs": self.pre_highs,
             "halt_info": self.halt_info,
+            "day2": self.day2,
             "floats": self.floats,
         }
 

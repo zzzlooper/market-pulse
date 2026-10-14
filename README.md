@@ -411,6 +411,13 @@ There's deliberately no offline cache: nothing from the dashboard is stored on t
     financials unreliable (4.02), bankruptcy (1.03), debt acceleration (2.04), change in
     control (5.01) and cybersecurity incident (1.05). Any watchlist 8-K alerts; for movers
     only the notable ones do.
+  - *Reverse splits* (`app/splits.py`): an 8-K with item 3.03 or 5.03 has its first pages read
+    for a reverse split's ratio and the day it takes effect, and its alert and news item say
+    so: *Bolt Battery Inc: shareholder rights change · 1-for-20 reverse split*, *1-for-20
+    reverse split, effective Oct 15, 2026*. Ratios are read as "1-for-20", "one-for-twenty
+    (1:20)", "1:20" or "20-for-1"; a range a shareholder vote allows ("within the range of
+    1-for-5 to 1-for-30") and the many 8-Ks that only mention splits in passing (anti-dilution
+    clauses) don't count. Only the ratio and the date are kept, no text.
   - Before 10:00 ET a stock in the Gaps list counts as moving too, e.g. *ACME · offering from
     shelf (gapping -22% pre-market, dilution risk HIGH)*.
   - A filing alerts (log, desktop, phone) when the stock is on the watchlist **or on today's
@@ -442,6 +449,19 @@ There's deliberately no offline cache: nothing from the dashboard is stored on t
   it comes under *Unusual volume*, off by default. Floats are looked up once a day per stock,
   20 at a time; before the open the volume shown is yesterday's, so nothing counts until today's
   session starts.
+- **Reverse splits**: an **RS 1:20** badge, in every table and the panel's price line, on a
+  stock whose reverse split takes effect within 30 days or did in the last 5 (outlined once
+  it's done); hover for the ratio, the date and the 8-K. Every 20 shares become one, so the
+  float shrinks 20×: freshly split stocks often run, and offerings often follow. The dilution
+  profile reads the 2 newest 8-Ks with item 3.03 or 5.03 from the last 60 days (watchlist,
+  gainers and small caps, like the DIL badge), and a split 8-K arriving in the feed badges the
+  stock at once. The panel's dilution figures show it too, and the 09:15 brief ends with
+  *Reverse splits today: BOLT 1-for-20*.
+- **Day-2 runners**: a **D2** badge on a stock that closed 30% or more higher in the last
+  session than the one before: its second day, when continuation (and the fade) are classic
+  setups. From the daily bars already read for SSR, for the watchlist, the movers and the
+  gappers; before the open the movers lists still hold yesterday's session, so yesterday's
+  runners are covered. The brief marks day-2 gappers: *ACME +22.0% · day 2 (+45% yesterday)*.
 - **Breakouts** (`app/breakouts.py`): alerts at the moments momentum traders act, for
   watchlist stocks, gappers and movers, after the open:
   - **through the pre-market high**: the highest pre-market trade, from the gap scanner's
@@ -473,7 +493,8 @@ There's deliberately no offline cache: nothing from the dashboard is stored on t
     a trade (*Active*); a gap needs `gap_min_minutes` (5) of them, so one stale print doesn't
     count. After 09:30 the gap is measured at the open.
   - A **pre-market brief** goes to the phone at `gap_brief_time` (09:15 ET): the biggest gaps
-    with their cause and any high or medium dilution risk. Skipped on mornings without
+    with their cause, whether it's day 2 and any high or medium dilution risk, and the reverse
+    splits taking effect that day. Skipped on mornings without
     pre-market trading. Open `http://localhost:8000/#gaps` to start on the tab.
 - **Catalyst reactions** (*Reactions* tab, bottom left; `app/reactions.py`): every filing
   (routine 8-Ks only for watched and moving stocks), new trading halt and alerting headline
@@ -546,6 +567,7 @@ app/
   tls.py      HTTPS: a name-constrained local CA and the server certificate it signs
   warrants.py warrant overhang signals and the offering price from a filing's first pages
   ssr.py      the short sale restriction (Rule 201): triggered today, carried over from yesterday
+  splits.py   reverse splits from an 8-K's first pages: the ratio and the day it takes effect
   breakouts.py  through the pre-market high, a new high of day after a pullback
   serve.py    python -m app.serve [--https]: starts the app, as the background service does
   clock.py    the market clock: real time, or a replayed day's time and speed
@@ -564,12 +586,12 @@ app/
     daily.py      the end-of-day recap
     gaps.py       the pre-market gap scanner and its brief
     earnings.py   the watchlist's next earnings dates
-    tape.py       the short sale restriction, float rotation and breakouts (SSR and ROT badges, their alerts)
+    tape.py       the short sale restriction, float rotation, breakouts and day-2 runners (SSR, ROT, D2)
     resumptions.py  halt resumptions: the heads-up a minute before, and how trading resumed
   main.py     FastAPI routes, access token and /ws endpoint
 static/       single-page dashboard: plain scripts sharing globals, no build step, loaded in this order
   core.js     state, formatting, the market clock, server calls
-  tables.js   table rows and badges (HALTED, DIL, WAR, SSR, ROT, ER, sentiment): watchlist, movers, unusual
+  tables.js   table rows and badges (HALTED, DIL, WAR, SSR, ROT, RS, D2, ER, sentiment): watchlist, movers, unusual
   tabs.js     left-panel tabs: halts, pre-market gaps, catalyst reactions
   news.js     news feed, filters, keyword highlighting
   alerts.js   alert rules and log, the Phone box, desktop notifications and sound

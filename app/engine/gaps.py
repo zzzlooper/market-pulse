@@ -51,7 +51,7 @@ class GapsMixin:
 
     def gap_brief(self) -> dict:
         return build_brief(clock.today(market.ET), self.gaps, self.risk, self.settings.gap_min_pct,
-                           self.settings.public_url, earnings=self._earnings_brief())
+                           self.settings.public_url, earnings=self._earnings_brief(), day2=self.day2)
 
     async def _gap_brief_loop(self) -> None:
         while True:

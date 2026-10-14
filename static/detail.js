@@ -231,6 +231,8 @@ function renderDilution() {
       ${stat("Offerings 12m", String(h.offerings_12m.length), h.offerings_12m.length ? "hot" : "",
         h.offerings_12m.map(fmtDay).join(", "))}
       ${warrantStat(d.warrants, stat)}
+      ${d.reverse_split ? stat("Reverse split", `1:${d.reverse_split.ratio}`, "hot",
+        `1-for-${d.reverse_split.ratio}, ${splitWhen(d.reverse_split)}, per the ${d.reverse_split.form} of ${fmtDay(d.reverse_split.filed)}`) : ""}
     </div>
     <div id="detail-levels"></div>
     ${h.events.length ? `<details class="dilution-events"><summary>Dilution-related filings (${h.events.length})</summary>
@@ -293,7 +295,7 @@ function updateDetailPrice() {
   const live = q?.live ? `<span class="live-dot" title="Real-time (Finnhub)"></span>` : "";
   const delayed = q?.live ? "" : `<small class="muted">delayed ~15 min</small>`;
   el.innerHTML = `${live}<strong>${fmtPrice(price)}</strong>
-    <span class="${dir(pct)}">${fmtPct(pct)}</span>${haltBadge(detail.symbol)}${warrantBadge(detail.symbol, price)}${ssrBadge(detail.symbol)} ${delayed}`;
+    <span class="${dir(pct)}">${fmtPct(pct)}</span>${haltBadge(detail.symbol)}${warrantBadge(detail.symbol, price)}${ssrBadge(detail.symbol)}${splitBadge(detail.symbol)}${day2Badge(detail.symbol)} ${delayed}`;
 }
 
 function updateDetailWatch() {

@@ -4,9 +4,12 @@ from __future__ import annotations
 
 import asyncio
 
+from .. import market
+from ..clock import clock
 from ..halts import halt_messages
 from ..health import SourceError
 from ..notify import from_filing, from_news
+from ..splits import current as split_current
 
 HALT_LABELS = {"news": "news halt", "volatility": "volatility pause", "regulatory": "regulatory halt"}
 
@@ -45,6 +48,14 @@ class FeedsMixin:
             by_symbol = dict(zip(alerting, levels))
             for n in fresh:
                 n["filing"]["risk"] = by_symbol.get(n["tickers"][0])
+        today = clock.today(market.ET)
+        for n in fresh:
+            # A reverse split announced just now: badge it at once. The profile's own read of
+            # the filing comes with its next refresh (SEC's filing lists lag the feed).
+            symbol, rs = n["tickers"][0], n["filing"].get("reverse_split")
+            if rs and (summary := self.risk.get(symbol)) and split_current(rs, today, today):
+                self.risk[symbol] = {**summary, "reverse_split": {**rs, "form": "8-K", "filed": today.isoformat()}}
+                await self.hub.broadcast({"type": "risk", "data": {symbol: self.risk[symbol]}})
         for n in fresh:
             f, symbol = n["filing"], n["tickers"][0]
             if f["kind"] == "report" and not f["hot"]:

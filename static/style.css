@@ -226,6 +226,7 @@ button:disabled { opacity: .5; cursor: default; border-color: var(--border); }
 
 .pill.halted { color: #fff; background: var(--down); border: none; cursor: pointer; font-weight: 600; }
 .er-badge { font-size: 9px; font-weight: 700; padding: 0 3px; border-radius: 2px; cursor: help; vertical-align: 1px;
+  white-space: nowrap;
   color: #58a6ff; border: 1px solid #58a6ff88; letter-spacing: 0.03em; }
 .er-badge.today { color: #0d1117; background: #58a6ff; border-color: #58a6ff; }
 .risk-badge { font-size: 9px; font-weight: 700; padding: 0 3px; border-radius: 2px; cursor: help;
@@ -234,6 +235,11 @@ button:disabled { opacity: .5; cursor: default; border-color: var(--border); }
 .risk-badge.medium { color: var(--hot); border: 1px solid var(--hot); }
 .war-badge { font-size: 9px; font-weight: 700; padding: 0 3px; border-radius: 2px; cursor: help;
   vertical-align: 1px; letter-spacing: 0.03em; color: #0d1117; background: var(--hot); }
+.rs-badge, .d2-badge { font-size: 9px; font-weight: 700; padding: 0 3px; border-radius: 2px; cursor: help;
+  vertical-align: 1px; letter-spacing: 0.03em; white-space: nowrap; }
+.rs-badge { color: #0d1117; background: #39c5cf; }
+.rs-badge.done { color: #39c5cf; background: none; border: 1px solid #39c5cf; }
+.d2-badge { color: #f0883e; border: 1px solid #f0883e; }
 .ssr-badge { font-size: 9px; font-weight: 700; padding: 0 3px; border-radius: 2px; cursor: help;
   vertical-align: 1px; letter-spacing: 0.03em; color: #d2a8ff; border: 1px solid #d2a8ff99; }
 .rot-badge { font-size: 9px; font-weight: 700; padding: 0 3px; border-radius: 2px; cursor: help;
@@ -246,6 +252,7 @@ button:disabled { opacity: .5; cursor: default; border-color: var(--border); }
 .halt-badge {
   font-size: 10px;
   font-weight: 700;
+  white-space: nowrap;  /* "HALTED 14:57" stays one badge */
   color: #fff;
   background: var(--down);
   border-radius: 3px;

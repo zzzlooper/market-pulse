@@ -16,14 +16,28 @@ TAPE_MAX_SYMBOLS = 150  # watchlist, gappers and movers
 FLOAT_BATCH = 20        # float lookups per round: one Yahoo request each
 TAPE_TRIES = 3          # a symbol Yahoo has nothing on is given up on for the day after this
 ROTATION = 1.0          # volume / float that counts as having traded the whole float
+DAY2_MIN = 0.30         # the last session's close-to-close gain that makes today day 2
+
+
+def day2_move(days: list[dict], today: str) -> dict | None:
+    """From daily bars ({"date", "low", "close"}, oldest first): the last session's gain if it was
+    a big one, so today is its day 2."""
+    past = [d for d in days if d["date"] < today and d["close"]]
+    if len(past) < 2:
+        return None
+    before, last = past[-2], past[-1]
+    gain = last["close"] / before["close"] - 1
+    return {"date": last["date"], "change_pct": round(gain * 100, 1)} if gain >= DAY2_MIN else None
 
 
 class TapeMixin:
-    """Owns ssr (symbol -> {"since", "today"}), floats (symbol -> shares) and the rotation alerts."""
+    """Owns ssr (symbol -> {"since", "today"}), floats (symbol -> shares), day2 (yesterday's big
+    gainers) and the rotation and breakout alerts."""
 
     def _init_tape(self) -> None:
         self.ssr: dict[str, dict] = {}            # in effect today; "today": triggered today, so tomorrow too
         self.floats: dict[str, int] = {}          # symbol -> shares in the public float, when Yahoo knows it
+        self.day2: dict[str, dict] = {}           # symbol -> {"date", "change_pct"}: a big gainer last session
         self._tape_day: str | None = None
         self._tape_tries: dict[tuple[str, str], int] = {}  # (what, symbol) -> lookups today
         self._tape_done: set[tuple[str, str]] = set()      # (what, symbol) looked up today
@@ -37,7 +51,7 @@ class TapeMixin:
         today = clock.today(market.ET).isoformat()
         if today != self._tape_day:
             self._tape_day = today
-            self.ssr, self._tape_tries, self._tape_done = {}, {}, set()
+            self.ssr, self.day2, self._tape_tries, self._tape_done = {}, {}, {}, set()
             self._rotation_last, self._rotation_fired = {}, set()
         return today
 
@@ -70,6 +84,9 @@ class TapeMixin:
             if new:
                 self.ssr.update(new)
                 await self.hub.broadcast({"type": "ssr", "data": dict(self.ssr)})
+            if runners := {r["symbol"]: move for r in rows if (move := day2_move(r["days"], today))}:
+                self.day2.update(runners)
+                await self.hub.broadcast({"type": "day2", "data": dict(self.day2)})
         if todo := self._tape_todo("float", symbols)[:FLOAT_BATCH]:
             rows = await self._call("fetch_floats", market.fetch_floats, todo)
             self._tape_got("float", todo, {r["symbol"] for r in rows})

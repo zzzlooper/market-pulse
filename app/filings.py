@@ -20,6 +20,7 @@ import re
 import xml.etree.ElementTree as ET
 from collections import OrderedDict
 from dataclasses import dataclass
+from datetime import date
 from urllib.parse import quote
 
 import feedparser
@@ -29,6 +30,7 @@ from .config import Settings
 from .health import SourceError
 from .news import FAILING_AFTER, _clean, _published
 from .sec import SecClient
+from .splits import detect as detect_split
 from .warrants import HEAD_BYTES, describe_outstanding, describe_sold, detect
 
 log = logging.getLogger(__name__)
@@ -311,6 +313,11 @@ def insider_item(trade: dict, side: str) -> tuple[FormInfo, str, str]:
     return info, title, summary
 
 
+def _day_text(iso: str) -> str:
+    d = date.fromisoformat(iso)
+    return f"{d:%b} {d.day}, {d.year}"
+
+
 class FilingsFeed:
     """Polls EDGAR's current-filings feeds and turns relevant filings into news items."""
 
@@ -418,7 +425,7 @@ class FilingsFeed:
             info = DILUTION[form]
             item = self._item(accession, entry, tickers[cik], "dilution", info, form,
                               f"{name}: {info.label} ({form})", info.explain)
-            return await self._with_warrants(item, entry)
+            return await self._with_document(item, entry, warrants=True)
         if form == "4":
             doc = embedded_xml(await self._document(entry))
             trade = parse_form4(doc) if doc is not None else None
@@ -463,8 +470,10 @@ class FilingsFeed:
             info = FormInfo(lead.label, summary, min((i.score for i in known), default=0.0))
             item = self._item(accession, entry, tickers[cik], "event" if lead.notable else "report", info,
                               form, f"{name}: {', '.join(labels[:3])}", summary)
-            # A private share sale (item 3.02) often comes with warrants; say so if it does.
-            return await self._with_warrants(item, entry) if "3.02" in items else item
+            # A private share sale (item 3.02) often comes with warrants, and a rights change or a
+            # charter amendment (3.03, 5.03) is often a reverse split: say so if it is.
+            warrants, split = "3.02" in items, bool({"3.03", "5.03"} & set(items))
+            return await self._with_document(item, entry, warrants=warrants, split=split) if warrants or split else item
         return None  # 424B2, 4/A, 8-K/A and other forms the feeds also return
 
     @staticmethod
@@ -479,14 +488,24 @@ class FilingsFeed:
     async def _document(self, entry) -> str:
         return (await self.sec.get(self._submission_url(entry))).text
 
-    async def _with_warrants(self, item: dict, entry) -> dict:
-        """Add what the filing's first pages say about warrants (see app/warrants.py). A filing
-        whose document can't be read still goes out, just without this."""
+    async def _with_document(self, item: dict, entry, warrants: bool = False, split: bool = False) -> dict:
+        """Add what the filing's first pages say about warrants (app/warrants.py) and a reverse
+        split (app/splits.py). A filing whose document can't be read still goes out, without this."""
         try:
-            facts = detect(await self.sec.get_head(self._submission_url(entry), HEAD_BYTES))
+            head = await self.sec.get_head(self._submission_url(entry), HEAD_BYTES)
         except Exception as exc:
-            log.info("warrants for %s unknown: %s", item["tickers"][0], exc)
-            facts = None
+            log.info("first pages of %s filing unreadable: %s", item["tickers"][0], exc)
+            head = None
+        if split:
+            item["filing"]["reverse_split"] = rs = detect_split(head) if head else None
+            if rs:
+                when = f", effective {_day_text(rs['effective'])}" if rs["effective"] else ""
+                item["title"] += f" · 1-for-{rs['ratio']} reverse split"
+                item["summary"] = f"1-for-{rs['ratio']} reverse split{when}. {item['summary']}"
+                item["tags"].append("reverse split")
+        if not warrants:
+            return item
+        facts = detect(head) if head else None
         item["filing"]["warrants"] = facts
         if sold := describe_sold(facts):
             item["title"] += " · with warrants"

@@ -106,8 +106,9 @@ def select(rows: list[dict], context: dict[str, dict], min_pct: float, min_minut
 
 
 def build_brief(day: date, gaps: list[dict], risk: dict[str, dict | None], min_pct: float,
-                public_url: str = "", earnings: list[str] = ()) -> dict:
-    """The 09:15 phone note: the biggest gappers with what's behind them."""
+                public_url: str = "", earnings: list[str] = (), day2: dict[str, dict] | None = None) -> dict:
+    """The 09:15 phone note: the biggest gappers with what's behind them, and today's reverse
+    splits among the stocks with a risk profile (watchlist and movers)."""
     lines = []
     for g in gaps[:MAX_BRIEF_ROWS]:
         why = []
@@ -115,6 +116,8 @@ def build_brief(day: date, gaps: list[dict], risk: dict[str, dict | None], min_p
             why.append(g["catalyst"]["text"])
         elif g["why"] == "watchlist":
             why.append("watchlist")
+        if run := (day2 or {}).get(g["symbol"]):
+            why.append(f"day 2 ({run['change_pct']:+.0f}% yesterday)")
         level = (risk.get(g["symbol"]) or {}).get("level")
         if level in ("high", "medium"):
             why.append(f"dilution risk {level.upper()}")
@@ -125,6 +128,10 @@ def build_brief(day: date, gaps: list[dict], risk: dict[str, dict | None], min_p
         lines.append(f"No gaps of {min_pct:g}% or more among the stocks scanned.")
     if earnings:  # watchlist stocks reporting today
         lines += ["Earnings:", *(f"  {line}" for line in earnings)]
+    splits = sorted(f"{symbol} 1-for-{rs['ratio']}" for symbol, summary in risk.items()
+                    if summary and (rs := summary.get("reverse_split")) and rs["effective"] == day.isoformat())
+    if splits:
+        lines.append(f"Reverse splits today: {', '.join(splits)}")
     return {
         "category": "gaps",
         "title": f"Market Pulse · pre-market {day:%a %b} {day.day}",

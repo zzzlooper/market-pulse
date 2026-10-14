@@ -22,7 +22,8 @@ having a weighted average exercise price of $12.50 per share.</p>"""
 def made_up_morning(folder):
     day = Day(folder, start="04:00")
     day.filing("06:45", "424B5", "ACME")
-    day.profile("ACME", "high", offering_text=WARRANTS)  # trades at 7.80: the $7.50 warrants are in the money
+    day.profile("ACME", "high", offering_text=WARRANTS,  # trades at 7.80: the $7.50 warrants are in the money
+                split_text="<p>a 1-for-10 reverse stock split, effective at market open on October 15, 2026</p>")
     day.headline("05:30", "Crux Biotherapeutics Inc (NASDAQ: CRUX) reports positive topline data")
     day.premarket("07:00", ACME=(-22.0, 40), BOLT=(4.5, 12), CRUX=(38.0, 55), DYNA=(-6.2, 9))
     day.quotes("09:30", BOLT=5.0, FERN=-2.0)
@@ -31,7 +32,9 @@ def made_up_morning(folder):
     day.halt("09:38", "DYNA", "LUDP", resumes="09:55")  # a mover, resuming while the tests run
     day.chart("ACME", lambda hhmm: 10.0 if hhmm < "07:00" else 7.8)
     day.earnings("04:00", BOLT=("2026-10-13", "07:00", False), FERN=("2026-10-16", "16:05", False))
-    day.daily("04:00", ACME=[("2026-10-09", 9.6, 10.0), ("2026-10-12", 8.5, 9.0)])  # fell 15% yesterday: SSR today
+    day.daily("04:00", ACME=[("2026-10-09", 9.6, 10.0), ("2026-10-12", 8.5, 9.0)],  # fell 15% yesterday: SSR today
+              CRUX=[("2026-10-09", 9.0, 8.0), ("2026-10-12", 8.0, 10.0)])           # up 25%... not day 2
+    day.daily("04:00", DYNA=[("2026-10-09", 6.0, 6.0), ("2026-10-12", 6.0, 9.0)])    # up 50%: day 2
     day.floats("04:00", BOLT=800_000, FERN=50_000_000)  # BOLT has traded 1M shares: its float, 1.3 times
     return day.build(["BOLT", "FERN"])
 
@@ -141,6 +144,23 @@ def test_opening_on_gaps_shows_the_gappers_with_their_reasons(page, world):
     ssr = page.wait("document.querySelector('#gaps a.sym[data-sym=ACME]').parentElement.querySelector('.ssr-badge')?.title")
     assert ssr.startswith("Short sale restriction all day today, carried over from the 10% drop on Oct 12")
     assert page.eval("document.querySelectorAll('#gaps .ssr-badge').length") == 1
+
+
+def test_reverse_splits_and_day_2_runners_are_badged(page, world):
+    open_dashboard(page, world, "/#gaps")
+    rs = page.wait("document.querySelector('#gaps a.sym[data-sym=ACME]')?.parentElement.querySelector('.rs-badge')"
+                   " && [...document.querySelector('#gaps a.sym[data-sym=ACME]').parentElement.querySelectorAll('.rs-badge')]"
+                   ".map(b => [b.textContent, b.title])", timeout=20)
+    assert rs == [["RS 1:10", ("1-for-10 reverse split, effective Oct 15, 2026 (in 2 days), per the 8-K of Oct 9, 2026. "
+                               "Every 10 shares become one, so the float is 10× smaller: freshly split stocks often run, "
+                               "and offerings often follow.")]]
+    d2 = page.wait("[...document.querySelectorAll('#gaps .d2-badge')].map(b => b.closest('tr').querySelector('a.sym')"
+                   ".textContent + ' ' + b.title)", timeout=20)
+    assert d2 == [("DYNA Day 2: up 50% in the last session (Oct 12, 2026). Second-day continuation is a classic setup, "
+                   "and so is the fade.")]
+    assert page.eval("!!document.querySelector('#movers a.sym[data-sym=DYNA]').parentElement.querySelector('.d2-badge')")
+    assert page.eval("splitWhen({effective: '2026-10-10', filed: '2026-10-01'})") == "effective Oct 10, 2026 (3 days ago)"
+    assert page.eval("splitWhen({effective: null, filed: '2026-10-01'})") == "announced Oct 1, 2026, date not found in the filing"
 
 
 def test_a_stock_that_traded_its_whole_float_gets_a_rot_badge(page, world):
