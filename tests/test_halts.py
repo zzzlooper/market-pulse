@@ -94,7 +94,7 @@ def test_engine_halt_alerts(tmp_path):
         return engine, hub
 
     engine, hub = asyncio.run(scenario())
-    assert [m["type"] for m in hub.messages] == ["halts", "halts", "alerts"]
-    [event] = hub.messages[-1]["data"]
+    assert [m["type"] for m in hub.messages] == ["halts", "halts", "alerts", "alert_counts"]
+    [event] = hub.messages[-2]["data"]
     assert event["kind"] == "halt" and event["symbol"] == "ACME"
     assert [h["symbol"] for h in engine.snapshot()["halts"]] == ["ACME", "OLD"]

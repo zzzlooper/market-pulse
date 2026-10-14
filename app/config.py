@@ -79,6 +79,7 @@ class Settings:
     record_min: int = 10                 # alerts measured to the close before a track record is quoted
     sympathy_lead_pct: float = 30.0      # a stock up this much today leads its industry
     sympathy_min_pct: float = 5.0        # a same-industry stock up this much moves in sympathy
+    phone_cap_per_kind: int = 0          # most alerts of one kind sent to the phone a day; 0 = no cap
 
 
 # Settings that may come from same-named upper-case env vars (which win), so secrets and
@@ -88,6 +89,7 @@ SECRET_ENV = ("sec_user_agent", "finnhub_api_key", "ntfy_topic", "ntfy_token", "
 
 
 RECAP_TIME = re.compile(r"^([01]\d|2[0-3]):[0-5]\d$")
+SYMBOL_RE = re.compile(r"^[A-Z0-9^][A-Z0-9.\-=^]{0,11}$")  # a ticker as Yahoo writes it (BRK-B, ^GSPC, ES=F)
 
 
 def load_settings(path: Path = CONFIG_PATH, dashboard: dict | None = None) -> Settings:
@@ -138,6 +140,8 @@ class UserState:
         self.unusual_alerts: bool = data.get("unusual_alerts", True)
         self.rotation_alerts: bool = data.get("rotation_alerts", True)
         self.breakout_alerts: bool = data.get("breakout_alerts", True)
+        self.alert_mutes: dict[str, dict[str, bool]] = data.get("alert_mutes", {})  # kind -> {"browser", "phone"}
+        self.snoozed: dict[str, str] = data.get("snoozed", {})  # symbol -> the day it's snoozed for (ET)
         self.halt_alerts: str = data.get("halt_alerts", "watchlist")  # "watchlist" | "all" | "off"
         self.phone_alerts: dict[str, bool] = {**DEFAULT_PHONE_ALERTS, **data.get("phone_alerts", {})}
 
@@ -149,6 +153,8 @@ class UserState:
             "unusual_alerts": self.unusual_alerts,
             "rotation_alerts": self.rotation_alerts,
             "breakout_alerts": self.breakout_alerts,
+            "alert_mutes": self.alert_mutes,
+            "snoozed": self.snoozed,
             "halt_alerts": self.halt_alerts,
             "phone_alerts": self.phone_alerts,
         }

@@ -86,7 +86,7 @@ class RiskMixin:
                 elif price < level["price"] <= before and once(level, "down"):
                     fired.append(self.alerts.event(row, "offering_below", offering_message(symbol, price, level, up=False)))
         if fired:
-            await self._publish_alerts(self.alerts.record(fired))
+            await self._publish_alerts(fired)
 
     async def _risk_level(self, symbol: str) -> str | None:
         try:

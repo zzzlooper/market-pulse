@@ -17,6 +17,7 @@ const state = {
   luld: {},       // symbol -> { ref, lower, upper, tier, near, away_pct }: estimated LULD bands, regular hours
   sympathy: {},   // symbol -> { industry, leader, leader_pct, change_pct }: moving with its industry's leader
   thresholds: {},  // the signal settings the badges follow (Setup → Signal thresholds)
+  alert_mutes: {}, snoozed: {},  // kind -> { browser, phone } muted; symbol -> the day it's snoozed for
 };
 const lastPrice = new Map();   // symbol -> price, to flash changes
 const MAX_NEWS = 500;

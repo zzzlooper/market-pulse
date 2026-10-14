@@ -33,7 +33,8 @@ def test_fires_on_crossing_not_on_first_reading():
     assert event["symbol"] == "AAPL" and event["kind"] == "above"
     assert "crossed above 105" in event["message"]
     assert mon.check_quotes([q(price=107)], [rule]) == []          # stays above: no repeat
-    assert list(mon.recent) == [event]
+    assert list(mon.recent) == []  # the log keeps what the engine shows (after muting), not every check
+    assert mon.record([event]) == [event] and list(mon.recent) == [event]
 
 
 def test_below_rule():

@@ -43,8 +43,84 @@ function renderAlertLog(freshIds = new Set()) {
       <time datetime="${esc(a.time)}">${fmtTime(a.time)}</time>
       <a class="sym" data-sym="${esc(a.symbol)}">${esc(a.symbol)}</a>
       <span>${esc(a.message.replace(`${a.symbol} `, ""))}</span>
+      ${state.snoozed?.[a.symbol] === etDate() ? "" : `<button class="snooze" data-snooze="${esc(a.symbol)}"
+        title="No alerts about ${esc(a.symbol)} for the rest of today">snooze</button>`}
     </li>`).join("") || `<li class="muted empty-log">Alerts appear here when a rule fires</li>`;
 }
+
+// --- noise control: each kind's counts and track record, muting it, snoozed stocks ----------------
+
+let kindsLoading = null;
+
+async function loadAlertKinds() {
+  if (!$("#alert-kinds-box").open || kindsLoading) return;
+  kindsLoading = api("GET", "/api/alert-kinds");
+  try {
+    renderAlertKinds(await kindsLoading);
+  } catch (err) {
+    $("#alert-kinds").innerHTML = `<p class="muted">${esc(err.message)}</p>`;
+  } finally {
+    kindsLoading = null;
+  }
+}
+
+function recordText(r) {
+  if (!r || r.measured === 0) return `<span class="muted">–</span>`;
+  const close = r.median_close == null ? "–" : `<span class="${dir(r.median_close)}">${fmtPct(r.median_close)}</span>`;
+  return `${close} <small class="muted">n=${r.measured}</small>`;
+}
+
+function renderAlertKinds({ kinds, snoozed }) {
+  let group = null;
+  const rows = kinds.map((k) => {
+    const head = k.group !== group ? `<tr class="group"><th colspan="6">${esc((group = k.group))}</th></tr>` : "";
+    const phoned = k.phoned_today ? ` <small class="muted" title="Sent to the phone today">(${k.phoned_today} 📱)</small>` : "";
+    return `${head}<tr${k.browser || k.phone ? "" : ` class="muted"`}><td>${esc(k.label)}</td>
+      <td>${k.today}${phoned}</td><td>${k.week}</td><td title="Median move to the close after it fired, last 30 days">${recordText(k.record)}</td>
+      <td><input type="checkbox" data-mute-kind="${esc(k.kind)}" data-where="browser" ${k.browser ? "checked" : ""}
+        title="Show it here"></td>
+      <td><input type="checkbox" data-mute-kind="${esc(k.kind)}" data-where="phone" ${k.phone ? "checked" : ""}
+        title="Send it to the phone (if its phone category is on)"></td></tr>`;
+  }).join("");
+  const today = etDate();
+  const asleep = Object.entries(snoozed).filter(([, day]) => day === today).map(([s]) => s);
+  $("#alert-kinds").innerHTML = `
+    <table class="alert-kinds"><thead><tr><th>Kind</th><th>Today</th><th>7 days</th><th>Close</th>
+      <th title="Show here">Show</th><th title="Send to the phone">Phone</th></tr></thead><tbody>${rows}</tbody></table>
+    <p class="muted fine">Muted alerts are still measured, so their track record shows what you'd be missing.
+      ${asleep.length ? "" : "Snooze a stock from any alert below to silence it for the rest of the day."}</p>
+    ${asleep.length ? `<div class="keywords">Snoozed today: ${asleep.map((s) => `<span class="chip">${esc(s)}
+      <button data-unsnooze="${esc(s)}" title="Alerts about ${esc(s)} again">×</button></span>`).join("")}</div>` : ""}`;
+}
+
+$("#alert-kinds-box").addEventListener("toggle", loadAlertKinds);
+$("#alert-kinds").addEventListener("change", async (ev) => {
+  const box = ev.target.closest("[data-mute-kind]");
+  if (!box) return;
+  try {
+    await api("PUT", `/api/alert-kinds/${encodeURIComponent(box.dataset.muteKind)}`, { [box.dataset.where]: box.checked });
+    await loadAlertKinds();
+  } catch (err) {
+    box.checked = !box.checked;
+    toast(err.message);
+  }
+});
+document.addEventListener("click", async (ev) => {
+  const snooze = ev.target.closest("[data-snooze]");
+  const wake = ev.target.closest("[data-unsnooze]");
+  if (!snooze && !wake) return;
+  try {
+    if (snooze) {
+      await api("POST", "/api/snooze", { symbol: snooze.dataset.snooze });
+      toast(`${snooze.dataset.snooze}: no alerts for the rest of today`);
+    } else {
+      await api("DELETE", `/api/snooze/${encodeURIComponent(wake.dataset.unsnooze)}`);
+    }
+    await loadAlertKinds();
+  } catch (err) {
+    toast(err.message);
+  }
+});
 
 function addAlerts(events) {
   state.alerts = [...events, ...state.alerts].slice(0, 100);

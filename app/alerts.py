@@ -74,7 +74,7 @@ class AlertMonitor:
                 if crossed and now.timestamp() - self._fired_at.get(key, 0) >= COOLDOWN_SECONDS:
                     self._fired_at[key] = now.timestamp()
                     fired.append(self.event(q, kind, _describe(kind, q, threshold)))
-        return self.record(fired)
+        return fired
 
     def check_unusual(self, rows: list[dict], enabled: bool) -> list[dict]:
         """Alert once per symbol per day when it first shows up in the unusual-volume list."""
@@ -88,14 +88,14 @@ class AlertMonitor:
         self._unusual_seen |= symbols  # tracked even when disabled, so enabling doesn't flood
         if not enabled:
             return []
-        return self.record([
+        return [
             self.event(r, "unusual",
                         f"{r['symbol']} unusual volume {r['rvol']:.1f}× · "
                         f"{r['change_pct']:+.1f}% · last {r['price']:.2f}"
                         if r.get("change_pct") is not None and r.get("price") is not None
                         else f"{r['symbol']} unusual volume {r['rvol']:.1f}×")
             for r in fresh
-        ])
+        ]
 
     def forget_rule(self, rule_id: str) -> None:
         for store in (self._hit, self._fired_at):
@@ -116,7 +116,8 @@ class AlertMonitor:
         }
 
     def record(self, fired: list[dict]) -> list[dict]:
-        """Add events to the log (newest first) and return them."""
+        """Add events to the log (newest first) and return them. The engine records what it
+        shows, after muting and snoozing (engine/core.py _publish_alerts)."""
         for event in fired:
             self.recent.appendleft(event)
         return fired

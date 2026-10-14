@@ -71,4 +71,4 @@ class ResumptionsMixin:
             fired.append(self.alerts.event({**halt, "price": info["open"], "change_pct": None}, "resumed",
                                            resumed_message(halt, info)))
         if fired:
-            await self._publish_alerts(self.alerts.record(fired))
+            await self._publish_alerts(fired)

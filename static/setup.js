@@ -11,7 +11,8 @@ const SETUP_GROUPS = [
   ["Phone alerts", ["ntfy_topic", "ntfy_server", "ntfy_token", "telegram_bot_token", "telegram_chat_id"]],
   ["Opening it from your phone", ["access_token", "public_url"]],
   ["Real-time prices", ["finnhub_api_key"]],
-  ["Alert tuning", ["rvol_threshold", "min_volume", "insider_min_value", "gap_min_pct", "gap_brief_time", "recap_time"]],
+  ["Alert tuning", ["rvol_threshold", "min_volume", "insider_min_value", "gap_min_pct", "gap_brief_time", "recap_time",
+    "phone_cap_per_kind"]],
   ["Signal thresholds", ["breakout_pullback_pct", "day2_min_pct", "rotation_multiple", "luld_near_pct",
     "sympathy_lead_pct", "sympathy_min_pct", "record_min"]],
   ["Record and replay", ["record"]],
@@ -151,7 +152,41 @@ function yourData() {
         ${d.deletable ? `<button type="button" class="danger" data-delete-data="${esc(d.id)}">Delete</button>` : ""}</li>`).join("")}
       <li><div><b>This browser</b><p>${esc(browserNote)}</p></div>
         <button type="button" data-forget-browser>Forget</button></li>
-    </ul>`;
+    </ul>
+    <div class="backup-box">
+      <b>Backup</b>
+      <p>Your watchlist, keywords, alert rules and switches, phone categories, muted alerts and the settings
+        you've changed, in a file to restore here or on another computer. Never a secret (tokens, keys, your
+        SEC email) and not this computer's address.</p>
+      <a class="button-link" href="/api/backup" download>Download backup</a>
+      <label class="button-link">Restore from a file…
+        <input type="file" accept=".json,application/json" data-restore-file hidden></label>
+      <div id="restore-preview">${restorePreview()}</div>
+    </div>`;
+}
+
+// A restore shows what it would change first; nothing changes until you confirm.
+function restoreValue(v) {
+  if (Array.isArray(v)) return v.length ? (v.length > 12 ? `${v.slice(0, 12).join(", ")} +${v.length - 12} more` : v.join(", ")) : "none";
+  if (typeof v === "boolean") return v ? "on" : "off";
+  if (v && typeof v === "object") return Object.keys(v).length ? Object.entries(v).map(([k, x]) => `${k}: ${restoreValue(x)}`).join("; ") : "none";
+  return String(v ?? "–");
+}
+
+function restorePreview() {
+  const p = setup.restore;
+  if (!p) return "";
+  const notes = p.notes.map((n) => `<li class="muted">${esc(n)}</li>`).join("");
+  if (!p.changes.length) {
+    return `<p>Nothing to change: this backup matches what's set up here.</p><ul>${notes}</ul>
+      <button type="button" data-restore-cancel>OK</button>`;
+  }
+  return `<p><b>${p.changes.length} change${p.changes.length === 1 ? "" : "s"}</b> from ${esc(p.file)}:</p>
+    <ul class="restore-changes">${p.changes.map((c) => `<li><b>${esc(c.what)}</b>
+      <div class="muted">now: ${esc(restoreValue(c.now))}</div><div>then: ${esc(restoreValue(c.then))}</div></li>`).join("")}
+      ${notes}</ul>
+    <button type="button" class="danger" data-restore-apply>Restore these</button>
+    <button type="button" data-restore-cancel>Cancel</button>`;
 }
 
 function renderSetup() {
@@ -192,6 +227,22 @@ async function saveSettings(values) {
 }
 
 $("#setup-btn").addEventListener("click", () => (setup.open ? closeSetup() : openSetup()));
+$("#setup").addEventListener("change", async (ev) => {
+  const input = ev.target.closest("[data-restore-file]");
+  if (!input?.files.length) return;
+  const file = input.files[0];
+  input.value = "";  // the same file can be picked again
+  try {
+    if (file.size > 256_000) throw new Error("That file is too big to be a Market Pulse backup");
+    let data;
+    try { data = JSON.parse(await file.text()); } catch { throw new Error("Not a Market Pulse backup file"); }
+    const preview = await api("POST", "/api/backup/preview", data);
+    setup.restore = { ...preview, data, file: file.name };
+    $("#restore-preview").innerHTML = restorePreview();
+  } catch (err) {
+    toast(err.message);
+  }
+});
 $("#setup-backdrop").addEventListener("click", () => closeSetup());
 window.addEventListener("popstate", () => {
   if (setup.open && history.state?.drawer !== "setup") closeSetup(true);
@@ -260,6 +311,14 @@ $("#setup").addEventListener("click", async (ev) => {
       toast(`Deleted: ${store.label.toLowerCase()}`);
       await loadSetup();
       if (store.id === "reactions" && state.leftTab === "reactions") loadReactions();
+    } else if (el.dataset.restoreApply !== undefined && setup.restore) {
+      const result = await api("POST", "/api/backup/restore", setup.restore.data);
+      setup.restore = null;
+      toast(`Restored: ${result.changes.length} change${result.changes.length === 1 ? "" : "s"}`);
+      await loadSetup();
+    } else if (el.dataset.restoreCancel !== undefined) {
+      setup.restore = null;
+      $("#restore-preview").innerHTML = "";
     } else if (el.dataset.forgetBrowser !== undefined) {
       if (!confirm("Forget this browser? It clears what Market Pulse stored here and signs it out if an access token is set.")) return;
       try { localStorage.removeItem(SETUP_SEEN); } catch { /* nothing stored */ }

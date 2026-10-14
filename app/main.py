@@ -3,11 +3,11 @@ from __future__ import annotations
 
 import asyncio
 import ipaddress
+import json
 import logging
 import math
 import mimetypes
 import os
-import re
 import secrets
 import shutil
 import tempfile
@@ -28,12 +28,14 @@ from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
 
 from .alerts import KINDS
+from .backup import BackupError
 from .clock import clock
 from .config import (
     DEFAULT_PHONE_ALERTS,
     DEFAULT_WATCHLIST,
     ROOT,
     STATE_PATH,
+    SYMBOL_RE,
     TLS_DIR,
     UserState,
     load_settings,
@@ -42,6 +44,7 @@ from .engine import Engine, Hub
 from .health import SourceError, describe
 from .market import CHART_RANGES
 from .market import ET as market_ET
+from .noise import KINDS as ALERT_KINDS
 from .replay import Player, Recorder, replay_settings
 from .setup import EDITABLE, GENERATED, DashboardSettings, SettingsError, checklist
 from .tls import ca_der
@@ -57,7 +60,6 @@ logging.getLogger("yfinance").setLevel(logging.CRITICAL)
 log = logging.getLogger(__name__)
 mimetypes.add_type("application/manifest+json", ".webmanifest")  # so browsers accept the app manifest
 
-SYMBOL_RE = re.compile(r"^[A-Z0-9^][A-Z0-9.\-=^]{0,11}$")
 TOKEN_COOKIE = "mp_token"
 TOKEN_COOKIE_DAYS = 365
 LOGIN_FAIL_DELAY = 1.0  # seconds; slows down guessing
@@ -441,6 +443,80 @@ async def set_unusual_alerts(body: ToggleIn):
 async def set_rotation_alerts(body: ToggleIn):
     await engine.set_rotation_alerts(body.enabled)
     return {"rotation_alerts": body.enabled}
+
+
+class MuteIn(BaseModel):
+    browser: bool | None = None
+    phone: bool | None = None
+
+
+class SnoozeIn(BaseModel):
+    symbol: str
+
+
+BACKUP_MAX_BYTES = 256_000
+
+
+async def backup_body(request: Request) -> object:
+    body = await request.body()
+    if len(body) > BACKUP_MAX_BYTES:
+        raise HTTPException(413, "That file is too big to be a Market Pulse backup")
+    try:
+        return json.loads(body)
+    except ValueError:
+        raise HTTPException(422, "Not a Market Pulse backup file") from None
+
+
+@app.get("/api/backup")
+async def backup():
+    """Your setup as a file: no secrets (see app/backup.py)."""
+    day = clock.now(market_ET).strftime("%Y-%m-%d")
+    return JSONResponse(engine.backup(), headers={
+        **NO_STORE, "Content-Disposition": f'attachment; filename="market-pulse-backup-{day}.json"'})
+
+
+@app.post("/api/backup/preview")
+async def backup_preview(request: Request):
+    try:
+        return engine.restore_preview(await backup_body(request))
+    except BackupError as exc:
+        raise HTTPException(422, str(exc)) from None
+
+
+@app.post("/api/backup/restore")
+async def backup_restore(request: Request):
+    try:
+        return await engine.restore(await backup_body(request))
+    except (BackupError, SettingsError) as exc:
+        raise HTTPException(422, str(exc)) from None
+
+
+@app.get("/api/alert-kinds")
+async def alert_kinds():
+    return {"kinds": engine.alert_kinds(), "snoozed": engine.state.snoozed}
+
+
+@app.put("/api/alert-kinds/{kind}")
+async def set_alert_mute(kind: str, body: MuteIn):
+    if kind not in ALERT_KINDS:
+        raise HTTPException(404, "No such kind of alert")
+    await engine.set_alert_mute(kind, body.browser, body.phone)
+    return {"alert_mutes": engine.state.alert_mutes}
+
+
+@app.post("/api/snooze")
+async def snooze(body: SnoozeIn):
+    symbol = body.symbol.strip().upper()
+    if not SYMBOL_RE.match(symbol):
+        raise HTTPException(422, "Invalid ticker symbol")
+    return {"symbol": symbol, "until_end_of": await engine.snooze(symbol)}
+
+
+@app.delete("/api/snooze/{symbol}")
+async def unsnooze(symbol: str):
+    if not await engine.unsnooze(symbol.strip().upper()):
+        raise HTTPException(404, "Not snoozed")
+    return {"snoozed": engine.state.snoozed}
 
 
 @app.put("/api/alert-rules/breakouts")

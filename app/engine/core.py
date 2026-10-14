@@ -12,10 +12,14 @@ from fastapi import WebSocket
 
 from .. import market
 from ..alerts import AlertMonitor, new_rule
+from ..backup import changes as backup_changes
+from ..backup import export as backup_export
+from ..backup import read as backup_read
 from ..clock import clock
 from ..config import TLS_DIR, Settings, UserState
 from ..datastore import (
     DELETABLE,
+    alert_counts_item,
     delete_recordings,
     log_item,
     reactions_item,
@@ -30,12 +34,14 @@ from ..finnhub import FinnhubFeed
 from ..halts import HaltFeed
 from ..health import SourceError, SourceHealth, describe
 from ..news import NewsFeed
+from ..noise import KINDS as ALERT_KINDS
+from ..noise import AlertCounts, muted, snoozed
 from ..notify import PhoneNotifier, from_alert, from_outage
 from ..replay import LiveIO, Recorder
 from ..sec import SecClient
 from ..setup import EDITABLE, DashboardSettings, SettingsError, apply, validate
 from ..tls import status as tls_status
-from .catalysts import REACTIONS_INTERVAL, CatalystsMixin
+from .catalysts import REACTIONS_INTERVAL, TRACKED_ALERTS, CatalystsMixin
 from .daily import DailyMixin
 from .earnings import EARNINGS_INTERVAL, EarningsMixin
 from .feeds import FeedsMixin
@@ -94,6 +100,7 @@ class Engine(PricesMixin, FeedsMixin, RiskMixin, CatalystsMixin, DailyMixin, Gap
         self.finnhub = FinnhubFeed(settings.finnhub_api_key, self._ticks.set) if settings.finnhub_api_key else None
 
         self.alerts = AlertMonitor()
+        self.alert_counts = AlertCounts(state.path.parent / "alert_counts.json")  # mode 600
         self.phone = PhoneNotifier(settings, on_status=self._phone_status)
         self.dashboard = DashboardSettings(state.path.parent / "settings.json")  # mode 600
         self.health = health or SourceHealth()
@@ -258,12 +265,36 @@ class Engine(PricesMixin, FeedsMixin, RiskMixin, CatalystsMixin, DailyMixin, Gap
     # --- alerts -----------------------------------------------------------------------------
 
     async def _publish_alerts(self, fired: list[dict]) -> None:
-        if fired:
-            self._add_track_records(fired)
-            log.info("alerts: %s", "; ".join(e["message"] for e in fired))
-            await self.hub.broadcast({"type": "alerts", "data": fired})
-            self.phone.enqueue([from_alert(e, self.settings.public_url) for e in fired], self.state.phone_alerts)
-            self._track_alerts(fired)
+        """Every alert goes out through here: counted, measured, then shown and sent to the phone
+        unless muted or snoozed (app/noise.py), and to the phone up to the daily cap per kind."""
+        if not fired:
+            return
+        self._add_track_records(fired)
+        self._track_alerts(fired)  # muted ones too: the panel shows what you'd be missing
+        today = clock.today(market.ET)
+        day, cap = today.isoformat(), self.settings.phone_cap_per_kind
+        shown, notes = [], []
+        for e in fired:
+            if snoozed(self.state.snoozed, e["symbol"], day):
+                self.alert_counts.add(e["kind"], day, phoned=False)
+                continue
+            if not muted(self.state.alert_mutes, e["kind"], "browser"):
+                shown.append(e)
+            note = from_alert(e, self.settings.public_url)
+            to_phone = (self.phone.channels and self.state.phone_alerts.get(note["category"], False)
+                        and not muted(self.state.alert_mutes, e["kind"], "phone")
+                        and not (cap and self.alert_counts.phoned(e["kind"], day) >= cap))
+            if to_phone:
+                notes.append(note)
+            self.alert_counts.add(e["kind"], day, phoned=bool(to_phone))
+        self.alert_counts.save(today)
+        if shown:
+            self.alerts.record(shown)
+            log.info("alerts: %s", "; ".join(e["message"] for e in shown))
+            await self.hub.broadcast({"type": "alerts", "data": shown})
+        if notes:
+            self.phone.enqueue(notes, self.state.phone_alerts)
+        await self.hub.broadcast({"type": "alert_counts", "data": self.alert_counts.summary(today)})
 
     async def _phone_status(self, status: dict) -> None:
         await self.hub.broadcast({"type": "phone", "data": status})
@@ -315,6 +346,79 @@ class Engine(PricesMixin, FeedsMixin, RiskMixin, CatalystsMixin, DailyMixin, Gap
             return False
         self.state.alert_rules.remove(rule)
         self.alerts.forget_rule(rule_id)
+        await self._config_changed()
+        return True
+
+    # --- backup and restore -------------------------------------------------------------------
+
+    def backup(self) -> dict:
+        return backup_export(self.state, self.settings, clock.today(market.ET).isoformat())
+
+    def _restore_plan(self, data) -> tuple[dict, dict, dict]:
+        state, settings, notes = backup_read(data)
+        stored = self.dashboard.load()
+        for name in [n for n in settings if self.dashboard.source(n, stored) == "environment"]:
+            settings.pop(name)
+            notes.append(f"Left out {EDITABLE[name].label}: set by an environment variable here")
+        plan = {"changes": backup_changes(self.state, self.settings, state, settings), "notes": notes}
+        return plan, state, settings
+
+    def restore_preview(self, data) -> dict:
+        """What restoring this backup would change, without changing anything."""
+        return self._restore_plan(data)[0]
+
+    async def restore(self, data) -> dict:
+        plan, state, settings = self._restore_plan(data)
+        watchlist = list(self.state.watchlist)
+        for key, value in state.items():
+            setattr(self.state, key, value)
+        if settings:
+            await self.update_settings(settings)  # saved to data/settings.json and applied, like Setup
+        await self._config_changed()
+        if self.state.watchlist != watchlist:
+            await self._watchlist_changed()
+        log.info("restored a backup: %d changes", len(plan["changes"]))  # never the values
+        return plan
+
+    def alert_kinds(self) -> list[dict]:
+        """Each kind of alert with how often it fired (today, 7 days), how many went to the phone
+        today, its track record and whether it's muted: the Alerts panel's noise control."""
+        counts = self.alert_counts.summary(clock.today(market.ET))
+        records = self._track_records()
+        out = []
+        for kind, (label, group) in ALERT_KINDS.items():
+            c = counts.get(kind, {"today": 0, "week": 0, "phoned_today": 0})
+            g = records.get(TRACKED_ALERTS.get(kind, ""))
+            out.append({"kind": kind, "label": label, "group": group, **c,
+                        "record": {k: g[k] for k in ("measured", "median_30m", "median_close", "down_share")} if g else None,
+                        "browser": not muted(self.state.alert_mutes, kind, "browser"),
+                        "phone": not muted(self.state.alert_mutes, kind, "phone")})
+        return out
+
+    async def set_alert_mute(self, kind: str, browser: bool | None, phone: bool | None) -> None:
+        """browser/phone: True shows / sends that kind, False mutes it, None leaves it."""
+        entry = dict(self.state.alert_mutes.get(kind, {}))
+        for where, on in (("browser", browser), ("phone", phone)):
+            if on is not None:
+                entry[where] = not on
+        entry = {k: v for k, v in entry.items() if v}
+        if entry:
+            self.state.alert_mutes[kind] = entry
+        else:
+            self.state.alert_mutes.pop(kind, None)
+        await self._config_changed()
+
+    async def snooze(self, symbol: str) -> str:
+        """No alerts about symbol for the rest of today (ET). Returns the day."""
+        day = clock.today(market.ET).isoformat()
+        self.state.snoozed = {s: d for s, d in self.state.snoozed.items() if d == day}  # yesterday's are over
+        self.state.snoozed[symbol] = day
+        await self._config_changed()
+        return day
+
+    async def unsnooze(self, symbol: str) -> bool:
+        if self.state.snoozed.pop(symbol, None) is None:
+            return False
         await self._config_changed()
         return True
 
@@ -418,6 +522,8 @@ class Engine(PricesMixin, FeedsMixin, RiskMixin, CatalystsMixin, DailyMixin, Gap
             reactions_item(self.reactions.path, self.reactions.stats(), self.settings.reactions_keep_days),
             recordings_item(folder, self.settings.record_keep, active),
             tls_item(TLS_DIR, tls_status(TLS_DIR)),
+            alert_counts_item(self.alert_counts.path,
+                              sum(c["week"] for c in self.alert_counts.summary(clock.today(market.ET)).values())),
             log_item(),
         ]
 
@@ -429,6 +535,8 @@ class Engine(PricesMixin, FeedsMixin, RiskMixin, CatalystsMixin, DailyMixin, Gap
             self._reaction_retry.clear()
         elif store == "recordings":
             delete_recordings(*self._recordings)
+        elif store == "alert_counts":
+            self.alert_counts.clear()
         elif store == "dashboard_settings":
             self.dashboard.path.unlink(missing_ok=True)
             fresh = self.dashboard.effective({})  # back to config.toml, environment and defaults

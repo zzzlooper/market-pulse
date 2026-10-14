@@ -242,6 +242,17 @@ button:disabled { opacity: .5; cursor: default; border-color: var(--border); }
 .d2-badge { color: #f0883e; border: 1px solid #f0883e; }
 .sym-badge { font-size: 9px; font-weight: 700; padding: 0 3px; border-radius: 2px; cursor: help; vertical-align: 1px;
   white-space: nowrap; color: #d2a8ff; border: 1px dashed #d2a8ff; }
+.alert-kinds-box { margin: 8px 0; font-size: 12px; }
+.alert-kinds-box summary { cursor: pointer; }
+.alert-kinds { width: 100%; margin-top: 6px; }
+.alert-kinds td, .alert-kinds th { padding: 2px 4px; font-size: 12px; }
+.alert-kinds tr.group th { text-align: left; color: var(--muted); font-weight: 600; padding-top: 6px; }
+.alert-entry .snooze { font-size: 10px; padding: 0 4px; margin-left: auto; opacity: 0.6; }
+.alert-entry .snooze:hover { opacity: 1; }
+.backup-box { margin: 10px 0 16px; padding: 10px; border: 1px solid var(--border); border-radius: 6px; font-size: 13px; }
+.backup-box p { margin: 4px 0 8px; }
+.restore-changes { margin: 6px 0; padding-left: 18px; }
+.restore-changes li { margin: 4px 0; }
 .industry { margin: 14px 0; }
 .industry h3 { margin: 0 0 6px; font-size: 12px; text-transform: uppercase; letter-spacing: 0.05em; color: var(--muted); }
 .industry h3 small { text-transform: none; letter-spacing: 0; }

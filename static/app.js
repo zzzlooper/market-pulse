@@ -22,9 +22,10 @@ function handle({ type, data }) {
       break;
     case "config":
       Object.assign(state, data);
-      renderKeywords(); renderWatchlist(); renderNews(); renderRules(); renderPhone();
+      renderKeywords(); renderWatchlist(); renderNews(); renderRules(); renderPhone(); renderAlertLog();
       break;
     case "alerts": addAlerts(data); break;
+    case "alert_counts": loadAlertKinds(); break;
     case "quotes": state.quotes = data; renderWatchlist(); break;
     case "movers": state.movers = data; renderMovers(); break;
     case "unusual": state.unusual = data; renderUnusual(); break;

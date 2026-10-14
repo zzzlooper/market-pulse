@@ -471,8 +471,9 @@ def test_setup_lists_your_data_and_deletes_the_reaction_history_after_confirming
     page.click("#setup-btn")
     page.wait("document.querySelectorAll('.data-list li').length >= 7")
     rows = page.eval("[...document.querySelectorAll('.data-list li b')].map(b => b.textContent)")
-    assert rows == ["Watchlist, keywords and alert rules", "Settings saved in Setup", "Catalyst reaction history",
-                    "Recordings for replay", "HTTPS certificates", "Log", "This browser"]
+    assert rows == ["Watchlist, keywords, alert rules, mutes and snoozes", "Settings saved in Setup",
+                    "Catalyst reaction history", "Recordings for replay", "HTTPS certificates", "Alert counts", "Log",
+                    "This browser"]
     html = page.eval("document.querySelector('#setup').innerHTML")
     assert "/home/" not in html and "/tmp/" not in html  # paths are shown relative, never in full
     assert page.eval(OFF_SCREEN.replace("SCOPE", "#setup *")) == []

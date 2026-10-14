@@ -84,5 +84,4 @@ class FeedsMixin:
                         HALT_LABELS.get(halt["category"], "halt"), f"{halt['symbol']} halted · {halt['reason']}",
                         halt["halted_at"])
         messages = halt_messages(new, resumption_set, self.state.watchlist, self.state.halt_alerts)
-        await self._publish_alerts(self.alerts.record(
-            [self.alerts.event(halt, kind, message) for halt, kind, message in messages]))
+        await self._publish_alerts([self.alerts.event(halt, kind, message) for halt, kind, message in messages])

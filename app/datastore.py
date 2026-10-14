@@ -14,7 +14,7 @@ from .config import ROOT
 from .market import ET
 from .setup import EDITABLE
 
-DELETABLE = ("reactions", "recordings", "dashboard_settings")
+DELETABLE = ("reactions", "recordings", "dashboard_settings", "alert_counts")
 
 
 def shown_path(path: Path) -> str:
@@ -41,7 +41,7 @@ def _day(epoch: float | None) -> str | None:
 
 def state_item(path: Path, watchlist: list, keywords: list, rules: list) -> dict:
     return {
-        "id": "state", "label": "Watchlist, keywords and alert rules", "path": shown_path(path),
+        "id": "state", "label": "Watchlist, keywords, alert rules, mutes and snoozes", "path": shown_path(path),
         "size": _size(path), "deletable": False,
         "detail": f"{_count(len(watchlist), 'ticker')}, {_count(len(keywords), 'keyword')}, "
                   f"{_count(len(rules), 'alert rule')}",
@@ -107,6 +107,15 @@ def tls_item(folder: Path, status: dict) -> dict:
         "id": "tls", "label": "HTTPS certificates", "path": shown_path(folder),
         "size": _size(folder) if folder.is_dir() else 0, "deletable": False, "detail": detail,
         "note": "The private keys are readable by you only and never shown or sent; only the CA certificate is public.",
+    }
+
+
+def alert_counts_item(path: Path, fired_week: int) -> dict:
+    return {
+        "id": "alert_counts", "label": "Alert counts", "path": shown_path(path), "size": _size(path),
+        "deletable": path.exists(), "detail": f"{_count(fired_week, 'alert')} in the last 8 days, by kind",
+        "note": "Kinds of alert and how many fired or went to the phone each day: no tickers.",
+        "confirm": "Delete the alert counts? The Alerts panel's counts start from zero.",
     }
 
 

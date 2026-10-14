@@ -52,6 +52,8 @@ EDITABLE: dict[str, Field] = {
     "min_volume": Field("…and at least shares traded", "integer", high=1e10),
     "insider_min_value": Field("Smallest insider trade shown ($)", "number", high=1e10),
     "recap_time": Field("Daily recap at (ET)", "time"),
+    "phone_cap_per_kind": Field("Phone: most alerts of one kind a day (0 = no cap)", "integer", high=1000,
+                                hint="Past it they still show here. Mute kinds in the Alerts panel."),
     "gap_min_pct": Field("Pre-market gaps from (%)", "number", low=0.5, high=100),
     "gap_brief_time": Field("Pre-market brief at (ET)", "time"),
     "reactions_keep_days": Field("Keep reaction history (days, 0 = forever)", "integer", high=3650),

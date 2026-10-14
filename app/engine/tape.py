@@ -144,7 +144,7 @@ class TapeMixin:
         if ssr_changed:
             await self.hub.broadcast({"type": "ssr", "data": dict(self.ssr)})
         if fired:
-            await self._publish_alerts(self.alerts.record(fired))
+            await self._publish_alerts(fired)
         todays = [r for r in rows if r.get("session") in (None, today)]
         await self._check_sympathy()
         await self._check_breakouts(todays, regular=regular)
@@ -184,7 +184,7 @@ class TapeMixin:
             self._sympathy_sent = (now, pairs)
             await self.hub.broadcast({"type": "sympathy", "data": dict(sympathy)})
         if fired:
-            await self._publish_alerts(self.alerts.record(fired))
+            await self._publish_alerts(fired)
 
     async def _check_luld(self, rows: list[dict]) -> None:
         """Estimate each stock's LULD bands (app/luld.py) and warn when the price nears one, for
@@ -216,7 +216,7 @@ class TapeMixin:
             self._luld_sent = (now, near)
             await self.hub.broadcast({"type": "luld", "data": dict(self.luld)})
         if fired:
-            await self._publish_alerts(self.alerts.record(fired))
+            await self._publish_alerts(fired)
 
     async def _check_breakouts(self, rows: list[dict], regular: bool) -> None:
         """Feed today's prices to the breakout rules; alert on what they find, unless switched off."""
@@ -234,4 +234,4 @@ class TapeMixin:
                     found = [(k, f"{m} · in sympathy with {theme['leader']} {theme['leader_pct']:+.0f}%") for k, m in found]
                 fired += [self.alerts.event(row, kind, message) for kind, message in found]
         if fired:
-            await self._publish_alerts(self.alerts.record(fired))
+            await self._publish_alerts(fired)

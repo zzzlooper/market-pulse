@@ -108,7 +108,7 @@ def test_the_engine_inventory_covers_every_store_without_contents(tmp_path):
         engine.state.save()
         engine.reactions.add(event(1, "2026-10-01", title="UNIQUE-HEADLINE"))
         stores = {s["id"]: s for s in engine.data_inventory()}
-        assert list(stores) == ["state", "dashboard_settings", "reactions", "recordings", "tls", "log"]
+        assert list(stores) == ["state", "dashboard_settings", "reactions", "recordings", "tls", "alert_counts", "log"]
         assert stores["state"]["detail"].startswith("2 tickers")
         assert stores["reactions"]["detail"] == "1 event, 2026-10-01 to 2026-10-01; kept 365 days"
         text = json.dumps(list(stores.values()))
