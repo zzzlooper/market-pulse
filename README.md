@@ -4,6 +4,8 @@ A one-screen stock dashboard in the spirit of FoxRunner: live watchlist prices, 
 unusual-volume scanner and a real-time news feed with keyword alerts. It uses only free data.
 It runs without any API key, and a free Finnhub key adds real-time watchlist prices.
 
+![The dashboard: watchlist, news and SEC filings, top movers and alerts](docs/screenshots/dashboard.png)
+
 ## Run
 
 Requires Python 3.11+.
@@ -37,6 +39,12 @@ it. Then click **Enable alerts** to get desktop notifications and a sound.
   stock snoozed, and every alert's follow-through is measured.
 - **Your data stays on your computer**: no account, nothing sent anywhere but the data
   sources' own requests. Secrets are write-only; a backup never contains one.
+
+| Ticker panel | Game plan |
+|---|---|
+| ![A ticker's chart with its offering and warrant levels, stats and dilution risk](docs/screenshots/ticker.png) | ![The morning game plan: gappers with their catalysts, flags and levels](docs/screenshots/plan.png) |
+
+The screenshots replay a made-up morning with invented companies (`python scripts/screenshots.py`).
 
 ## Documentation
 

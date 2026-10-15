@@ -59,6 +59,7 @@ static/       single-page dashboard: plain scripts sharing globals, no build ste
   plan.js     the game plan drawer
 scripts/
   install-service.sh  systemd user service install/uninstall
+  screenshots.py      README screenshots from the browser tests' made-up morning
 docs/         these pages; README.md is the start page
 tests/        offline (a fixture blocks any network access); scenario_kit.py builds made-up days.
               They use a scratch
