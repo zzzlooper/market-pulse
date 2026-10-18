@@ -98,6 +98,55 @@ def test_movers_report_failing_screeners_and_keep_their_old_lists(tmp_path, monk
     assert (status["state"], status["reason"]) == ("down", "every Yahoo screener failed")
 
 
+def test_finnhub_rest_failures_show_in_the_data_status(tmp_path):
+    engine, _, clock = make_engine(tmp_path, finnhub_api_key="fake-key-0123456789")
+    answers = []
+    engine.finnhub._client = httpx.AsyncClient(base_url="https://test", transport=httpx.MockTransport(
+        lambda request: answers.pop(0)(request)))
+
+    def status():
+        s = engine.health.status_of("finnhub_quotes")
+        return s["state"], s["reason"]
+
+    async def scenario():
+        try:
+            await engine.finnhub.set_symbols(["AAPL", "MSFT"])
+            answers[:] = [lambda r: httpx.Response(500)]
+            await engine._run_step("finnhub_quotes", engine.finnhub.refresh_quotes)
+            yield status()
+            answers[:] = [lambda r: httpx.Response(200, json={"c": 150.0, "pc": 140.0, "t": 1}),
+                          lambda r: httpx.Response(429)]
+            await engine._run_step("finnhub_quotes", engine.finnhub.refresh_quotes)
+            yield status()
+            answers[:] = [lambda r: httpx.Response(200, json={"c": 151.0, "pc": 140.0, "t": 2})] * 2
+            await engine._run_step("finnhub_quotes", engine.finnhub.refresh_quotes)
+            yield status()
+
+            def unreachable(request):
+                raise httpx.ConnectError(f"refused: {request.url}?token=fake-key-0123456789")
+            answers[:] = [unreachable]
+            await engine._run_step("finnhub_quotes", engine.finnhub.refresh_quotes)
+            yield status()
+            answers[:] = [lambda r: httpx.Response(401)]
+            await engine._run_step("finnhub_quotes", engine.finnhub.refresh_quotes)
+            yield status()
+            clock.t += engine.settings.finnhub_quotes_interval * 3 + 1  # nothing good for 3 refreshes
+            yield status()
+        finally:
+            await engine.finnhub.aclose()
+
+    async def collect():
+        return [s async for s in scenario()]
+    steps = run(engine, collect())
+    assert steps[0] == ("down", "quote refresh failed: HTTP 500")  # failed before any success
+    assert steps[1] == ("degraded", "rate limit hit; the rest wait for the next refresh")
+    assert steps[2] == ("ok", None)
+    assert steps[3][0] == "degraded" and steps[3][1].startswith("quote refresh failed: refused: https://test/quote")
+    assert "fake-key-0123456789" not in steps[3][1]
+    assert steps[4] == ("degraded", "API key rejected (HTTP 401); check finnhub_api_key")
+    assert steps[5][0] == "down"
+
+
 def news_feed(failing):
     def handler(request):
         if request.url.host in failing:

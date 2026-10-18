@@ -8,7 +8,7 @@ this file.
 
 Market Pulse is a single-process FastAPI app. Background loops poll Yahoo, a Finnhub trade stream,
 SEC EDGAR, press-wire RSS feeds and the Nasdaq halts feed, and keep a live snapshot of the market
-(`app/engine/core.py:159-188`, `app/engine/core.py:129-155`). Changes go to every connected browser
+(`app/engine/core.py:160-189`, `app/engine/core.py:130-156`). Changes go to every connected browser
 over one WebSocket (`app/engine/core.py:60-74`, `app/main.py:601-618`). Alerts (price rules, unusual
 volume, halts, filings, headlines and more) are also pushed to a phone through ntfy and/or Telegram
 (`app/notify.py:1-6`, `app/notify.py:217-248`). The dashboard is plain JavaScript with no build step,
@@ -20,7 +20,7 @@ served from `static/` (`app/main.py:621`).
 |---|---|---|
 | `app/main.py` | HTTP routes, access-token middleware, sign-in, `/ws`, logging setup; builds the Engine at import | `build_engine` `app/main.py:71`, `require_token` `app/main.py:160`, `websocket` `app/main.py:601` |
 | `app/engine/` | One `Engine` made from per-area mixins; runs the polling loops and holds the snapshot | `Engine` `app/engine/core.py:77`, mixin list `app/engine/__init__.py:1-17` |
-| `app/engine/core.py` | Lifecycle, loop runner, health watch, the alert funnel, user actions, settings | `_loop` `:205`, `_run_step` `:221`, `_route` `:268`, `_publish_alerts` `:282`, `_publish_items` `:308` |
+| `app/engine/core.py` | Lifecycle, loop runner, health watch, the alert funnel, user actions, settings | `_loop` `:206`, `_run_step` `:222`, `_route` `:269`, `_publish_alerts` `:283`, `_publish_items` `:309` |
 | `app/engine/prices.py` | Watchlist quotes, Finnhub tick flushing, movers, unusual volume | `_update_quotes` `:37`, `_publish_quotes` `:59`, `_update_movers` `:73` |
 | `app/engine/feeds.py` | News, filings, halts polling and their alert handoff | `_update_news` `:23`, `_update_filings` `:41`, `_apply_halts` `:76` |
 | `app/engine/risk.py` | Dilution-risk summaries; warrant/offering price-level alerts | `_check_levels` `:56`, `_update_risk` `:99` |
@@ -29,7 +29,7 @@ served from `static/` (`app/main.py:621`).
 | `app/config.py` | `Settings` (config.toml + dashboard + env), `UserState` (state.json) | `Settings` `:30`, `load_settings` `:95`, `UserState` `:131` |
 | `app/setup.py` | Dashboard-editable settings, masking, validation, first-run checklist | `EDITABLE` `:39`, `DashboardSettings` `:160`, `checklist` `:239` |
 | `app/market.py` | Yahoo (yfinance) quotes with RVOL, screeners, unusual-volume filter | `fetch_quotes` `:137`, `fetch_movers` `:102`, `find_unusual` `:92` |
-| `app/finnhub.py` | Finnhub WebSocket trades + REST quotes, overlay onto Yahoo rows | `FinnhubFeed` `:42`, `overlay` `:93`, `run` `:111` |
+| `app/finnhub.py` | Finnhub WebSocket trades + REST quotes, overlay onto Yahoo rows | `FinnhubFeed` `:43`, `overlay` `:94`, `run` `:112` |
 | `app/alerts.py` | Price/move/RVOL rules (crossing + cooldown), unusual-volume entries | `AlertMonitor` `:47`, `check_quotes` `:56`, `check_unusual` `:79` |
 | `app/noise.py` | Mutes, snoozes, per-kind daily counts | `muted` `:48`, `snoozed` `:53`, `AlertCounts` `:58` |
 | `app/notify.py` | Phone push: batching, per-minute cap, delivery status | `PhoneNotifier` `:132`, `run` `:168`, `_allow` `:208` |
@@ -63,22 +63,22 @@ Note: CLAUDE.md lists the UI as `app/static/`, but it lives at the repo root `st
 ### Shared machinery
 
 - **Loop runner.** Each source runs as `Engine._loop`. It calls the step, then sleeps for the interval
-  in market time, or until a wake event fires (`app/engine/core.py:205-219`). `_run_step` records
-  success or failure in the source's health (`app/engine/core.py:221-233`).
+  in market time, or until a wake event fires (`app/engine/core.py:206-220`). `_run_step` records
+  success or failure in the source's health (`app/engine/core.py:222-234`).
 - **Noise controls.** `_route` decides, for each alert, whether to show it in the browser and whether
-  to send it to the phone, and counts it (`app/engine/core.py:268-280`):
-  1. An alert whose stocks are all snoozed is counted and dropped (`:272-274`).
+  to send it to the phone, and counts it (`app/engine/core.py:269-281`):
+  1. An alert whose stocks are all snoozed is counted and dropped (`:273-275`).
   2. It goes to the phone only if a channel is configured, its category is on, the kind isn't
-     phone-muted, and it is under `phone_cap_per_kind` for the day (`:275-279`).
-  3. A browser mute keeps it off the dashboard (`:280`).
-- **Alert funnel.** `_publish_alerts` (`app/engine/core.py:282-306`) carries every alert except news
+     phone-muted, and it is under `phone_cap_per_kind` for the day (`:276-280`).
+  3. A browser mute keeps it off the dashboard (`:281`).
+- **Alert funnel.** `_publish_alerts` (`app/engine/core.py:283-307`) carries every alert except news
   and filing items:
-  1. Track records and reaction tracking, muted alerts included (`:288-289`).
-  2. `_route` for each alert (`:292-298`), then counts are saved (`:299`).
-  3. Shown alerts go to the alert log and are broadcast as `{"type":"alerts"}` (`:300-303`); phone
-     notes are queued (`:304-305`).
-- **News and filing items.** `_publish_items` (`app/engine/core.py:308-327`) runs each item flagged
-  as an alert through `_route` (`:315-320`, kinds `news` and `filing` at `app/noise.py:43-44`).
+  1. Track records and reaction tracking, muted alerts included (`:289-290`).
+  2. `_route` for each alert (`:293-299`), then counts are saved (`:300`).
+  3. Shown alerts go to the alert log and are broadcast as `{"type":"alerts"}` (`:301-304`); phone
+     notes are queued (`:305-306`).
+- **News and filing items.** `_publish_items` (`app/engine/core.py:309-328`) runs each item flagged
+  as an alert through `_route` (`:316-321`, kinds `news` and `filing` at `app/noise.py:43-44`).
   - A muted or snoozed item loses its `alert` flag but is still broadcast to the news panel
     (`:318`, `:321`).
   - Phone notes are queued (`:325-326`).
@@ -95,11 +95,11 @@ Note: CLAUDE.md lists the UI as `app/static/`, but it lives at the repo root `st
 
 ### Yahoo (quotes and movers)
 
-1. **Start.** `start()` launches the quotes loop at `quotes_interval`=15 s (`app/engine/core.py:162`,
-   `app/config.py:48`) and the movers loop at `movers_interval`=60 s (`app/engine/core.py:163`,
+1. **Start.** `start()` launches the quotes loop at `quotes_interval`=15 s (`app/engine/core.py:163`,
+   `app/config.py:48`) and the movers loop at `movers_interval`=60 s (`app/engine/core.py:164`,
    `app/config.py:49`).
 2. **Fetch.** `_update_quotes` calls `market.fetch_quotes` through `_call` (`app/engine/prices.py:37-39`).
-   Live, `_call` runs the blocking yfinance call on a thread (`app/engine/core.py:120-122`,
+   Live, `_call` runs the blocking yfinance call on a thread (`app/engine/core.py:121-123`,
    `app/replay.py:71-72`).
 3. **RVOL.** `fetch_quotes` downloads daily bars (`app/market.py:137-141`). It computes RVOL from the
    mean volume of the previous 10 bars, paced by how far the session has run
@@ -129,23 +129,24 @@ Note: CLAUDE.md lists the UI as `app/static/`, but it lives at the repo root `st
 
 1. **Created only with a key.** `FinnhubFeed` exists only when `finnhub_api_key` is set. Its update
    callback is `_ticks.set` (`app/engine/core.py:101`, `app/engine/prices.py:24`).
-2. **Start.** `start()` subscribes the watchlist, at most `MAX_SYMBOLS`=50 (`app/finnhub.py:23`,
-   `:74-91`). It then starts the stream, a REST quote loop at `finnhub_quotes_interval`=300 s, and the
-   tick flusher (`app/engine/core.py:181-188`, `app/config.py:35`).
-3. **Stream.** `run` connects to `wss://ws.finnhub.io?token=<key>` (`app/finnhub.py:21`, `:116`).
+2. **Start.** `start()` subscribes the watchlist, at most `MAX_SYMBOLS`=50 (`app/finnhub.py:24`,
+   `:75-92`). It then starts the stream, a REST quote loop at `finnhub_quotes_interval`=300 s, and the
+   tick flusher (`app/engine/core.py:182-189`, `app/config.py:35`).
+3. **Stream.** `run` connects to `wss://ws.finnhub.io?token=<key>` (`app/finnhub.py:22`, `:117`).
    `handle` stores each trade's price and time, ignoring out-of-order trades, and stamps `seen`
-   (`app/finnhub.py:134-153`).
+   (`app/finnhub.py:135-154`).
 4. **REST.** `refresh_quotes` calls `GET /quote` with the key in the `X-Finnhub-Token` header
-   (`app/finnhub.py:53`, `:155-176`). It fills prices before the first trade and keeps the previous
-   close current.
+   (`app/finnhub.py:54`, `:156-185`). It fills prices before the first trade and keeps the previous
+   close current. It runs as the `finnhub_quotes` loop, a health source of its own ("Finnhub
+   quotes", `app/engine/core.py:117`, `:186`).
 5. **Flush.** `_flush_ticks` wakes on `_ticks` and calls `_publish_quotes(ticks=True)` at most every
    `TICK_FLUSH_SECONDS`=0.5 (`app/engine/prices.py:12`, `:52-57`). It broadcasts only the rows whose
    price moved, as `quote_ticks` (`app/engine/prices.py:63-65`).
 6. **Overlay.** The `quotes` property puts Finnhub's price and change on each Yahoo row; volume and
-   RVOL stay Yahoo's (`app/engine/prices.py:30-35`, `app/finnhub.py:93-109`). A price counts as fresh
+   RVOL stay Yahoo's (`app/engine/prices.py:30-35`, `app/finnhub.py:94-110`). A price counts as fresh
    if it was seen since the current connection opened, or within `STALE_SECONDS`=30
-   (`app/finnhub.py:24`, `:59-64`). Otherwise the row keeps Yahoo's price and is marked
-   `delayed` (`app/finnhub.py:98-99`).
+   (`app/finnhub.py:25`, `:60-65`). Otherwise the row keeps Yahoo's price and is marked
+   `delayed` (`app/finnhub.py:99-100`).
 7. **To alert.** The same checks as Yahoo run on every flush: price rules, levels and tape
    (`app/engine/prices.py:69-71`), then `_publish_alerts`. Unusual volume runs only on the Yahoo path
    (`app/engine/prices.py:49`, `:88`).
@@ -153,7 +154,7 @@ Note: CLAUDE.md lists the UI as `app/static/`, but it lives at the repo root `st
 ### SEC (EDGAR filings)
 
 1. **Start.** The filings loop runs at `filings_interval`=30 s, and only when `sec_filings` is on
-   (`app/engine/core.py:89`, `:178-180`, `app/config.py:58-59`).
+   (`app/engine/core.py:89`, `:179-181`, `app/config.py:58-59`).
 2. **Client.** Every SEC request goes through `SecClient`:
    - only `www.sec.gov` and `data.sec.gov` are allowed (`app/sec.py:22`, `:50-53`);
    - redirects are not followed (`app/sec.py:34`);
@@ -187,7 +188,7 @@ Note: CLAUDE.md lists the UI as `app/static/`, but it lives at the repo root `st
 ### Press wires (news RSS)
 
 1. **Start.** The news loop runs at `news_interval`=30 s and wakes early when a symbol is added
-   (`app/engine/core.py:164`, `:340`, `app/config.py:50`).
+   (`app/engine/core.py:165`, `:341`, `app/config.py:50`).
 2. **Sources** (`app/news.py:108-112`):
    - the `feeds` setting, by default GlobeNewswire and PR Newswire (`app/config.py:21-24`, `:55`);
    - the SEC 8-K feed, only when `sec_filings` is off (`app/config.py:20`);
@@ -210,7 +211,7 @@ Note: CLAUDE.md lists the UI as `app/static/`, but it lives at the repo root `st
 
 ### Nasdaq halts
 
-1. **Start.** The halts loop runs at `halts_interval`=20 s (`app/engine/core.py:165`,
+1. **Start.** The halts loop runs at `halts_interval`=20 s (`app/engine/core.py:166`,
    `app/config.py:51`).
 2. **Fetch and parse.** `HaltFeed.poll` gets `HALTS_URL` and parses it with `parse_halts`
    (`app/halts.py:19`, `:81-112`, `:195-198`).
@@ -223,7 +224,7 @@ Note: CLAUDE.md lists the UI as `app/static/`, but it lives at the repo root `st
    `resume` alerts. These go through `_publish_alerts` (`app/halts.py:118-140`,
    `app/engine/feeds.py:85-86`).
 6. **Resumptions.** A separate loop runs every `RESUME_TICK`=5 s (`app/engine/resumptions.py:16`,
-   `app/engine/core.py:175`):
+   `app/engine/core.py:176`):
    - **Heads-up.** It fires `resuming` once when a resumption is ≤60 s away
      (`app/engine/resumptions.py:46-51`).
    - **Resumed report.** It fires `resumed` once it finds the first 1-minute bar. Only halts whose
@@ -235,7 +236,7 @@ Note: CLAUDE.md lists the UI as `app/static/`, but it lives at the repo root `st
 
 The shared rule for every loop: `_run_step` catches any exception. It logs a `SourceError` without a
 traceback and anything else with `log.exception`, then calls `health.fail`. The loop keeps its normal
-interval; there is no backoff (`app/engine/core.py:221-230`). A source goes "down" when its last good
+interval; there is no backoff (`app/engine/core.py:222-231`). A source goes "down" when its last good
 update is older than `max(3 × interval, 60 s)`, whatever the cause, which also catches a hung call
 (`app/health.py:3-5`, `:13-14`, `:49`, `:62-63`).
 
@@ -246,15 +247,15 @@ update is older than `max(3 × interval, 60 s)`, whatever the cause, which also 
 | One Yahoo screener fails | `except Exception` per screen | Logged; that list keeps its previous rows; note "screener failing" | `app/market.py:106-110`, `app/engine/prices.py:77`, `:89-90` |
 | All Yahoo screeners fail | `not fetched` | `SourceError("every Yahoo screener failed")` | `app/engine/prices.py:75-76` |
 | Yahoo call hangs | No raise; last good update ages past the stale limit | Health reports "down" with "no update in over Ns" | `app/health.py:3-5`, `:62-63`, `:73-74` |
-| Ticker panel profile/chart fails | `gather(return_exceptions=True)` | Partial answer listing `errors`; 404 only if there is no data and no error | `app/engine/core.py:515-528`, `app/main.py:415-417` |
-| Finnhub stream drops / can't connect | `except Exception` in `run` | Key-redacted `error` set; `connected_at=None`; retry with backoff 1→2→…→60 s, reset on connect; resubscribe all | `app/finnhub.py:113-132` |
-| Finnhub price goes stale | `_fresh` false (>30 s and not seen since the current connection) | Row falls back to Yahoo's price, `live: False, delayed: True` | `app/finnhub.py:59-64`, `:98-99` |
-| Finnhub stream not connected (health) | `_check_health` every 5 s checks `connected` | `health.fail("finnhub", …)` | `app/engine/core.py:57`, `:242-246` |
-| Finnhub error message on stream | `type == "error"` | Logged redacted; becomes the health note while connected | `app/finnhub.py:136-138`, `app/engine/core.py:243-244` |
-| Finnhub REST 429 | `status_code == 429` | Rest of this refresh skipped until the next cycle | `app/finnhub.py:160-162` |
-| Finnhub key rejected | `status_code in (401, 403)` | Logged; `error` names `finnhub_api_key`; refresh stops | `app/finnhub.py:163-166` |
-| Finnhub REST other HTTP error | `raise_for_status()` | Logged by `_run_step` only: the loop name "finnhub quotes" is not a registered health source | `app/finnhub.py:167`, `app/engine/core.py:116`, `:185`, `:229` |
-| >50 Finnhub symbols | Count > `MAX_SYMBOLS` | Warning; the extra symbols stay on delayed Yahoo prices | `app/finnhub.py:79-80` |
+| Ticker panel profile/chart fails | `gather(return_exceptions=True)` | Partial answer listing `errors`; 404 only if there is no data and no error | `app/engine/core.py:516-529`, `app/main.py:415-417` |
+| Finnhub stream drops / can't connect | `except Exception` in `run` | Key-redacted `error` set; `connected_at=None`; retry with backoff 1→2→…→60 s, reset on connect; resubscribe all | `app/finnhub.py:114-133` |
+| Finnhub price goes stale | `_fresh` false (>30 s and not seen since the current connection) | Row falls back to Yahoo's price, `live: False, delayed: True` | `app/finnhub.py:60-65`, `:99-100` |
+| Finnhub stream not connected (health) | `_check_health` every 5 s checks `connected` | `health.fail("finnhub", …)` | `app/engine/core.py:57`, `:243-247` |
+| Finnhub error message on stream | `type == "error"` | Logged redacted; becomes the health note while connected | `app/finnhub.py:137-139`, `app/engine/core.py:244-245` |
+| Finnhub REST 429 | `status_code == 429` | Rest of this refresh skipped until the next cycle; health note "rate limit hit" (degraded) | `app/finnhub.py:167-170`, `:185` |
+| Finnhub key rejected | `status_code in (401, 403)` | `error` names `finnhub_api_key`; `SourceError` marks Finnhub quotes failed | `app/finnhub.py:171-173` |
+| Finnhub REST error or unreachable | Non-2xx answer, or `httpx.HTTPError` | `SourceError` (key redacted) marks Finnhub quotes failed; down once stale for 3 refreshes | `app/finnhub.py:164-166`, `:174-175`, `app/engine/core.py:117`, `:230-231` |
+| >50 Finnhub symbols | Count > `MAX_SYMBOLS` | Warning; the extra symbols stay on delayed Yahoo prices | `app/finnhub.py:80-81` |
 | SEC rejects the User-Agent | HTTP 403 | `SourceError` telling the user to set `sec_user_agent`; startup also warns about the example value | `app/sec.py:62-64`, `app/main.py:100-103` |
 | SEC other non-2xx (incl. 429) | `raise_for_status()` | Raised to the loop; no special 429 handling; requests are pre-spaced at 8/s | `app/sec.py:65`, `:24` |
 | SEC ticker map unavailable | Download raises | `tickers_error` set, retried after 600 s; `require_tickers` raises so the whole filings poll fails | `app/sec.py:106-108`, `:111-115`, `app/filings.py:346` |
@@ -265,15 +266,15 @@ update is older than `max(3 × interval, 60 s)`, whatever the cause, which also 
 | One news feed fails | Exception from `_fetch` | Logged; streak counted; degraded after `FAILING_AFTER`=3 in a row | `app/news.py:27`, `:120-124`, `:148-151`, `app/engine/feeds.py:35` |
 | All news feeds fail | `len(failed) == total` | `SourceError("all N feeds failed")` | `app/engine/feeds.py:33-34` |
 | Halts feed HTTP error | `raise_for_status()` | Raised to the loop; previous halt list kept | `app/halts.py:196-198` |
-| Halts XML malformed | `ET_XML.fromstring` raises (not caught locally) | `log.exception` plus `health.fail`; previous list kept | `app/halts.py:82`, `app/engine/core.py:224-230` |
+| Halts XML malformed | `ET_XML.fromstring` raises (not caught locally) | `log.exception` plus `health.fail`; previous list kept | `app/halts.py:82`, `app/engine/core.py:225-231` |
 | Halt item lacks symbol/time or has a bad pause price | `halted_at is None` / `ValueError` | Item skipped / `pause_price=None` | `app/halts.py:89-90`, `:94-97` |
 | Resumption bars not available yet | Exception from `fetch_chart`, or no bar found | Retried every 30 s; gives up after 1800 s | `app/engine/resumptions.py:18-20`, `:54-67` |
-| A source down for a long time | `outages(source_alert_minutes*60)` checked every 5 s | One phone alert ("sources") when it goes down and one on recovery; health broadcast on change | `app/engine/core.py:247-256`, `app/health.py:79-97`, `app/notify.py:109-118` |
-| Health check itself throws | `except Exception` | Logged; retried in 5 s | `app/engine/core.py:258-264` |
+| A source down for a long time | `outages(source_alert_minutes*60)` checked every 5 s | One phone alert ("sources") when it goes down and one on recovery; health broadcast on change | `app/engine/core.py:248-257`, `app/health.py:79-97`, `app/notify.py:109-118` |
+| Health check itself throws | `except Exception` | Logged; retried in 5 s | `app/engine/core.py:259-265` |
 | Phone delivery fails | Non-200 → `RuntimeError`; `gather(return_exceptions=True)` | `last_error` set and broadcast; no retry; Setup checklist warns | `app/notify.py:193-203`, `:231-234`, `:244-248`, `app/setup.py:291-293` |
 | Phone alert storm | `_allow()` sliding window | Over 20/min dropped with a warning; bursts over 3 collapsed to a summary | `app/notify.py:178-182`, `:208-215` |
 | Phone queue full | `asyncio.QueueFull` at 500 | Note dropped with a warning | `app/notify.py:163-166` |
-| Per-kind daily phone cap reached | `alert_counts.phoned(kind, day) >= cap` | Shown in the browser, not sent to the phone; news and filing alerts included | `app/engine/core.py:275-280` |
+| Per-kind daily phone cap reached | `alert_counts.phoned(kind, day) >= cap` | Shown in the browser, not sent to the phone; news and filing alerts included | `app/engine/core.py:276-281` |
 | Browser socket dead mid-broadcast | `except Exception` on send | Client removed from the hub | `app/engine/core.py:70-74` |
 | WebSocket from another site / without token | `same_origin` / `host_allowed` / `authorized` | Closed with 4403 / 4401 | `app/main.py:603-609` |
 | HTTP request to non-loopback Host without a token | `host_allowed` false | 403 (DNS-rebinding guard) | `app/main.py:143-148`, `:162-164` |
@@ -284,8 +285,8 @@ update is older than `max(3 × interval, 60 s)`, whatever the cause, which also 
 | Corrupt state.json | `json.loads` is not guarded | **UNVERIFIED**: startup fails the same way | `app/config.py:136` |
 | Corrupt settings.json | `FileNotFoundError`/`ValueError` | Silently treated as no dashboard settings | `app/setup.py:167-171` |
 | Corrupt alert_counts.json / luld_checks.json | `OSError`/`ValueError` | Treated as empty | `app/noise.py:63-66`, `app/luld.py:95-98` |
-| Bad dashboard setting | `validate` raises `SettingsError`, or env-owned setting, or `effective()` fails | 422; nothing saved | `app/engine/core.py:585-596`, `app/main.py:263-266` |
-| Bad backup file | >256,000 bytes / not JSON / wrong marker / invalid field | 413 / 422 via `BackupError`; everything is validated before any state changes | `app/main.py:463-473`, `app/backup.py:102-149`, `app/engine/core.py:397-401` |
+| Bad dashboard setting | `validate` raises `SettingsError`, or env-owned setting, or `effective()` fails | 422; nothing saved | `app/engine/core.py:586-597`, `app/main.py:263-266` |
+| Bad backup file | >256,000 bytes / not JSON / wrong marker / invalid field | 413 / 422 via `BackupError`; everything is validated before any state changes | `app/main.py:463-473`, `app/backup.py:102-149`, `app/engine/core.py:398-402` |
 | TLS address discovery fails | `ip -j addr` raises | Falls back to `getaddrinfo` | `app/tls.py:55-63` |
 | TLS cert near expiry / addresses changed | `< RENEW_DAYS`=30 or covered addresses differ | Reissued at the next `--https` start; checklist warns | `app/tls.py:39`, `:159-168`, `app/serve.py:27-30`, `app/setup.py:271-274` |
 
@@ -301,17 +302,17 @@ update is older than `max(3 × interval, 60 s)`, whatever the cause, which also 
 
 | What | Where / format | Written by | Notes | file:line |
 |---|---|---|---|---|
-| Watchlist, keywords, alert rules, alert switches, mutes, snoozes, halt mode, phone categories | `data/state.json`, JSON | `UserState.save` on every UI change via `_config_changed` | Atomic tmp+replace, created 0600 | `app/config.py:131-170`, `app/engine/core.py:481-483` |
-| Dashboard setting overrides, **including secrets entered in Setup** (plain text) | `data/settings.json`, JSON | `DashboardSettings.save` from `update_settings` | Created 0600, atomic; only `EDITABLE` names are loaded | `app/setup.py:167-182`, `app/engine/core.py:596`, `app/main.py:72` |
-| Alerts fired/phoned per kind per day, last 8 days | `data/alert_counts.json`, JSON | `AlertCounts.save` on every publish | So the daily phone cap survives a restart; written then chmod 0600 | `app/noise.py:21`, `:88-96`, `app/engine/core.py:104`, `:275-279`, `:299`, `:324` |
+| Watchlist, keywords, alert rules, alert switches, mutes, snoozes, halt mode, phone categories | `data/state.json`, JSON | `UserState.save` on every UI change via `_config_changed` | Atomic tmp+replace, created 0600 | `app/config.py:131-170`, `app/engine/core.py:482-484` |
+| Dashboard setting overrides, **including secrets entered in Setup** (plain text) | `data/settings.json`, JSON | `DashboardSettings.save` from `update_settings` | Created 0600, atomic; only `EDITABLE` names are loaded | `app/setup.py:167-182`, `app/engine/core.py:597`, `app/main.py:72` |
+| Alerts fired/phoned per kind per day, last 8 days | `data/alert_counts.json`, JSON | `AlertCounts.save` on every publish | So the daily phone cap survives a restart; written then chmod 0600 | `app/noise.py:21`, `:88-96`, `app/engine/core.py:104`, `:276-280`, `:300`, `:325` |
 | LULD estimate-vs-official checks, last 500 | `data/luld_checks.json`, JSON | `Checks.add` | Written then chmod 0600; no tickers | `app/luld.py:84-108`, `app/engine/tape.py:63` |
 | Catalyst events and their 5m/30m/close reactions | `data/reactions.db`, SQLite `events` table | `ReactionStore` | `INSERT OR IGNORE` so a restart doesn't re-track; chmod 0600 when created; pruned daily by `reactions_keep_days`; `VACUUM` after clearing | `app/reactions.py:34-51`, `:141-167`, `:194-213`, `app/engine/catalysts.py:70`, `:108-116` |
 | Recordings of source answers | `data/recordings/*.jsonl.gz` | `Recorder` when `record` or `MARKET_PULSE_RECORD=1` | Folder 0700, files 0600 `O_EXCL`; newest `record_keep` kept; no request headers; credential-like URL params dropped | `app/main.py:85-88`, `app/replay.py:11-13`, `:57`, `:80-84`, `:241-250`, `:312-316` |
 | Local CA and server certificate | `data/tls/` | `tls.ensure` at `--https` start | Folder 0700; keys 0600, certs 0644 | `app/config.py:16`, `app/tls.py:76-80`, `:139-169`, `app/serve.py:26-30` |
 
-The "Your data" panel lists these stores (`app/engine/core.py:545-557`). Its delete action covers
+The "Your data" panel lists these stores (`app/engine/core.py:546-558`). Its delete action covers
 `reactions`, `recordings`, `dashboard_settings`, `alert_counts` and `luld_checks`
-(`app/datastore.py:17`, `app/engine/core.py:559-577`).
+(`app/datastore.py:17`, `app/engine/core.py:560-578`).
 
 ### In memory only (rebuilt after a restart)
 
@@ -326,7 +327,7 @@ Rebuilding these is what makes "a restart only sets a baseline" true.
 - **Tape state:** SSR, floats, rotation, breakouts, LULD bands/cooldowns and sympathy
   (`app/engine/tape.py:42-64`).
 - **Health**, including the outage-alerted flag (`app/health.py:25-40`).
-- **Finnhub prices** (`app/finnhub.py:47`).
+- **Finnhub prices** (`app/finnhub.py:48`).
 - **Phone queue**, rate window and last sent/error (`app/notify.py:138-141`).
 - **SEC ticker map** (`app/sec.py:38-42`) and **dilution profile cache** (`app/dilution.py:320`).
 - **Catalyst helpers:** the offerings waiting for a risk level (`app/engine/catalysts.py:72`).
@@ -353,7 +354,7 @@ credentials (`app/replay.py:415-418`). Tested in `tests/test_replay.py:368`.
    `finnhub_api_key`, `ntfy_topic`, `ntfy_token`, `telegram_bot_token`, `telegram_chat_id` and
    `access_token`.
 4. **Locked settings.** A setting set by the environment shows as locked and can't be changed from the
-   dashboard (`app/setup.py:184-186`, `:212`, `app/engine/core.py:586-587`).
+   dashboard (`app/setup.py:184-186`, `:212`, `app/engine/core.py:587-588`).
 5. **Validation.**
    - Unknown keys in config.toml are rejected (`app/config.py:98-100`).
    - A malformed feed URL is reported without echoing it, since it may hold a token
@@ -389,16 +390,16 @@ credentials (`app/replay.py:415-418`). Tested in `tests/test_replay.py:368`.
     and ntfy topic (`app/main.py:54-56`).
   - `yfinance` is raised to CRITICAL (`app/main.py:58`).
   - The service runs uvicorn with `access_log=False` (`app/serve.py:34`).
-  - Setting changes log names only (`app/engine/core.py:600`).
-  - A restore logs only the count of changes (`app/engine/core.py:407`), and data deletion only the
-    store name (`app/engine/core.py:577`).
+  - Setting changes log names only (`app/engine/core.py:601`).
+  - A restore logs only the count of changes (`app/engine/core.py:408`), and data deletion only the
+    store name (`app/engine/core.py:578`).
   - The SEC example-value warning doesn't print the value (`app/main.py:100-103`).
   - A failed news feed is logged without its address (`app/news.py:121`; see News feed addresses).
 - **Finnhub key.**
-  - The WebSocket URL carries `?token=<key>` (`app/finnhub.py:116`). REST sends it as a header
-    instead (`app/finnhub.py:53`).
-  - `_redact` replaces the key with "…" (`app/finnhub.py:66-69`). It is applied to every stream log
-    line and to `feed.error` (`app/finnhub.py:126-127`, `:137-138`, `:182`).
+  - The WebSocket URL carries `?token=<key>` (`app/finnhub.py:117`). REST sends it as a header
+    instead (`app/finnhub.py:54`).
+  - `_redact` replaces the key with "…" (`app/finnhub.py:67-70`). It is applied to every stream log
+    line and to `feed.error` (`app/finnhub.py:127-128`, `:138-139`, `:191`).
   - Tests: `tests/test_finnhub.py:178` (`error`), `:197` (logs).
 - **Recordings.** Recordings never hold request headers. Credential-like query parameters are
   stripped from recorded URLs (`app/replay.py:11-13`, `:57`, `:80-84`). Tested in

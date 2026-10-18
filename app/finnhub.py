@@ -15,6 +15,7 @@ import httpx
 from websockets.asyncio.client import connect
 
 from .clock import clock
+from .health import SourceError, describe
 
 log = logging.getLogger(__name__)
 
@@ -152,19 +153,26 @@ class FinnhubFeed:
         if changed:
             self._on_update()
 
-    async def refresh_quotes(self) -> None:
+    async def refresh_quotes(self) -> str | None:
         """REST snapshot for every symbol: fills prices before the first trade (e.g. market
-        closed) and keeps the previous close current across days. ~1 call per symbol."""
+        closed) and keeps the previous close current across days. ~1 call per symbol.
+        Raises SourceError when Finnhub won't answer, for the data status (engine/core.py
+        _run_step); returns a note when the rate limit cut the round short."""
+        note = None
         for fsym, sym in list(self._wanted.items()):
-            resp = await self._client.get("/quote", params={"symbol": fsym})
+            try:
+                resp = await self._client.get("/quote", params={"symbol": fsym})
+            except httpx.HTTPError as exc:  # the key goes in a header, never the URL; redacted anyway
+                raise SourceError(self._redact(f"quote refresh failed: {describe(exc)}")) from None
             if resp.status_code == 429:
                 log.warning("Finnhub rate limit hit; quote refresh paused until next cycle")
+                note = "rate limit hit; the rest wait for the next refresh"
                 break
             if resp.status_code in (401, 403):
-                log.error("Finnhub rejected the API key (HTTP %d); check finnhub_api_key", resp.status_code)
                 self.error = f"API key rejected (HTTP {resp.status_code}); check finnhub_api_key"
-                return
-            resp.raise_for_status()
+                raise SourceError(self.error)
+            if not resp.is_success:
+                raise SourceError(f"quote refresh failed: HTTP {resp.status_code}")
             q = resp.json()
             if not q.get("c") or self._wanted.get(fsym) != sym:  # unknown symbol (all zeros) or removed meanwhile
                 continue
@@ -174,6 +182,7 @@ class FinnhubFeed:
             if q.get("t", 0) >= live.time:
                 live.price, live.time = q["c"], q["t"]
         self._on_update()
+        return note
 
     async def _send(self, kind: str, fsym: str) -> None:
         try:

@@ -114,6 +114,7 @@ class Engine(PricesMixin, FeedsMixin, RiskMixin, CatalystsMixin, DailyMixin, Gap
             self.health.register("filings", "SEC filings", settings.filings_interval)
         if self.finnhub:
             self.health.register("finnhub", "Finnhub stream", HEALTH_CHECK_SECONDS)
+            self.health.register("finnhub_quotes", "Finnhub quotes", settings.finnhub_quotes_interval)
         self._health_seen: list = []  # what the browsers were last told
         self._tasks: list[asyncio.Task] = []
 
@@ -182,7 +183,7 @@ class Engine(PricesMixin, FeedsMixin, RiskMixin, CatalystsMixin, DailyMixin, Gap
             await self.finnhub.set_symbols(self.state.watchlist)
             self._tasks += [
                 asyncio.create_task(self.finnhub.run()),
-                asyncio.create_task(self._loop("finnhub quotes", s.finnhub_quotes_interval,
+                asyncio.create_task(self._loop("finnhub_quotes", s.finnhub_quotes_interval,
                                                self.finnhub.refresh_quotes, self._wake_finnhub)),
                 asyncio.create_task(self._flush_ticks()),
             ]
