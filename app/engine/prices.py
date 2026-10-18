@@ -24,6 +24,7 @@ class PricesMixin:
         self.yahoo_quotes: list[dict] = []
         self.movers: dict[str, list[dict]] = {key: [] for key in market.SCREENS}
         self.unusual: list[dict] = []
+        self.gapper_quotes: list[dict] = []  # today's gappers on neither list, regular hours (_gapper_quotes)
         self._ticks = asyncio.Event()  # set by the Finnhub feed whenever a price changes
         self._sent_prices: dict[str, float | None] = {}  # what the browsers last got, per symbol
         self._wake_quotes = asyncio.Event()
@@ -100,7 +101,8 @@ class PricesMixin:
         if not symbols or not market.is_regular_bar(int(clock.time())):
             return []
         try:
-            return await self._call("fetch_quotes", market.fetch_quotes, symbols)
+            self.gapper_quotes = await self._call("fetch_quotes", market.fetch_quotes, symbols)
+            return self.gapper_quotes
         except Exception as exc:  # the movers themselves are fine; these wait for the next round
             log.info("gapper prices unavailable: %s", describe(exc))
             return []

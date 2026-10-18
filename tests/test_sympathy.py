@@ -69,6 +69,47 @@ def test_a_stock_already_moving_when_its_leaders_industry_arrives_is_only_a_base
         run.close()
 
 
+def test_gappers_on_no_list_move_in_sympathy_before_and_after_the_open(tmp_path, monkeypatch):
+    monkeypatch.setattr("app.sec.MIN_REQUEST_GAP", 0)
+    day = Day(tmp_path, start="04:00")
+    day.headline("06:30", "Crux Biotherapeutics Inc (NASDAQ: CRUX) reports topline data")  # why the scanner looks
+    day.headline("06:31", "Dyna Robotics Corp (NASDAQ: DYNA) names a partner")
+    day.premarket("07:00", CRUX=(40.0, 30), DYNA=(4.0, 20))   # DYNA gaps, but under the 5% sympathy bar
+    day.floats("07:00", CRUX=None, DYNA=None, industry={"CRUX": "Biotechnology", "DYNA": "Biotechnology"})
+    day.quotes("09:35", CRUX=41.0, DYNA=8.0)                   # after the open DYNA follows: one alert
+    run = Run(day, watchlist=["BOLT"]).steps("07:01", "07:02")
+    try:
+        assert not any(run.engine.movers.values())
+        assert run.engine.sympathy == {}  # pre-market: CRUX leads, DYNA (+4%) not yet with it
+        plan = {e["symbol"]: e for e in run.engine.game_plan()["entries"]}
+        assert plan["CRUX"]["peers"] == {"industry": "Biotechnology", "leader": None, "followers": []}
+        run.steps("09:36")
+        assert run.engine.sympathy["DYNA"] == {"industry": "Biotechnology", "leader": "CRUX", "leader_pct": 41.0,
+                                               "change_pct": 8.0}
+        assert [a["message"] for a in run.browser("alerts") if a["kind"] == "sympathy"] == [
+            "DYNA +8.0% in sympathy with CRUX +41% (Biotechnology)"]
+    finally:
+        run.close()
+
+
+def test_a_pre_market_gapper_moving_with_its_industrys_leader_shows_in_the_plan(tmp_path, monkeypatch):
+    monkeypatch.setattr("app.sec.MIN_REQUEST_GAP", 0)
+    day = Day(tmp_path, start="04:00")
+    day.headline("06:30", "Crux Biotherapeutics Inc (NASDAQ: CRUX) reports topline data")
+    day.headline("06:31", "Dyna Robotics Corp (NASDAQ: DYNA) names a partner")
+    day.premarket("07:00", CRUX=(40.0, 30), DYNA=(12.0, 20))
+    day.floats("07:00", CRUX=None, DYNA=None, industry={"CRUX": "Biotechnology", "DYNA": "Biotechnology"})
+    run = Run(day, watchlist=["BOLT"]).steps("07:01", "07:02")
+    try:
+        assert run.engine.sympathy["DYNA"]["leader"] == "CRUX"
+        plan = {e["symbol"]: e for e in run.engine.game_plan()["entries"]}
+        assert plan["CRUX"]["peers"]["followers"] == [{"symbol": "DYNA", "change_pct": 12.0}]
+        assert plan["DYNA"]["peers"]["leader"] == {"symbol": "CRUX", "change_pct": 40.0}
+        assert [a for a in run.browser("alerts") if a["kind"] == "sympathy"] == []  # moving at its first check
+    finally:
+        run.close()
+
+
 def test_the_sympathy_thresholds_are_yours_to_set(day):
     theme(day)
     run = Run(day, watchlist=["BOLT"], sympathy_min_pct=2.0, sympathy_lead_pct=50.0)
