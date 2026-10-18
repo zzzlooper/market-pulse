@@ -342,7 +342,7 @@ def test_engine_sends_filings_to_the_news_feed_and_the_phone(tmp_path):
     from app.config import UserState
     state = UserState(tmp_path / "state.json")
     hub = RecordingHub()
-    engine = Engine(Settings(), state, hub)
+    engine = Engine(Settings(ntfy_topic="mp-test"), state, hub)  # a phone channel to route to
     engine.movers["gainers"] = [{"symbol": "ACME", "change_pct": 45.2}]
     sent, seen = [], {}
 
@@ -366,7 +366,7 @@ def test_engine_sends_filings_to_the_news_feed_and_the_phone(tmp_path):
             await engine.phone.aclose()
     asyncio.run(scenario())
     assert seen == {"ACME": "top gainer +45%"}
-    assert [m["type"] for m in hub.messages] == ["risk", "news"]
+    assert [m["type"] for m in hub.messages] == ["risk", "news", "alert_counts"]
     assert hub.messages[0]["data"] == {"ACME": {"level": "high", "points": 6, "reasons": ["S-1 pending"], "warrant_levels": [], "offering_levels": [], "reverse_split": None}}
     assert len(hub.messages[1]["data"]) == 2 and hub.messages[1]["data"][0]["filing"]["risk"] == "high"
     assert [n["category"] for n in sent] == ["filings"]

@@ -265,34 +265,63 @@ class Engine(PricesMixin, FeedsMixin, RiskMixin, CatalystsMixin, DailyMixin, Gap
 
     # --- alerts -----------------------------------------------------------------------------
 
+    def _route(self, kind: str, symbols: list[str], category: str, day: str) -> tuple[bool, bool]:
+        """(show it in the browser, send it to the phone) for one alert, after the noise controls
+        (app/noise.py), and count it. Snoozed when every stock it's about is snoozed; one about
+        no stock (a keyword headline) can't be."""
+        if symbols and all(snoozed(self.state.snoozed, s, day) for s in symbols):
+            self.alert_counts.add(kind, day, phoned=False)
+            return False, False
+        cap = self.settings.phone_cap_per_kind
+        to_phone = bool(self.phone.channels and self.state.phone_alerts.get(category, False)
+                        and not muted(self.state.alert_mutes, kind, "phone")
+                        and not (cap and self.alert_counts.phoned(kind, day) >= cap))
+        self.alert_counts.add(kind, day, phoned=to_phone)
+        return not muted(self.state.alert_mutes, kind, "browser"), to_phone
+
     async def _publish_alerts(self, fired: list[dict]) -> None:
-        """Every alert goes out through here: counted, measured, then shown and sent to the phone
-        unless muted or snoozed (app/noise.py), and to the phone up to the daily cap per kind."""
+        """Every alert goes out through here (news and filing items through _publish_items):
+        counted, measured, then shown and sent to the phone unless muted or snoozed
+        (app/noise.py), and to the phone up to the daily cap per kind."""
         if not fired:
             return
         self._add_track_records(fired)
         self._track_alerts(fired)  # muted ones too: the panel shows what you'd be missing
         today = clock.today(market.ET)
-        day, cap = today.isoformat(), self.settings.phone_cap_per_kind
         shown, notes = [], []
         for e in fired:
-            if snoozed(self.state.snoozed, e["symbol"], day):
-                self.alert_counts.add(e["kind"], day, phoned=False)
-                continue
-            if not muted(self.state.alert_mutes, e["kind"], "browser"):
-                shown.append(e)
             note = from_alert(e, self.settings.public_url)
-            to_phone = (self.phone.channels and self.state.phone_alerts.get(note["category"], False)
-                        and not muted(self.state.alert_mutes, e["kind"], "phone")
-                        and not (cap and self.alert_counts.phoned(e["kind"], day) >= cap))
+            show, to_phone = self._route(e["kind"], [e["symbol"]], note["category"], today.isoformat())
+            if show:
+                shown.append(e)
             if to_phone:
                 notes.append(note)
-            self.alert_counts.add(e["kind"], day, phoned=bool(to_phone))
         self.alert_counts.save(today)
         if shown:
             self.alerts.record(shown)
             log.info("alerts: %s", "; ".join(e["message"] for e in shown))
             await self.hub.broadcast({"type": "alerts", "data": shown})
+        if notes:
+            self.phone.enqueue(notes, self.state.phone_alerts)
+        await self.hub.broadcast({"type": "alert_counts", "data": self.alert_counts.summary(today)})
+
+    async def _publish_items(self, fresh: list[dict], kind: str, to_note: Callable[[dict], dict]) -> None:
+        """New news or filing items to the news panel. The ones flagged as alerts (a desktop
+        notification, the phone) pass the same noise controls as _publish_alerts; one muted
+        in the browser or snoozed loses its flag, but stays in the news."""
+        if not fresh:
+            return
+        today = clock.today(market.ET)
+        alerting, notes = [n for n in fresh if n["alert"]], []
+        for n in alerting:
+            note = to_note(n)
+            n["alert"], to_phone = self._route(kind, n["tickers"], note["category"], today.isoformat())
+            if to_phone:
+                notes.append(note)
+        await self.hub.broadcast({"type": "news", "data": fresh})
+        if not alerting:
+            return
+        self.alert_counts.save(today)
         if notes:
             self.phone.enqueue(notes, self.state.phone_alerts)
         await self.hub.broadcast({"type": "alert_counts", "data": self.alert_counts.summary(today)})

@@ -124,9 +124,11 @@ The signals and filings are in [signals.md](signals.md). Back to the [README](..
     news alerts.
   - **Alert kinds** (`app/noise.py`), under the switches: every kind of alert (your rules,
     unusual volume, float rotation, breakouts, sympathy, warrant and offering levels, halts,
-    resumptions, LULD) with how many fired today and in the last 7 days, how many went to the
-    phone today, and its track record (median move to the close, as in the Reactions tab).
-    Untick *Show* to keep a kind off this page, *Phone* to keep it off the phone.
+    resumptions, LULD, headlines and SEC filings) with how many fired today and in the last 7
+    days, how many went to the phone today, and its track record (median move to the close, as
+    in the Reactions tab). Untick *Show* to keep a kind off this page, *Phone* to keep it off the
+    phone. A muted or snoozed headline or filing still appears in the news, without the beep or
+    desktop notification.
     - *snooze* on any alert in the log: no alerts about that stock, anywhere, for the rest of
       the day (ET). Snoozed stocks are listed here, with × to wake one up early.
     - `phone_cap_per_kind` (Setup → Alert tuning; 0 = no cap): at most that many alerts of one
