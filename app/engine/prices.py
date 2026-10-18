@@ -3,11 +3,14 @@ unusual volume, and the price/volume alert rules they feed."""
 from __future__ import annotations
 
 import asyncio
+import logging
 
 from .. import market
 from ..clock import clock
 from ..gaps import scanning
-from ..health import SourceError
+from ..health import SourceError, describe
+
+log = logging.getLogger(__name__)
 
 TICK_FLUSH_SECONDS = 0.5  # streamed trades are batched into at most 2 broadcasts per second
 MOVER_NAMES = {"gainers": "top gainer", "losers": "top loser", "active": "most active",
@@ -84,10 +87,23 @@ class PricesMixin:
         watched = set(self.state.watchlist)
         others = [row for rows in self.movers.values() for row in rows if row["symbol"] not in watched]
         await self._check_levels(others)
-        await self._check_tape(others)
+        await self._check_tape([*others, *await self._gapper_quotes(watched | {row["symbol"] for row in others})])
         await self._update_unusual()
         failed = [key for key in market.SCREENS if key not in fetched]
         return f"screener failing: {', '.join(failed)}" if failed else None
+
+    async def _gapper_quotes(self, covered: set[str]) -> list[dict]:
+        """In regular hours, quotes for today's gappers that are on neither the watchlist nor a
+        movers list: after the open the gap scan no longer prices them, and without these the
+        tape checks (breakouts above all) would never see them."""
+        symbols = [g["symbol"] for g in self.gaps if g["symbol"] not in covered]
+        if not symbols or not market.is_regular_bar(int(clock.time())):
+            return []
+        try:
+            return await self._call("fetch_quotes", market.fetch_quotes, symbols)
+        except Exception as exc:  # the movers themselves are fine; these wait for the next round
+            log.info("gapper prices unavailable: %s", describe(exc))
+            return []
 
     async def _update_unusual(self) -> None:
         pool = [*self.quotes, *(row for rows in self.movers.values() for row in rows)]

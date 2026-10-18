@@ -167,12 +167,16 @@ The signals and filings are in [signals.md](signals.md). Back to the [README](..
     here as a market cap of $4B or more), 20% from $0.75 to $3, and the lesser of $0.15 or 75%
     below that; doubled from 15:35 for Tier 1 and for Tier 2 at $3 or less (no doubling at the
     open since 2020).
+    - Bands are estimated for the stocks the app prices during the session: the watchlist, the
+      movers lists and today's gappers. Other stocks have none, since nothing free streams the
+      whole market.
     - A **LULD ↑1.3%** badge marks a stock within a quarter of the band's width of a band; hover
-      for the bands. The ticker panel shows the estimated bands all session.
-    - For the stocks the halt-alert setting covers, a warning when one nears a band: *BOLT is
-      2.2% from its estimated limit-up band of $11.29 (reference $10.26, ±10%): it pauses for 5
-      minutes there if it can't get back inside within 15 seconds*. At most every 15 minutes per
-      stock and side; to the phone with the halts.
+      for the bands. For those stocks the ticker panel shows the estimated bands all session.
+    - A warning when one of those stocks nears a band, if the halt-alert setting covers it
+      (*Watchlist*: the watchlist only; *All stocks*: all of them): *BOLT is 2.2% from its
+      estimated limit-up band of $11.29 (reference $10.26, ±10%): it pauses for 5 minutes there
+      if it can't get back inside within 15 seconds*. At most every 15 minutes per stock and
+      side; to the phone with the halts.
     - An estimate: the reference price is the average of the prices this app saw (every tick
       with Finnhub, a reading a minute or so with Yahoo), not of every trade. Yahoo's prices are
       delayed ~15 minutes, so without Finnhub a warning can arrive after the pause.
