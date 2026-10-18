@@ -251,7 +251,7 @@ def _cached(key: tuple, ttl: float, load: Callable[[], object]):
 def next_earnings(info: dict, now: float | None = None) -> int | None:
     """Earliest future earnings timestamp. Yahoo's earningsTimestamp can still hold the last
     report while earningsTimestampStart already points at the next one, or vice versa."""
-    now = now if now is not None else clock.time()
+    now = now if now is not None else app_clock.time()  # market time: a replay's day, not today
     candidates = [info.get(k) for k in ("earningsTimestampStart", "earningsTimestamp")]
     future = [int(t) for t in candidates if t and t > now]
     return min(future) if future else None

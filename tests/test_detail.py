@@ -19,6 +19,18 @@ def test_next_earnings_picks_earliest_future_date():
     assert next_earnings({}, now) is None
 
 
+def test_next_earnings_goes_by_the_market_clock_so_a_replay_sees_that_days_reports():
+    from app.clock import clock
+    replayed = 1_791_898_200  # a weekday morning in the past (2026-10-13 09:30 ET)
+    clock.freeze(replayed)
+    try:
+        report = replayed + 7 * 3600  # after that day's close: still ahead in the replay
+        assert next_earnings({"earningsTimestamp": report}) == report
+        assert next_earnings({"earningsTimestamp": replayed - 60}) is None  # already behind it
+    finally:
+        clock.reset()
+
+
 def test_cached_reuses_value_within_ttl():
     calls = []
     load = lambda: calls.append(1) or len(calls)
