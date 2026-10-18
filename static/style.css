@@ -129,6 +129,7 @@ tr:hover td { background: #ffffff06; }
   background: var(--up);
   vertical-align: middle;
 }
+.live-dot.delayed { background: none; box-shadow: inset 0 0 0 1px var(--muted); }  /* fell back to Yahoo */
 .muted { color: var(--muted); }
 td small { color: var(--muted); }
 .sentiment { border-radius: 3px; padding: 0 5px; font-weight: 600; cursor: help; }

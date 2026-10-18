@@ -15,6 +15,7 @@ function quoteRow(r, extra = "", flashable = false) {
   }
   const live = r.live
     ? `<span class="live-dot" title="Real-time · last trade ${new Date(r.price_time * 1000).toLocaleTimeString()}"></span>`
+    : r.delayed ? `<span class="live-dot delayed" title="Nothing from Finnhub for 30 s; showing Yahoo's price, delayed ~15 min"></span>`
     : "";
   const stale = r.stale ? ` class="stale" title="No fresh price from Yahoo; showing the last one received"` : "";
   return `<tr${stale}>

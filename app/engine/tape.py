@@ -54,6 +54,7 @@ class TapeMixin:
         self.industries: dict[str, str] = {}               # symbol -> Yahoo industry, for sympathy moves
         self.sympathy: dict[str, dict] = {}                # symbol -> its industry's leader today
         self._sympathy_alerted: set[str] = set()
+        self._sympathy_seen: set[str] = set()              # checked with its industry known: later checks can alert
         self._sympathy_sent: frozenset = frozenset()
         self._luld_bands = Bands()
         self._luld_warned: dict[tuple[str, str], float] = {}
@@ -70,7 +71,7 @@ class TapeMixin:
             self._tape_day = today
             self.ssr, self.day2, self._tape_tries, self._tape_done = {}, {}, {}, set()
             self.luld, self._luld_warned, self._luld_history = {}, {}, {}
-            self.sympathy, self._sympathy_alerted = {}, set()
+            self.sympathy, self._sympathy_alerted, self._sympathy_seen = {}, set(), set()
             self._luld_bands.forget()
             self._rotation_last, self._rotation_fired = {}, set()
         return today
@@ -159,7 +160,10 @@ class TapeMixin:
     async def _check_sympathy(self) -> None:
         """Sympathy moves among the stocks followed today (watchlist, movers): in each industry the
         biggest gainer up sympathy_lead_pct or more leads, and its peers up sympathy_min_pct or more
-        move with it. One alert per stock a day, with the breakouts (same switch, same phone category).
+        move with it. A stock's first check (once its industry is known) is a baseline, and so is its
+        leader's, so one already moving at startup isn't alerted, even if its leader's industry
+        arrives later. One alert per stock a day, with the breakouts
+        (same switch, same phone category).
         Once in, a stock stays until it falls well back (a leader below 80% of the threshold, a
         follower below half), so one hovering at a threshold doesn't flicker in and out."""
         today, s = self._tape_today(), self.settings
@@ -183,11 +187,14 @@ class TapeMixin:
                 continue
             sympathy[symbol] = {"industry": industry, "leader": lead[0], "leader_pct": round(lead[1], 1),
                                 "change_pct": round(row["change_pct"], 1)}
+            if not {symbol, lead[0]} <= self._sympathy_seen:  # already moving at its or its leader's first check
+                self._sympathy_alerted.add(symbol)
             if symbol not in self._sympathy_alerted and self.state.breakout_alerts:
                 self._sympathy_alerted.add(symbol)
                 fired.append(self.alerts.event(row, "sympathy", (
                     f"{symbol} {row['change_pct']:+.1f}% in sympathy with {lead[0]} {lead[1]:+.0f}% ({industry})")))
         self.sympathy = sympathy
+        self._sympathy_seen |= {symbol for symbol in moves if self.industries.get(symbol)}
         # Sent when who moves with whom changes; each one's move is in the quotes and movers anyway.
         if (pairs := frozenset((k, v["leader"]) for k, v in sympathy.items())) != self._sympathy_sent:
             self._sympathy_sent = pairs
