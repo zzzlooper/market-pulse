@@ -81,7 +81,9 @@ def build_engine() -> Engine:
                     "halt_alerts"):
             if key in recorded:
                 setattr(state, key, recorded[key])
-        return Engine(replay_settings(settings), state, hub, io=player)
+        replaying = Engine(replay_settings(settings), state, hub, io=player)
+        replaying.phone.offline = True  # nothing sent, even with a topic typed into Setup or back from config.toml
+        return replaying
     if settings.record or os.environ.get("MARKET_PULSE_RECORD") == "1":
         recorder = Recorder(STATE_PATH.parent / "recordings", state.to_dict(), settings.record_keep)
         log.info("recording to %s", recorder.recording.name)

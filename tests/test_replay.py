@@ -311,6 +311,53 @@ def test_engine_replays_prices_and_filings_offline_without_phone_alerts(tmp_path
     assert engine.clock_info()["replay"] is True and engine.clock_info()["recording"] == "day.jsonl.gz"
 
 
+def test_setup_during_a_replay_never_turns_phone_alerts_back_on(tmp_path, monkeypatch):
+    from app import main
+    from app.setup import DashboardSettings
+    path = tmp_path / "day.jsonl.gz"
+    write_recording(path, [quotes(T0, 3.0)])
+    monkeypatch.setattr(main, "REPLAY", str(path))
+    config = tmp_path / "config.toml"  # the real phone settings a replay must not pick up again
+    config.write_text('ntfy_topic = "mp-config-topic-123"\n')
+    monkeypatch.setenv("TELEGRAM_BOT_TOKEN", "123456:" + "a" * 32)
+    monkeypatch.setenv("TELEGRAM_CHAT_ID", "12345")
+    engine = main.build_engine()  # as `python -m app.replay play` builds it
+    engine.dashboard = DashboardSettings(engine.dashboard.path, config_path=config)
+    posted = []
+    engine.phone._client = httpx.AsyncClient(transport=httpx.MockTransport(
+        lambda request: posted.append(str(request.url)) or httpx.Response(200)))
+
+    class Hub:
+        async def broadcast(self, msg):
+            pass
+    engine.hub = Hub()
+    note = {"category": "price", "title": "ACME · price alert", "body": "ACME up 5%", "url": None,
+            "priority": "high", "tag": "zap"}
+
+    async def scenario():
+        try:
+            await engine.update_settings({"ntfy_topic": "mp-typed-in-replay-1"})  # typed into the replay's Setup
+            typed = list(engine.phone.channels)
+            await engine.phone.deliver(note)
+            await engine.delete_data("dashboard_settings")  # back to config.toml and the environment
+            restored = list(engine.phone.channels)
+            await engine.phone.deliver(note)
+            with pytest.raises(RuntimeError):
+                await engine.phone.send_test()
+            return typed, restored
+        finally:
+            await engine.news.aclose()
+            await engine.sec.aclose()
+            await engine.halts.aclose()
+            await engine.phone.aclose()
+            engine.reactions.close()
+            import shutil
+            shutil.rmtree(engine.state.path.parent, ignore_errors=True)
+    assert asyncio.run(scenario()) == ([], [])
+    assert engine.settings.ntfy_topic == "mp-config-topic-123"  # Setup still shows what's set…
+    assert posted == [] and engine.phone.status()["targets"] == []  # …but nothing is sent
+
+
 # --- command line ---------------------------------------------------------------------------------
 
 def test_cli_lists_and_validates(tmp_path, capsys, monkeypatch):
