@@ -102,6 +102,21 @@ def test_a_gapper_breaks_its_pre_market_high_after_the_open(day):
         run.close()
 
 
+def test_a_gapper_on_no_list_still_breaks_its_pre_market_high_after_the_open(day):
+    day.headline("06:30", "Acme Rocket Corp (NASDAQ: ACME) wins launch contract")  # why the scanner looks at it
+    day.premarket("07:00", ACME=(30.0, 40), pre_high={"ACME": 14.0})   # last 13.00, high 14.00
+    day.quotes("09:35", ACME=42.0)                                       # 14.20: through it, on no movers list
+    day.quotes("09:45", ACME=35.0)
+    day.quotes("09:55", ACME=43.0)                                       # once a day
+    run = Run(day, watchlist=["BOLT"]).steps("07:01", "09:36", "09:46", "09:56")
+    try:
+        assert not any(run.engine.movers.values()) and "ACME" not in run.engine.state.watchlist
+        alerts = [(a["kind"], a["message"], a["time"][11:16]) for a in run.browser("alerts") if a["kind"] in ("pmh", "hod")]
+        assert alerts == [("pmh", "ACME broke its pre-market high of $14.00 (now $14.20)", "09:36")]
+    finally:
+        run.close()
+
+
 def breakout_day(folder):
     day = Day(folder, start="09:00")
     day.quotes("09:31", BOLT=10.0)                  # 11.00
