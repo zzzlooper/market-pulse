@@ -8,7 +8,7 @@ reaches your phone. Each step links to the detailed page if you want more. Back 
 
 - A computer that stays on during market hours: Linux is the best fit (the background service
   uses systemd). macOS works for running it by hand; on Windows use WSL.
-- Python 3.11 or newer (tested on 3.11 and 3.14) and git.
+- Python 3.12 or newer and git (3.11 works with the unpinned `requirements.txt`).
 - No accounts and no API keys to start. Optional extras later: a free Finnhub key for
   real-time prices, and ntfy or Telegram for phone alerts.
 
@@ -19,7 +19,7 @@ git clone <your copy of the repository> market-pulse
 cd market-pulse
 python3 -m venv .venv
 source .venv/bin/activate            # fish: source .venv/bin/activate.fish
-pip install -r requirements.txt
+pip install -r requirements.lock     # exact, tested versions
 ```
 
 ## 2. First run
@@ -115,7 +115,7 @@ prices* and restart. Details: [setup.md](setup.md#real-time-prices-optional).
 ```sh
 # Setup → Your data → Download backup first, to be safe
 git pull
-source .venv/bin/activate && pip install -r requirements.txt
+source .venv/bin/activate && pip install -r requirements.lock
 systemctl --user restart market-pulse        # or stop and start uvicorn again
 ```
 
@@ -124,8 +124,7 @@ Your watchlist, rules, settings and history are in `data/`, which updates don't 
 ## Running the tests
 
 ```sh
-pip install -r requirements-dev.txt
-python -m pytest
+python -m pytest                     # pytest comes with requirements.lock
 ```
 
 About 450 tests, offline: a fixture blocks the network, and they use a scratch config and data

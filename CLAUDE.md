@@ -1,6 +1,6 @@
 # CLAUDE.md
 ## How to run and test
-- Setup (Python 3.11+): `python -m venv .venv && source .venv/bin/activate && pip install -r requirements-dev.txt`
+- Setup (Python 3.12+): `python -m venv .venv && source .venv/bin/activate && pip install -r requirements.lock` (exact versions of requirements.txt and requirements-dev.txt with all dependencies; after changing those, regenerate the lock from a working environment)
 - Run: `uvicorn app.main:app --reload`, then open http://localhost:8000 (as the service does: `python -m app.serve [--https]`)
 - Test everything: `python -m pytest` (~450 tests, offline, about 30 s; browser tests skip without Chromium)
 - One file or test: `python -m pytest tests/test_alerts.py -q`, `python -m pytest -k crossing`

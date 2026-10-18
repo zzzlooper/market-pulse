@@ -8,12 +8,12 @@ It runs without any API key, and a free Finnhub key adds real-time watchlist pri
 
 ## Run
 
-Requires Python 3.11+.
+Requires Python 3.12+ (3.11 works with `pip install -r requirements.txt`, unpinned).
 
 ```sh
 python -m venv .venv
 source .venv/bin/activate        # fish: source .venv/bin/activate.fish
-pip install -r requirements.txt
+pip install -r requirements.lock # exact versions; requirements.txt is the readable list
 uvicorn app.main:app --reload
 ```
 
