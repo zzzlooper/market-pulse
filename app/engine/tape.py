@@ -158,7 +158,7 @@ class TapeMixin:
             await self._check_luld(todays)
 
     async def _check_sympathy(self) -> None:
-        """Sympathy moves among the stocks followed today (watchlist, movers): in each industry the
+        """Sympathy moves among the stocks followed today (watchlist, movers, gappers): in each industry the
         biggest gainer up sympathy_lead_pct or more leads, and its peers up sympathy_min_pct or more
         move with it. A stock's first check (once its industry is known) is a baseline, and so is its
         leader's, so one already moving at startup isn't alerted, even if its leader's industry
@@ -168,7 +168,10 @@ class TapeMixin:
         follower below half), so one hovering at a threshold doesn't flicker in and out."""
         today, s = self._tape_today(), self.settings
         moves: dict[str, dict] = {}
-        for row in [*self.quotes, *(r for rows in self.movers.values() for r in rows)]:
+        # Gappers on neither list: their quotes after the open, their pre-market move before it.
+        premarket = [{"symbol": g["symbol"], "price": g["price"], "change_pct": g["gap_pct"]}
+                     for g in self.gaps if not g["at_open"]]
+        for row in [*self.quotes, *(r for rows in self.movers.values() for r in rows), *self.gapper_quotes, *premarket]:
             if row.get("session") in (None, today) and row.get("change_pct") is not None:
                 moves.setdefault(row["symbol"], row)
         led = {v["leader"] for v in self.sympathy.values()}
