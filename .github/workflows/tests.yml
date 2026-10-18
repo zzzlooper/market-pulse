@@ -1,0 +1,26 @@
+# Install from requirements.lock only, then run the whole suite. 3.12 is the oldest Python
+# the lock supports (numpy 2.5); the runner's Chrome makes the browser tests run too.
+name: tests
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+jobs:
+  tests:
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        python: ["3.12", "3.14"]
+    steps:
+      - uses: actions/checkout@v5
+      - uses: actions/setup-python@v6
+        with:
+          python-version: ${{ matrix.python }}
+          cache: pip
+          cache-dependency-path: requirements.lock
+      - run: pip install -r requirements.lock
+      - run: pip check
+      - run: python -m pytest -q
