@@ -34,7 +34,7 @@ served from `static/` (`app/main.py:621`).
 | `app/noise.py` | Mutes, snoozes, per-kind daily counts | `muted` `:48`, `snoozed` `:53`, `AlertCounts` `:58` |
 | `app/notify.py` | Phone push: batching, per-minute cap, delivery status | `PhoneNotifier` `:132`, `run` `:168`, `_allow` `:208` |
 | `app/health.py` | Per-source health and outage events | `SourceHealth` `:37`, `state` `:59`, `outages` `:79` |
-| `app/news.py` | RSS polling, ticker extraction, dedupe, keyword matching | `NewsFeed` `:64`, `poll` `:89` |
+| `app/news.py` | RSS polling, ticker extraction, dedupe, keyword matching | `NewsFeed` `:81`, `poll` `:106` |
 | `app/sec.py` | The only SEC client: host allow-list, rate limit, User-Agent, ticker map | `SecClient` `:32`, `_turn` `:50`, `tickers` `:87` |
 | `app/filings.py` | EDGAR feeds (offerings, Form 4, 13D, 8-K) turned into news items | `FilingsFeed` `:321`, `poll` `:342`, `_build` `:415` |
 | `app/dilution.py` | Dilution-risk profile from filing history | `DilutionProfiles` `:320` |
@@ -188,21 +188,21 @@ Note: CLAUDE.md lists the UI as `app/static/`, but it lives at the repo root `st
 
 1. **Start.** The news loop runs at `news_interval`=30 s and wakes early when a symbol is added
    (`app/engine/core.py:164`, `:340`, `app/config.py:50`).
-2. **Sources** (`app/news.py:91-95`):
+2. **Sources** (`app/news.py:108-112`):
    - the `feeds` setting, by default GlobeNewswire and PR Newswire (`app/config.py:21-24`, `:55`);
    - the SEC 8-K feed, only when `sec_filings` is off (`app/config.py:20`);
-   - one Yahoo per-ticker RSS per watchlist symbol when `ticker_news` is on (`app/news.py:23`,
+   - one Yahoo per-ticker RSS per watchlist symbol when `ticker_news` is on (`app/news.py:24`,
      `app/config.py:56`).
 3. **Fetch.** `NewsFeed.poll` fetches all sources in parallel. SEC URLs go through `SecClient`;
-   everything else goes through its own client (`app/news.py:96`, `:136-140`).
-4. **Items.** `_make_item` extracts tickers from exchange prefixes and cashtags (`app/news.py:29-43`,
-   `:142`) and scores sentiment (`app/sentiment.py:167`).
-5. **Dedupe.** Items already in `_seen` only merge their tickers (`app/news.py:115-118`). `_seen` is
-   capped at 20,000 (`app/news.py:25`, `:127-128`).
-6. **Baseline.** The first successful fetch of each feed URL never alerts (`app/news.py:109-110`,
-   `:120`).
+   everything else goes through its own client (`app/news.py:113`, `:153-157`).
+4. **Items.** `_make_item` extracts tickers from exchange prefixes and cashtags (`app/news.py:30-45`,
+   `:159`) and scores sentiment (`app/sentiment.py:167`).
+5. **Dedupe.** Items already in `_seen` only merge their tickers (`app/news.py:132-135`). `_seen` is
+   capped at 20,000 (`app/news.py:26`, `:144-145`).
+6. **Baseline.** The first successful fetch of each feed URL never alerts (`app/news.py:126-127`,
+   `:137`).
 7. **Alert flag.** `alert = primed and (keyword matched or a ticker is on the watchlist)`
-   (`app/news.py:119-120`).
+   (`app/news.py:136-137`).
 8. **Engine.** `_update_news` tracks alerting headlines with a ticker as catalysts, muted ones
    included (`app/engine/feeds.py:26-29`). It then hands the items to `_publish_items` as kind `news`
    (`app/engine/feeds.py:30`). In the browser, items that keep their `alert` flag beep and raise a
@@ -262,7 +262,7 @@ update is older than `max(3 × interval, 60 s)`, whatever the cause, which also 
 | All 8 EDGAR feeds fail | `len(failed) == len(FEED_TYPES)` | `SourceError` carrying the first `SourceError` reason (e.g. the 403 advice) | `app/filings.py:366-367`, `:543-546` |
 | One filing fails to build | Exception from `_build` | Retried next poll, up to `MAX_ATTEMPTS`=3, then marked seen and dropped | `app/filings.py:374-382` |
 | Filing document unreadable | `except Exception` around `get_head` | The item still goes out, without warrant/split details | `app/filings.py:494-498` |
-| One news feed fails | Exception from `_fetch` | Logged; streak counted; degraded after `FAILING_AFTER`=3 in a row | `app/news.py:26`, `:103-107`, `:131-134`, `app/engine/feeds.py:35` |
+| One news feed fails | Exception from `_fetch` | Logged; streak counted; degraded after `FAILING_AFTER`=3 in a row | `app/news.py:27`, `:120-124`, `:148-151`, `app/engine/feeds.py:35` |
 | All news feeds fail | `len(failed) == total` | `SourceError("all N feeds failed")` | `app/engine/feeds.py:33-34` |
 | Halts feed HTTP error | `raise_for_status()` | Raised to the loop; previous halt list kept | `app/halts.py:196-198` |
 | Halts XML malformed | `ET_XML.fromstring` raises (not caught locally) | `log.exception` plus `health.fail`; previous list kept | `app/halts.py:82`, `app/engine/core.py:224-230` |
@@ -318,7 +318,7 @@ The "Your data" panel lists these stores (`app/engine/core.py:545-557`). Its del
 Rebuilding these is what makes "a restart only sets a baseline" true.
 - **Alerts:** rule baselines and cooldowns (`app/alerts.py:50-51`), the unusual-volume seen-set
   (`app/alerts.py:52-53`), and the last 100 alerts shown (`app/alerts.py:19`, `:54`).
-- **News:** `_items`, `_seen` and `_primed` (`app/news.py:72-74`).
+- **News:** `_items`, `_seen` and `_primed` (`app/news.py:89-91`).
 - **Filings:** `_seen`, `_primed`, `_attempts` and `_was_primed` (`app/filings.py:327-333`).
 - **Halts:** the halt list and its primed flag (`app/halts.py:184-185`).
 - **Resumptions:** warned, done and ahead sets (`app/engine/resumptions.py:30-35`).
@@ -393,6 +393,7 @@ credentials (`app/replay.py:415-418`). Tested in `tests/test_replay.py:368`.
   - A restore logs only the count of changes (`app/engine/core.py:407`), and data deletion only the
     store name (`app/engine/core.py:577`).
   - The SEC example-value warning doesn't print the value (`app/main.py:100-103`).
+  - A failed news feed is logged without its address (`app/news.py:121`; see News feed addresses).
 - **Finnhub key.**
   - The WebSocket URL carries `?token=<key>` (`app/finnhub.py:116`). REST sends it as a header
     instead (`app/finnhub.py:53`).
@@ -423,11 +424,13 @@ credentials (`app/replay.py:415-418`). Tested in `tests/test_replay.py:368`.
   - Changing the token re-issues the cookie (`app/main.py:247-253`).
 - **Tests:** `tests/test_auth.py:25`, `:39`, `:53`, `:67`; `tests/test_setup.py:150`.
 
-### Gap found while verifying
+### News feed addresses
 
-A token inside a news-feed URL would be written to the log. The code allows for feed URLs holding a
-token (`app/config.py:110-111`). When such a feed returns an HTTP error, `raise_for_status()`
-(`app/news.py:139`) raises an `httpx.HTTPStatusError`. Its text contains the full URL, query string
-included; this was checked against the installed httpx. `poll` logs that exception text at WARNING
-(`app/news.py:104`), so the token lands in the log. The dashboard is not affected: the health reason
-shows only feed names (`app/engine/feeds.py:33-35`).
+A feed URL may hold a token (`app/config.py:110-111`). httpx puts the full URL, query string
+included, in its error text: an `HTTPStatusError` from `raise_for_status()` (`app/news.py:156`)
+reads "… for url 'https://…?token=…'".
+- `poll` logs a failed feed through `feed_error` (`app/news.py:121`). That gives an HTTP error as
+  its status code. In any other error text, each address is cut down to its host, which drops the
+  query, the path and any `user:password@` (`app/news.py:38`, `:56-68`).
+- The health reason names feeds only (`app/engine/feeds.py:33-35`).
+- Tests: `tests/test_news.py:35`, `:46`.

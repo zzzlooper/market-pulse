@@ -9,6 +9,7 @@ import re
 from calendar import timegm
 from collections import OrderedDict
 from datetime import UTC, datetime
+from urllib.parse import urlsplit
 
 import feedparser
 import httpx
@@ -34,6 +35,7 @@ CASHTAG = re.compile(r"(?<![\w$])\$([A-Z]{1,5})\b")
 # EDGAR current-filings titles: "8-K - Apple Inc. (0000320193) (Filer)"
 SEC_TITLE = re.compile(r"^(?P<form>[\w/\-]+)\s+-\s+(?P<company>.+?)\s+\((?P<cik>\d{10})\)")
 TAG = re.compile(r"<[^>]+>")
+ADDRESS = re.compile(r"\b[a-z][a-z0-9+.-]*://[^\s'\"<>]*[^\s'\"<>.,;:)\]]", re.IGNORECASE)  # not its trailing punctuation
 
 
 def extract_tickers(text: str) -> list[str]:
@@ -49,6 +51,21 @@ def match_keywords(text: str, keywords: list[str]) -> list[str]:
 def parse_sec_title(title: str) -> tuple[str, str, str] | None:
     m = SEC_TITLE.match(title)
     return (m["form"], m["company"], m["cik"]) if m else None
+
+
+def feed_error(exc: BaseException) -> str:
+    """Why a feed failed, without its address: a feed URL can carry a token (in the query, the
+    path or as user:password@) and httpx puts the full URL in its messages. The feed's name
+    says which one it was."""
+    if isinstance(exc, httpx.HTTPStatusError):
+        return f"HTTP {exc.response.status_code} {exc.response.reason_phrase}".strip()
+    def host(match: re.Match) -> str:
+        try:
+            return f"{urlsplit(match.group(0)).hostname or '…'}/…"
+        except ValueError:  # not a well-formed address (e.g. "http://[::1")
+            return "…"
+    text = ADDRESS.sub(host, str(exc))
+    return (text or type(exc).__name__)[:200]
 
 
 def _clean(text: str) -> str:
@@ -101,7 +118,7 @@ class NewsFeed:
         for (label, url, hint), entries in zip(sources, results):
             name = f"{label} {hint}" if hint else label
             if isinstance(entries, BaseException):
-                log.warning("feed %s failed: %s", label, entries)
+                log.warning("feed %s failed: %s", label, feed_error(entries))
                 self.failed.append(name)
                 self._fail_streak[name] = self._fail_streak.get(name, 0) + 1
                 continue
