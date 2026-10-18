@@ -9,6 +9,7 @@ from fastapi.testclient import TestClient
 from app import main, market
 from app.config import Settings, UserState
 from app.engine import Engine
+from app.engine.risk import RISK_RETRY
 from app.market import ET
 from app.reactions import (
     GRACE,
@@ -370,6 +371,45 @@ def test_offerings_without_a_risk_level_get_one_looked_up(tmp_path, monkeypatch)
         filler.cancel()
     asyncio.run(scenario())
     assert engine.reactions.pending()[0]["risk"] == "high"
+    close_engine(engine)
+
+
+def test_an_offering_whose_risk_lookup_was_lost_or_failed_is_looked_up_again(tmp_path, monkeypatch):
+    clock = {"mono": 1000.0}
+    monkeypatch.setattr("app.engine.catalysts.now_ts", lambda: AT + 60)
+    monkeypatch.setattr("app.engine.catalysts.time.monotonic", lambda: clock["mono"])
+    engine = make_engine(tmp_path)
+    engine._track("o1", "ACME", "dilution", "offering from shelf", "Acme: offering", "2026-10-13T10:00:00-04:00")
+    engine._queue_offering_risk("o1", "ACME")
+    close_engine(engine)  # the app stops before the lookup: the queue was in memory
+
+    engine = make_engine(tmp_path)  # restart, same data folder
+    answers = [RuntimeError("SEC slow"), {"level": "medium", "points": 3, "reasons": []}]
+
+    async def get(symbol):
+        answer = answers.pop(0)
+        if isinstance(answer, Exception):
+            raise answer
+        return answer
+    engine.dilution.get = get
+    monkeypatch.setattr(market, "fetch_chart", lambda symbol, range_: {"bars": []})
+
+    async def round_():
+        await engine._update_reactions()  # queues what's still missing
+        while not engine._risk_queue.empty():
+            await engine._fill_one_offering_risk(*engine._risk_queue.get_nowait())
+
+    async def scenario():
+        await round_()  # found again after the restart, but the lookup fails
+        assert engine.reactions.since(0)[0]["risk"] is None
+        await engine._update_reactions()
+        assert engine._risk_queue.empty()  # not again right away
+        clock["mono"] += RISK_RETRY
+        await round_()  # after the back-off it's tried again, and gets its level
+    asyncio.run(scenario())
+    assert engine.reactions.since(0)[0]["risk"] == "medium" and answers == []
+    asyncio.run(engine._update_reactions())
+    assert engine._risk_queue.empty()  # nothing left to look up
     close_engine(engine)
 
 

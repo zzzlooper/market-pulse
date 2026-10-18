@@ -186,6 +186,13 @@ class ReactionStore:
             rows = self._db.execute("SELECT * FROM events WHERE at >= ? ORDER BY at DESC", (t,))
             return [dict(r) for r in rows]
 
+    def missing_risk(self, t: int) -> list[dict]:
+        """Offerings since t (epoch seconds) still without a dilution risk level, oldest first."""
+        with self._lock:
+            rows = self._db.execute("SELECT id, symbol FROM events WHERE kind = 'dilution' AND risk IS NULL "
+                                    "AND at >= ? ORDER BY at", (t,))
+            return [dict(r) for r in rows]
+
     def stats(self) -> dict:
         with self._lock:
             count, oldest, newest = self._db.execute("SELECT COUNT(*), MIN(at), MAX(at) FROM events").fetchone()

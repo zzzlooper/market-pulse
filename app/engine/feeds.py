@@ -62,7 +62,7 @@ class FeedsMixin:
             risk = f.get("risk") or (self.risk.get(symbol) or {}).get("level")
             if self._track(n["id"], symbol, f["kind"], f["label"], n["title"], n["published"], risk) \
                     and f["kind"] == "dilution" and risk is None:
-                self._risk_queue.put_nowait((n["id"], symbol))  # so offerings can be compared by risk
+                self._queue_offering_risk(n["id"], symbol)  # so offerings can be compared by risk
         if fresh:
             await self._publish_items(fresh, "filing", lambda n: from_filing(n, self.settings.public_url))
             self._wake_gaps.set()
