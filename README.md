@@ -36,9 +36,12 @@ it. Then click **Enable alerts** to get desktop notifications and a sound.
   above in one card.
 - **Alerts** on the page, the desktop and your phone (ntfy or Telegram): your price rules,
   breakouts, level crossings, halts and resumptions, LULD bands; each kind can be muted, a
-  stock snoozed, and every alert's follow-through is measured.
+  stock snoozed, and the Reactions tab measures how breakouts, level crossings, your rules
+  and the other price alerts followed through, and how stocks moved after halts, headlines
+  and filings.
 - **Your data stays on your computer**: no account, nothing sent anywhere but the data
-  sources' own requests. Secrets are write-only; a backup never contains one.
+  sources' own requests, and your alerts to ntfy or Telegram once you set one up. Secrets are
+  write-only; a backup never contains one.
 
 | Ticker panel | Game plan |
 |---|---|

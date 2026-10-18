@@ -25,7 +25,7 @@ that commit is listed too.
 
 ## 3. Finnhub falls back to Yahoo's delayed price; Yahoo keeps its last good rows
 
-- **Decision:** A Finnhub price counts as live while the stream that delivered it is still up, however old the trade. Once the stream is down and the price is over 30 s old, the row shows Yahoo's price marked `delayed`. If Yahoo returns nothing, the last good rows stay on screen and are marked `stale`.
+- **Decision:** A Finnhub price counts as live while the stream that delivered it is still up, however old the trade. Once the stream is down and the price is over 30 s old, the row shows Yahoo's price marked `delayed`. If Yahoo returns nothing, the last good rows stay on screen and the panel is marked stale; a symbol missing from an otherwise good answer keeps its last row, marked `stale`.
 - **Alternative not taken:** Expire every Finnhub price after a fixed age, even with the stream up. Or blank the row (or the whole watchlist) when a source goes quiet.
 - **Trade-off:** A thinly traded stock keeps its true last trade instead of flipping to an older delayed quote, and the screen never goes empty. The cost is that a `delayed` or `stale` row can sit there looking fairly normal. The row marker and the data health panel are the only signs that a number is old.
 - **Where:** `app/finnhub.py:25` (`STALE_SECONDS = 30`), `app/finnhub.py:60-65` (`_fresh`), `app/engine/prices.py:42-47` (Yahoo keeps its last rows)
@@ -34,9 +34,9 @@ that commit is listed too.
 
 ## 4. Phone notifications are capped per minute, batched per burst, and capped per kind per day
 
-- **Decision:** Alerts that arrive within 2 s of each other are sent together: the first two go out one by one and the rest become one summary message. There is a hard cap of 20 phone sends a minute and an optional per-kind daily cap. All alerts, news and filings included, go through one routing function. Desktop notifications show at most 3 per batch.
+- **Decision:** Alerts that arrive within 2 s of the first are sent together: up to three go out one by one; in a bigger burst the first two do and the rest become one summary message. There is a hard cap of 20 phone sends a minute and an optional per-kind daily cap. All alerts, news and filings included, go through one routing function. Desktop notifications show at most 3 per batch, plus a "+N more" one.
 - **Alternative not taken:** Send every alert to the phone as it fires, or limit only by mutes the user sets by hand.
-- **Trade-off:** A market-wide event can't flood the phone or exhaust ntfy/Telegram rate limits. But past the cap, alerts are dropped from the phone (logged, still shown in the browser), so a real signal can be lost on a busy day.
+- **Trade-off:** A market-wide event can't flood the phone or exhaust ntfy/Telegram rate limits. But past the cap, alerts are dropped from the phone (still shown in the browser; drops at the per-minute cap are logged), so a real signal can be lost on a busy day.
 - **Where:** `app/notify.py:23-25` (`BATCH_WINDOW`, `PER_BATCH`, `PER_MINUTE`), `app/notify.py:208-215` (`_allow`), `app/engine/core.py:269-281` (`_route`, `phone_cap_per_kind`), `static/core.js:24` (`MAX_NOTIFICATIONS = 3`)
 - **Introduced:** `1d8ab37` Market Pulse v0.1 baseline (per-minute cap, batching, desktop limit). Per-kind daily cap: `c4cb971` "v0.25: alert noise control, settings backup and restore". Routing for news and filings moved into `_route` in `ffce195` "News and filing alerts obey mutes, snoozes and the phone cap".
 - **Why I kept it:**
@@ -61,7 +61,7 @@ that commit is listed too.
 
 ## 7. One shared market clock that a replay can drive
 
-- **Decision:** Everything that asks "what time is it in the market?" (sessions, today, cooldowns, reaction horizons, the recap) reads `app.clock.clock`. During a replay it returns the recorded day's time at a chosen speed. Real-time timers (rate limits, caches, health) keep using `time.monotonic`.
+- **Decision:** Everything that asks "what time is it in the market?" (sessions, today, cooldowns, reaction horizons, the recap) reads `app.clock.clock`. During a replay it returns the recorded day's time at a chosen speed. Real-time timers keep to real time: rate limits and caches use `time.monotonic`, data-source health `time.time`.
 - **Alternative not taken:** Call `datetime.now()` directly and test with time-mocking libraries, or have no offline replay.
 - **Trade-off:** A recorded day can be replayed offline at 10× with the same alerts and cooldowns, and tests can freeze time. The cost is a rule every module has to follow: one stray `datetime.now()` breaks replays without any error, and each timer has to be put on the right clock.
 - **Where:** `app/clock.py:1-7`, `app/clock.py:57` (`clock = Clock()`)

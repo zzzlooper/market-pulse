@@ -17,8 +17,10 @@ isn't a web address rather than silently ignoring, say, a misplaced `access_toke
 - Secrets (tokens, the ntfy topic, Telegram ids, your SEC email) are write-only: Setup shows
   whether each is set and where from, with at most its last few characters, and never sends a
   saved one back. *Generate* makes a strong access token or ntfy topic and shows it once, to
-  copy to your phone. No setting's value is ever logged.
-- Changes apply at once, except the Finnhub key, which needs a restart.
+  copy to your phone. No secret is ever logged, and settings changed in Setup are logged by
+  name only.
+- Changes apply at once, except the Finnhub key and *Record the day's data for replay*,
+  which need a restart.
 - **Signal thresholds** tune the signals: the pullback before a new high of day counts
   (`breakout_pullback_pct`, 5), the gain that makes day 2 (`day2_min_pct`, 30), float rotation
   (`rotation_multiple`, 1×), how near a LULD band warns (`luld_near_pct`, 25% of the band), when
@@ -62,15 +64,16 @@ name).
 
 **Backup** (Setup → Your data; `app/backup.py`): *Download backup* saves your setup as a
 file, to restore here or on another computer: the watchlist, news keywords, alert rules, the
-alert switches, phone categories, muted alert kinds, and the Setup values you've changed from
-the defaults (signal thresholds, recap time…).
+alert switches, phone categories, muted alert kinds, and the Setup values that differ from the
+defaults, whether set in Setup or in `config.toml` (signal thresholds, recap time…).
 
 - Never in it: any secret (access token, ntfy topic and token, Telegram ids, Finnhub key, your
   SEC contact email), this computer's address (`public_url`) or the day's snoozes.
 - *Restore from a file…* reads it and lists every change (*now* and *then*) before anything
   changes; *Restore these* applies them. Every value is checked as the dashboard would check
-  it: tickers, rule types and values, setting ranges. A secret in the file, an unknown entry
-  or a setting this version doesn't have is left out and said so. Alert rules get new ids.
+  it: tickers, rule types and values, setting ranges. Secrets, settings Setup can't change
+  and entries this version doesn't know are left out; the preview notes secrets and unknown
+  settings. Alert rules get new ids.
 - The file is plain JSON. It names the stocks you watch and your rule levels, so keep it as
   private as you'd keep the dashboard.
 
@@ -126,11 +129,11 @@ and `SEC_USER_AGENT` for your contact address).
   watchlist tickers, so on public ntfy.sh keep the topic secret. Unusual volume is off by default,
   since it can fire dozens of times a day.
 - *Data outages*: when a data source has been down for `source_alert_minutes` (default 5;
-  0 turns it off), you get one message saying which alerts can't fire, and another when it's
-  back. Silence from a broken feed otherwise looks the same as a quiet market.
+  0 turns it off), you get one message naming it (the alerts that depend on it can't fire), and
+  another when it's back. Silence from a broken feed otherwise looks the same as a quiet market.
 - A burst of alerts is sent as 2 messages plus a "+N more" summary, with a hard cap of 20 per
-  minute. Halts arrive as urgent notifications, price, warrant, offering-price and breakout alerts as
-  high priority, news and float rotation as normal.
+  minute. Halts arrive as urgent notifications; price-level, move, warrant, offering-price and breakout
+  alerts as high priority; RVOL rules, sympathy moves, news and float rotation as normal.
 - Set `public_url` (e.g. `http://192.168.1.20:8000`) to make a tapped alert open that
   ticker's detail panel. That only works where your phone can reach the app, e.g. on the same Wi-Fi,
   so set an access token first (next section).
@@ -174,12 +177,14 @@ python -m app.replay play data/recordings/2026-10-13_092500.jsonl.gz --from 15:4
 
 - A recording holds what the data sources answered: Yahoo results, the news and halt feeds,
   SEC feeds and documents. Never the requests themselves, so your SEC contact address, tokens
-  and cookies aren't in it, and URLs lose any credential-like parameter.
+  and cookies aren't in it. URLs lose any query parameter that looks like a credential; a
+  token in a feed's path or as `user:password@` stays, so don't record with such a feed.
 - SEC insider (Form 4) and 13D documents name private people, often with addresses and phone
   numbers. They're cut down as they're recorded to the fields the app reads: no names (except
   firms the app itself would show), addresses, signatures or free text. Feed entries naming an
   insider or investor are redacted too.
-- Feeds are stored item by item and only when something changed, so a day is a few tens of MB.
+- Feeds are stored item by item and only when something changed, which keeps a day's file
+  small.
   Files are readable by you only; the newest `record_keep` (default 10) are kept.
 - A replay never uses the network (anything not recorded shows as a data outage) and never
   sends phone alerts. It runs on the recorded watchlist and rules in a temporary folder, so your
@@ -239,8 +244,9 @@ Safety:
 - The server certificate lists addresses only, not this computer's name: anyone who connects
   sees the certificate, and computer names often contain a person's name. So open the dashboard
   by address (`https://192.168.1.20:8000`).
-- The server certificate lasts 397 days (what phones accept) and is renewed, along with any new
-  address, every time Market Pulse starts; Setup warns when a restart is due.
+- The server certificate lasts 397 days (what phones accept). Every HTTPS start checks it and
+  reissues it within 30 days of expiry or when this computer's addresses changed; Setup warns
+  when a restart is due.
 
 On a phone the dashboard is one column: watchlist, news, the tabs (unusual volume, halts,
 gaps, reactions), movers, then alert settings. A tapped alert opens the ticker full-screen,
