@@ -1,5 +1,6 @@
 import asyncio
 import json
+import logging
 
 import httpx
 import pytest
@@ -99,6 +100,21 @@ def test_errors_are_reported_without_secrets():
     assert "chat not found" in notifier.last_error and "HTTP 403" in notifier.last_error
     assert "SECRETTOKEN" not in notifier.last_error and "secret-topic" not in notifier.last_error
     assert statuses[-1]["last_error"] == notifier.last_error and notifier.last_sent is None
+
+
+def test_request_addresses_with_the_bot_token_stay_out_of_the_log(caplog):
+    import app.main  # noqa: F401 - sets up logging the way the app does
+    caplog.set_level(logging.INFO)
+
+    async def scenario():
+        notifier, requests, _ = make()
+        await notifier.deliver(from_alert(ALERT))
+        await notifier.aclose()
+        return requests
+
+    requests = asyncio.run(scenario())
+    assert any("SECRETTOKEN" in str(r.url) for r in requests)  # Telegram's address carries the token...
+    assert "SECRETTOKEN" not in caplog.text and "secret-topic" not in caplog.text  # ...the log never does
 
 
 def test_partial_failure_still_counts_as_sent():

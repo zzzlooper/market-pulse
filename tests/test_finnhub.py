@@ -199,6 +199,14 @@ def test_stream_errors_never_contain_the_key():
     assert not feed.connected
 
 
+def test_an_error_message_from_finnhub_never_shows_the_key(caplog):
+    feed, _ = make_feed()
+    with caplog.at_level("DEBUG", logger="app.finnhub"):
+        feed.handle({"type": "error", "msg": "Invalid API key test-key"})
+    assert feed.error == "Invalid API key …"
+    assert "Invalid API key" in caplog.text and "test-key" not in caplog.text
+
+
 def test_stream_disconnect_logs_never_contain_the_key(caplog):
     async def scenario():
         # An invalid URL makes websockets echo the whole connect URL, ?token=… included.
