@@ -76,13 +76,15 @@ EOF
 fi
 chmod 600 "$ENV_FILE"
 
-# The settings the service will actually run with: config.toml plus the env file.
+# The settings the service will actually run with: config.toml, the values saved in Setup
+# (data/settings.json) and the env file, loaded as app/main.py does.
 # Only yes/no answers come back; no value is printed.
 check() {
   (set -a && . "$ENV_FILE" && set +a && cd "$APP_DIR" && .venv/bin/python -c "
 import sys
-from app.config import load_settings
-s = load_settings()
+from app.config import STATE_PATH, load_settings
+from app.setup import DashboardSettings
+s = load_settings(dashboard=DashboardSettings(STATE_PATH.parent / 'settings.json').load())
 sys.exit(0 if $1 else 1)") 2>/dev/null
 }
 
@@ -91,7 +93,7 @@ case $HOST in
   *)
     if ! check "s.access_token"; then
       echo "Refusing MP_HOST=$HOST without an access token: anyone on your network could change" >&2
-      echo "your watchlist and alerts. Set ACCESS_TOKEN in $ENV_FILE (see README)." >&2
+      echo "your watchlist and alerts. Generate one in Setup, or set ACCESS_TOKEN in $ENV_FILE (see README)." >&2
       exit 1
     fi ;;
 esac
