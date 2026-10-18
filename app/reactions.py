@@ -141,7 +141,10 @@ class ReactionStore:
     def __init__(self, path: Path):
         self.path = path
         path.parent.mkdir(parents=True, exist_ok=True)
-        new = not path.exists()
+        # Yours only, whatever the umask: created that way (SQLite gives its journal the same mode),
+        # and a history from before this tightened.
+        os.close(os.open(path, os.O_WRONLY | os.O_CREAT, 0o600))
+        os.chmod(path, 0o600)
         self._lock = threading.RLock()
         self._db = sqlite3.connect(path, check_same_thread=False)
         self._db.row_factory = sqlite3.Row
@@ -150,8 +153,6 @@ class ReactionStore:
         if "flags" not in columns:  # a history from before v0.27
             self._db.execute("ALTER TABLE events ADD COLUMN flags TEXT")
             self._db.commit()
-        if new:
-            os.chmod(path, 0o600)  # yours only, whatever the umask
 
     def close(self) -> None:
         with self._lock:

@@ -3,6 +3,7 @@ import json
 import os
 import stat
 from datetime import datetime
+from pathlib import Path
 
 import pytest
 from fastapi.testclient import TestClient
@@ -72,6 +73,62 @@ def test_the_watchlist_file_is_readable_by_you_only(tmp_path):
 
 
 # --- the inventory ----------------------------------------------------------------------------------
+
+@pytest.fixture
+def open_umask(monkeypatch):
+    """A umask that lets everyone read new files, and no chmod afterwards: a file is private only
+    if it's created that way, with no moment of being readable by others."""
+    old = os.umask(0)
+    seen = []
+    replace = Path.replace
+
+    def spy(self, target):
+        seen.append((Path(target).name, stat.S_IMODE(os.stat(self).st_mode)))
+        return replace(self, target)
+    monkeypatch.setattr(os, "chmod", lambda *a, **k: None)
+    monkeypatch.setattr(Path, "replace", spy)
+    yield seen
+    os.umask(old)
+
+
+def test_alert_counts_and_luld_checks_are_private_from_the_start(tmp_path, open_umask):
+    from datetime import date
+
+    from app.luld import Checks
+    from app.noise import AlertCounts
+    counts = AlertCounts(tmp_path / "alert_counts.json")
+    counts.add("move", "2026-10-13", phoned=False)
+    counts.save(date(2026, 10, 13))
+    Checks(tmp_path / "luld_checks.json").add("2026-10-13", "up", 11.3, 11.29, True)
+    assert open_umask == [("alert_counts.json", 0o600), ("luld_checks.json", 0o600)]  # the .tmp as written
+
+
+def test_a_left_over_tmp_file_doesnt_widen_permissions(tmp_path, open_umask):
+    from datetime import date
+
+    from app.noise import AlertCounts
+    (tmp_path / "alert_counts.tmp").write_text("{}")  # left by a crash, readable by all (umask 0)
+    assert stat.S_IMODE(os.stat(tmp_path / "alert_counts.tmp").st_mode) == 0o666
+    AlertCounts(tmp_path / "alert_counts.json").save(date(2026, 10, 13))
+    assert open_umask == [("alert_counts.json", 0o600)]
+
+
+def test_the_reaction_history_is_private_from_the_start_and_when_older(tmp_path, monkeypatch):
+    from app.reactions import ReactionStore
+    old = os.umask(0)
+    try:
+        monkeypatch.setattr(os, "chmod", lambda *a, **k: None)
+        store = ReactionStore(tmp_path / "new.db")  # created private, not chmod-ed after
+        assert stat.S_IMODE(os.stat(store.path).st_mode) == 0o600
+        store.close()
+        monkeypatch.undo()
+        older = tmp_path / "older.db"  # a history written before files were made private
+        older.touch(mode=0o644)
+        ReactionStore(older).close()
+        assert stat.S_IMODE(os.stat(older).st_mode) == 0o600
+    finally:
+        os.umask(old)
+
 
 def test_saved_settings_are_listed_by_name_never_by_value(tmp_path):
     path = tmp_path / "settings.json"

@@ -102,8 +102,10 @@ class Checks:
         self._rows = [*self._rows, row][-CHECKS_KEPT:]
         self.path.parent.mkdir(parents=True, exist_ok=True)
         tmp = self.path.with_suffix(".tmp")
-        tmp.write_text(json.dumps(self._rows))
-        os.chmod(tmp, 0o600)
+        fd = os.open(tmp, os.O_WRONLY | os.O_CREAT | os.O_TRUNC, 0o600)
+        os.fchmod(fd, 0o600)  # also a .tmp left over with wider permissions
+        with os.fdopen(fd, "w") as f:
+            f.write(json.dumps(self._rows))
         tmp.replace(self.path)
         return row
 
