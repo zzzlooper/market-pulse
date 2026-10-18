@@ -152,19 +152,18 @@ def test_run_filters_categories_and_collapses_bursts(monkeypatch):
 
 def test_per_minute_cap(monkeypatch):
     monkeypatch.setattr(notify, "BATCH_WINDOW", 0.01)
-    monkeypatch.setattr(notify, "PER_MINUTE", 4)
 
     async def scenario():
         notifier, requests, _ = make(telegram_bot_token="")
         task = asyncio.create_task(notifier.run())
-        for i in range(6):  # separate bursts, so batching doesn't merge them
+        for i in range(23):  # separate bursts, so batching doesn't merge them
             notifier.enqueue([from_alert({**ALERT, "symbol": f"S{i}"})], ALL)
-            await asyncio.sleep(0.05)
+            await asyncio.sleep(0.03)
         task.cancel()
         await notifier.aclose()
         return requests
 
-    assert len(asyncio.run(scenario())) == 4
+    assert len(asyncio.run(scenario())) == 20  # the cap CLAUDE.md states, not just PER_MINUTE
 
 
 def test_from_outage():
