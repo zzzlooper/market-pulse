@@ -20,7 +20,8 @@ def install(tmp_path, *args, **env):
     stub.write_text(f'#!/bin/sh\necho "$@" >> {log}\n')
     stub.chmod(0o755)
     run_env = {"PATH": os.environ["PATH"], "HOME": str(tmp_path), "XDG_CONFIG_HOME": str(tmp_path / "config"),
-               "SYSTEMCTL": str(stub), "MARKET_PULSE_CONFIG": str(tmp_path / "no-config.toml"), **env}
+               "SYSTEMCTL": str(stub), "MARKET_PULSE_CONFIG": str(tmp_path / "no-config.toml"),
+               "MARKET_PULSE_DATA": str(tmp_path / "data"), **env}
     result = subprocess.run(["sh", str(SCRIPT), *args], env=run_env, capture_output=True, text=True, timeout=60,
                             check=False)
     calls = log.read_text().splitlines() if log.exists() else []
@@ -66,6 +67,18 @@ def test_network_access_without_a_token_is_refused(tmp_path):
     result, calls = install(tmp_path, MP_HOST="0.0.0.0")
     assert result.returncode == 1 and "Refusing MP_HOST=0.0.0.0 without an access token" in result.stderr
     assert not paths(tmp_path)[0].exists() and calls == []
+
+
+def test_a_token_and_contact_saved_in_setup_count(tmp_path):
+    data = tmp_path / "data"
+    data.mkdir()
+    (data / "settings.json").write_text(f'{{"access_token": "{SECRET_TOKEN}", "sec_user_agent": "{SECRET_AGENT}"}}')
+    result, _ = install(tmp_path, MP_HOST="0.0.0.0", MP_HTTPS="1")
+    assert result.returncode == 0, result.stderr
+    output = result.stdout + result.stderr
+    assert "still the example" not in output
+    assert SECRET_TOKEN not in output and SECRET_AGENT not in output
+    assert "--host 0.0.0.0 --port 8000 --https\n" in paths(tmp_path)[0].read_text()
 
 
 @pytest.mark.parametrize("env", [{"MP_HOST": "0.0.0.0 --reload"}, {"MP_PORT": "80; rm"}])
