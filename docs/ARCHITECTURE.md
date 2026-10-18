@@ -302,9 +302,9 @@ update is older than `max(3 × interval, 60 s)`, whatever the cause, which also 
 |---|---|---|---|---|
 | Watchlist, keywords, alert rules, alert switches, mutes, snoozes, halt mode, phone categories, the days the last recap and brief went out | `data/state.json`, JSON | `UserState.save` on every UI change via `_config_changed`, and after each recap and brief | Atomic tmp+replace, created 0600 | `app/config.py:131-176`, `app/engine/core.py:482-484` |
 | Dashboard setting overrides, **including secrets entered in Setup** (plain text) | `data/settings.json`, JSON | `DashboardSettings.save` from `update_settings` | Created 0600, atomic; only `EDITABLE` names are loaded | `app/setup.py:167-182`, `app/engine/core.py:597`, `app/main.py:72` |
-| Alerts fired/phoned per kind per day, last 8 days | `data/alert_counts.json`, JSON | `AlertCounts.save` on every publish | So the daily phone cap survives a restart; written then chmod 0600 | `app/noise.py:21`, `:88-96`, `app/engine/core.py:104`, `:276-280`, `:300`, `:325` |
-| LULD estimate-vs-official checks, last 500 | `data/luld_checks.json`, JSON | `Checks.add` | Written then chmod 0600; no tickers | `app/luld.py:84-108`, `app/engine/tape.py:63` |
-| Catalyst events and their 5m/30m/close reactions | `data/reactions.db`, SQLite `events` table | `ReactionStore` | `INSERT OR IGNORE` so a restart doesn't re-track; chmod 0600 when created; pruned daily by `reactions_keep_days`; `VACUUM` after clearing | `app/reactions.py:34-51`, `:141-167`, `:201-220`, `app/engine/catalysts.py:71`, `:132-140` |
+| Alerts fired/phoned per kind per day, last 8 days | `data/alert_counts.json`, JSON | `AlertCounts.save` on every publish | So the daily phone cap survives a restart; created 0600 | `app/noise.py:21`, `:88-98`, `app/engine/core.py:104`, `:276-280`, `:300`, `:325` |
+| LULD estimate-vs-official checks, last 500 | `data/luld_checks.json`, JSON | `Checks.add` | Created 0600; no tickers | `app/luld.py:84-110`, `app/engine/tape.py:63` |
+| Catalyst events and their 5m/30m/close reactions | `data/reactions.db`, SQLite `events` table | `ReactionStore` | `INSERT OR IGNORE` so a restart doesn't re-track; created 0600, and an older file tightened at startup; pruned daily by `reactions_keep_days`; `VACUUM` after clearing | `app/reactions.py:34-51`, `:141-168`, `:202-221`, `app/engine/catalysts.py:71`, `:132-140` |
 | Recordings of source answers | `data/recordings/*.jsonl.gz` | `Recorder` when `record` or `MARKET_PULSE_RECORD=1` | Folder 0700, files 0600 `O_EXCL`; newest `record_keep` kept; no request headers; credential-like URL params dropped | `app/main.py:85-88`, `app/replay.py:11-13`, `:57`, `:80-84`, `:241-250`, `:312-316` |
 | Local CA and server certificate | `data/tls/` | `tls.ensure` at `--https` start | Folder 0700; keys 0600, certs 0644 | `app/config.py:16`, `app/tls.py:76-80`, `:139-169`, `app/serve.py:26-30` |
 
@@ -333,7 +333,7 @@ Rebuilding these is what makes "a restart only sets a baseline" true.
   recovers it.
   - `_update_reactions` runs at startup and every 120 s (`app/engine/catalysts.py:36`, `:146`,
     `app/engine/core.py:170`). It queues again every offering from the last `TRACK_MAX_AGE`
-    (5 days) still without a level (`app/engine/catalysts.py:110-117`, `app/reactions.py:189-194`).
+    (5 days) still without a level (`app/engine/catalysts.py:110-117`, `app/reactions.py:190-195`).
   - A lookup that fails or finds no profile waits `RISK_RETRY`=900 s before the next try
     (`app/engine/catalysts.py:119-130`).
 
@@ -421,10 +421,9 @@ credentials (`app/replay.py:415-418`). Tested in `tests/test_replay.py:368`.
   stripped from recorded URLs (`app/replay.py:11-13`, `:57`, `:80-84`). Tested in
   `tests/test_replay.py:138` and `:154`.
 - **Files on disk.**
-  - `state.json`, `settings.json`, the TLS keys and recordings are created 0600 (references in §5).
-  - `alert_counts.json` and `luld_checks.json` are written with `write_text` and then chmod-ed, so for
-    a moment they have the umask's mode. Neither holds a secret (`app/noise.py:94-95`,
-    `app/luld.py:105-106`).
+  - `state.json`, `settings.json`, `alert_counts.json`, `luld_checks.json`, `reactions.db`, the TLS keys
+    and recordings are created 0600, so they're never readable by others, even for a moment
+    (references in §5; `app/noise.py:94-95`, `app/luld.py:105-106`, `app/reactions.py:146-147`).
 
 ### Access token and sign-in
 

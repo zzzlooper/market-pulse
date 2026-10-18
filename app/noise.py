@@ -91,8 +91,10 @@ class AlertCounts:
         self._days = {d: v for d, v in self._days.items() if d >= oldest}
         self.path.parent.mkdir(parents=True, exist_ok=True)
         tmp = self.path.with_suffix(".tmp")
-        tmp.write_text(json.dumps(self._days))
-        os.chmod(tmp, 0o600)
+        fd = os.open(tmp, os.O_WRONLY | os.O_CREAT | os.O_TRUNC, 0o600)
+        os.fchmod(fd, 0o600)  # also a .tmp left over with wider permissions
+        with os.fdopen(fd, "w") as f:
+            f.write(json.dumps(self._days))
         tmp.replace(self.path)
 
     def clear(self) -> int:
