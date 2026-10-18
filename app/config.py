@@ -147,6 +147,7 @@ class UserState:
         # The day (ET) the last end-of-day recap went out: a restart after recap_time sends a missed
         # one, and never repeats one (engine/daily.py).
         self.recap_sent: str | None = data.get("recap_sent")
+        self.brief_sent: str | None = data.get("brief_sent")  # the same for the pre-market brief (engine/gaps.py)
 
     def to_dict(self) -> dict:
         return {
@@ -161,6 +162,7 @@ class UserState:
             "halt_alerts": self.halt_alerts,
             "phone_alerts": self.phone_alerts,
             "recap_sent": self.recap_sent,
+            "brief_sent": self.brief_sent,
         }
 
     def save(self) -> None:
