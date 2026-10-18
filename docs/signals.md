@@ -99,7 +99,8 @@ data health. Back to the [README](../README.md).
     least 5% below the previous one, at most every 15 minutes per stock. Without the pullback, a
     runner would alert on every tick up.
   - Switch them off in the alerts panel. On the phone they're a category of their own,
-    *Breakouts*, off by default since busy days bring many; switched on, they're high priority.
+    *Breakouts*, off by default since busy days bring many; switched on, breakouts are high
+    priority (sympathy moves, in the same category, normal).
     Prices arrive at the app's polling rate (a minute or so with Yahoo, seconds with Finnhub),
     and Yahoo's are delayed ~15 minutes, so these are as timely as the price source.
 - **Earnings** (`app/earnings.py`): the next report date of each watchlist stock, looked up
@@ -128,7 +129,8 @@ data health. Back to the [README](../README.md).
 - **Catalyst reactions** (*Reactions* tab, bottom left; `app/reactions.py`): every filing
   (routine 8-Ks only for watched and moving stocks), new trading halt and alerting headline
   is recorded with the price when it arrived, then 5 and 30 minutes later and at the close
-  of the next regular session.
+  of the first regular session that ends after it (the same day's close for an event during
+  the session).
   - **Your alerts: what happened next**: the app's own alerts are measured the same way, from
     the price when they fired: breakouts (pre-market high, new high after a pullback), warrant
     and offering-price crossings, float rotations, unusual-volume entries, halt resumptions and
@@ -171,7 +173,8 @@ data health. Back to the [README](../README.md).
     apostrophe and open as text, never as a formula.
   - *n* is small for weeks; a median of 3 says little.
 - **Data health**: the header shows whether every data source is delivering (Yahoo prices,
-  Yahoo movers, news feeds, Nasdaq halts, SEC filings, and the Finnhub stream when configured). Click it
+  Yahoo movers, Yahoo pre-market, news feeds, Nasdaq halts, SEC filings, and the Finnhub stream
+  and quotes when configured). Click it
   for each source's last update and error.
   - A source is judged by the age of its last good update, not just by errors: a yfinance
     call that hangs never raises an error, so no data for 3 polling intervals (at least 60 s)

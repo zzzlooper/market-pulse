@@ -82,7 +82,8 @@ served from `static/` (`app/main.py:621`).
   - Phone notes are queued (`:325-326`).
 - **Phone sender.** `PhoneNotifier.run` (`app/notify.py:168-183`) works through the queue:
   - It gathers a burst for `BATCH_WINDOW`=2.0 s (`app/notify.py:23`).
-  - It sends at most `PER_BATCH`=3 messages; the rest become one summary (`app/notify.py:24`, `:178`).
+  - It sends up to `PER_BATCH`=3 messages one by one; a bigger burst sends 2 and folds the rest
+    into one summary (`app/notify.py:24`, `:178`).
   - It drops anything over `PER_MINUTE`=20 in a sliding 60 s window (`app/notify.py:25`, `:208-215`).
   - The queue holds `QUEUE_LIMIT`=500 notes (`app/notify.py:26`, `:163-166`).
   - `enqueue` drops a note whose category is switched off (`app/notify.py:160-162`).
@@ -279,8 +280,8 @@ update is older than `max(3 × interval, 60 s)`, whatever the cause, which also 
 | Cross-site write request | `Origin` netloc ≠ Host on non-GET | 403 | `app/main.py:167-170` |
 | Missing/wrong token on `/api/*` | `authorized` false | 401 | `app/main.py:171-173` |
 | Wrong login token | `compare_digest` false | 1.0 s delay, then 401 | `app/main.py:65`, `:186-188` |
-| Bad config.toml | Unknown key, non-URL feed, bad `HH:MM` → `ValueError` | Raised from `load_settings`, which runs when `app.main` is imported. **UNVERIFIED**: the process then fails to start | `app/config.py:98-116`, `app/main.py:72`, `:92` |
-| Corrupt state.json | `json.loads` is not guarded | **UNVERIFIED**: startup fails the same way | `app/config.py:136` |
+| Bad config.toml | Unknown key, non-URL feed, bad `HH:MM` → `ValueError` | Raised from `load_settings`, which runs when `app.main` is imported. The process then fails to start | `app/config.py:98-116`, `app/main.py:72`, `:92` |
+| Corrupt state.json | `json.loads` is not guarded | Startup fails the same way | `app/config.py:136` |
 | Corrupt settings.json | `FileNotFoundError`/`ValueError` | Silently treated as no dashboard settings | `app/setup.py:167-171` |
 | Corrupt alert_counts.json / luld_checks.json | `OSError`/`ValueError` | Treated as empty | `app/noise.py:63-66`, `app/luld.py:95-98` |
 | Bad dashboard setting | `validate` raises `SettingsError`, or env-owned setting, or `effective()` fails | 422; nothing saved | `app/engine/core.py:586-597`, `app/main.py:263-266` |
@@ -416,7 +417,7 @@ credentials (`app/replay.py:415-418`). Tested in `tests/test_replay.py:368`.
     instead (`app/finnhub.py:54`).
   - `_redact` replaces the key with "…" (`app/finnhub.py:67-70`). It is applied to every stream log
     line and to `feed.error` (`app/finnhub.py:127-128`, `:138-139`, `:191`).
-  - Tests: `tests/test_finnhub.py:178` (`error`), `:197` (logs).
+  - Tests: `tests/test_finnhub.py:183` (`error`), `:202` (logs).
 - **Recordings.** Recordings never hold request headers. Credential-like query parameters are
   stripped from recorded URLs (`app/replay.py:11-13`, `:57`, `:80-84`). Tested in
   `tests/test_replay.py:138` and `:154`.

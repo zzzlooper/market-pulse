@@ -24,6 +24,7 @@ app/
   splits.py   reverse splits from an 8-K's first pages: the ratio and the day it takes effect
   noise.py    alert noise control: muted kinds, snoozed stocks, the phone cap, daily counts
   backup.py   backing up your setup to a file and restoring it (never a secret)
+  datastore.py  the "Your data" inventory in Setup, and deleting stored files
   plan.py     the morning game plan: today's gappers with everything known about each
   breakouts.py  through the pre-market high, a new high of day after a pullback
   serve.py    python -m app.serve [--https]: starts the app, as the background service does

@@ -8,7 +8,7 @@ The signals and filings are in [signals.md](signals.md). Back to the [README](..
 |---|---|---|
 | Watchlist: price, % change, volume, RVOL | Yahoo daily bars (`yfinance.download`); prices from Finnhub if configured | 15 s (Finnhub: streaming) |
 | Top movers: gainers, losers, most active, small caps | Yahoo predefined screeners | 60 s |
-| Unusual volume | Watchlist plus every screener result with RVOL ≥ threshold | with the above |
+| Unusual volume | Watchlist plus every screener result with RVOL ≥ threshold and at least `min_volume` shares (the top 25) | with the above |
 | News | SEC 8-K filings, GlobeNewswire, PR Newswire, Yahoo per-ticker RSS | 30 s |
 | SEC filings (in the news feed) | EDGAR current filings: offerings, Form 4, Schedule 13D, 8-K | 30 s |
 | Dilution risk (ticker detail) | SEC filing history and XBRL financials (data.sec.gov) | on open, cached 6 h |
@@ -126,7 +126,8 @@ The signals and filings are in [signals.md](signals.md). Back to the [README](..
     unusual volume, float rotation, breakouts, sympathy, warrant and offering levels, halts,
     resumptions, LULD, headlines and SEC filings) with how many fired today and in the last 7
     days, how many went to the phone today, and its track record (median move to the close, as
-    in the Reactions tab). Untick *Show* to keep a kind off this page, *Phone* to keep it off the
+    in the Reactions tab; none for halts, resumption times, the minute-before heads-up,
+    headlines and filings). Untick *Show* to keep a kind off this page, *Phone* to keep it off the
     phone. A muted or snoozed headline or filing still appears in the news, without the beep or
     desktop notification.
     - *snooze* on any alert in the log: no alerts about that stock, anywhere, for the rest of
@@ -195,7 +196,7 @@ The signals and filings are in [signals.md](signals.md). Back to the [README](..
 The page gets what changes, as it changes, over one connection: the quotes after each refresh
 (and with Finnhub only the stocks whose price moved, up to twice a second), the movers, the
 gappers when the list changes, sympathy moves when who moves with whom changes, and only the
-stocks near a LULD band (the ticker panel asks for its own bands). On a busy made-up hour (30
-watchlist stocks, 100 movers, 80 pre-market candidates) that is about 1.35 MB an hour to each
-open page, and the engine's own work takes a few milliseconds a minute; the rest is waiting on
+stocks near a LULD band (the ticker panel asks for its own bands). Measured for v0.26 on a busy made-up
+hour (30 watchlist stocks, 100 movers, 80 pre-market candidates), that was about 1.35 MB an hour
+to each open page, and the engine's own work took a few milliseconds a minute; the rest is waiting on
 Yahoo and SEC.

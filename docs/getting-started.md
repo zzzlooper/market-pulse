@@ -128,7 +128,7 @@ pip install -r requirements-dev.txt
 python -m pytest
 ```
 
-About 430 tests, offline: a fixture blocks the network, and they use a scratch config and data
+About 450 tests, offline: a fixture blocks the network, and they use a scratch config and data
 folder, never yours. The browser tests need Chromium or Chrome installed and are skipped
 without it.
 
