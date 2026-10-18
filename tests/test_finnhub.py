@@ -4,7 +4,8 @@ import json
 import httpx
 from websockets.asyncio.server import serve
 
-from app.finnhub import MAX_SYMBOLS, FinnhubFeed, LivePrice, to_finnhub
+from app.clock import clock
+from app.finnhub import MAX_SYMBOLS, STALE_SECONDS, FinnhubFeed, LivePrice, to_finnhub
 
 
 def run(coro):
@@ -57,13 +58,52 @@ def test_overlay():
     yahoo = {"symbol": "AAPL", "price": 99.0, "prev_close": 100.0, "volume": 5, "rvol": 1.5}
     assert feed.overlay(yahoo) == {**yahoo, "live": False}
 
-    feed.prices["AAPL"] = LivePrice(price=110.0, time=1.0)  # no Finnhub prev close: use Yahoo's
+    feed.prices["AAPL"] = LivePrice(price=110.0, time=1.0, seen=clock.time())  # no Finnhub prev close: use Yahoo's
     row = feed.overlay(yahoo)
     assert (row["price"], row["change"], row["change_pct"], row["live"]) == (110.0, 10.0, 10.0, True)
     assert row["rvol"] == 1.5
 
     feed.prices["AAPL"].prev_close = 88.0
     assert feed.overlay(yahoo)["change"] == 22.0
+
+
+def test_stale_price_falls_back_to_yahoo_until_finnhub_recovers():
+    feed, _ = make_feed()
+    run(feed.set_symbols(["AAPL"]))
+    yahoo = {"symbol": "AAPL", "price": 99.0, "prev_close": 100.0}
+    try:
+        clock.freeze(1_000.0)
+        feed.connected_at = 1_000.0
+        feed.handle({"type": "trade", "data": [trade("AAPL", 110.0, 1_000_000)]})
+        clock.freeze(1_000.0 + 600)  # a quiet stock on a live stream: its last trade is still its price
+        assert feed.overlay(yahoo)["live"]
+
+        feed.connected_at = None  # the stream drops
+        clock.freeze(1_000.0 + 600 + STALE_SECONDS + 1)
+        row = feed.overlay(yahoo)
+        assert (row["price"], row["live"], row["delayed"]) == (99.0, False, True)
+
+        feed.connected_at = clock.time()  # back, but the price is from before the drop
+        assert feed.overlay(yahoo)["price"] == 99.0
+        feed.handle({"type": "trade", "data": [trade("AAPL", 112.0, 1_700_000)]})
+        row = feed.overlay(yahoo)
+        assert (row["price"], row["live"], "delayed" in row) == (112.0, True, False)
+    finally:
+        clock.reset()
+
+
+def test_price_heard_recently_stays_live_without_the_stream():
+    feed, _ = make_feed()
+    yahoo = {"symbol": "AAPL", "price": 99.0}
+    try:
+        clock.freeze(1_000.0)
+        feed.prices["AAPL"] = LivePrice(price=110.0, time=990.0, seen=1_000.0)  # e.g. a REST quote
+        clock.freeze(1_000.0 + STALE_SECONDS)
+        assert feed.overlay(yahoo)["live"]
+        clock.freeze(1_000.0 + STALE_SECONDS + 1)
+        assert feed.overlay(yahoo)["delayed"]
+    finally:
+        clock.reset()
 
 
 def test_refresh_quotes_from_rest():
@@ -83,7 +123,9 @@ def test_refresh_quotes_from_rest():
         return feed, updates
 
     feed, updates = run(scenario())
-    assert feed.prices["AAPL"] == LivePrice(price=150.0, prev_close=140.0, time=1_700_000_000)
+    live = feed.prices["AAPL"]
+    assert (live.price, live.prev_close, live.time) == (150.0, 140.0, 1_700_000_000)
+    assert feed.overlay({"symbol": "AAPL"})["live"]
     assert "NOPE" not in feed.prices
     assert updates == [1]
 

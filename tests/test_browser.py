@@ -480,6 +480,12 @@ def test_real_time_ticks_update_just_their_rows(page, world):
     assert page.eval("state.quotes.length") == 2
 
 
+def test_a_stale_real_time_price_is_marked_as_delayed(page, world):
+    open_dashboard(page, world)
+    page.eval("handle({type: 'quote_ticks', data: [{...state.quotes.find(q => q.symbol === 'BOLT'), live: false, delayed: true}]})")
+    assert "Yahoo" in page.eval("document.querySelector('#watchlist .live-dot.delayed').title")
+
+
 def test_with_an_access_token_the_page_asks_for_it_first(tmp_path, world):
     _, browser, recording, _ = world
     # Top-level settings before [feeds]: after it, TOML would file the token under feeds.
