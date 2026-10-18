@@ -309,20 +309,27 @@ class Engine(PricesMixin, FeedsMixin, RiskMixin, CatalystsMixin, DailyMixin, Gap
     async def _publish_items(self, fresh: list[dict], kind: str, to_note: Callable[[dict], dict]) -> None:
         """New news or filing items to the news panel. The ones flagged as alerts (a desktop
         notification, the phone) pass the same noise controls as _publish_alerts; one muted
-        in the browser or snoozed loses its flag, but stays in the news."""
+        in the browser or snoozed loses its flag, but stays in the news. Shown filing alerts
+        also go to the alert log, with the phone message's reason (a top gainer, its risk)."""
         if not fresh:
             return
         today = clock.today(market.ET)
-        alerting, notes = [n for n in fresh if n["alert"]], []
+        alerting, notes, logged = [n for n in fresh if n["alert"]], [], []
         for n in alerting:
             note = to_note(n)
             n["alert"], to_phone = self._route(kind, n["tickers"], note["category"], today.isoformat())
             if to_phone:
                 notes.append(note)
+            if n["alert"] and kind == "filing":
+                symbol = n["tickers"][0]
+                logged.append(self.alerts.event({"symbol": symbol}, kind, f"{symbol} {note['body']}"))
         await self.hub.broadcast({"type": "news", "data": fresh})
         if not alerting:
             return
         self.alert_counts.save(today)
+        if logged:
+            self.alerts.record(logged)
+            await self.hub.broadcast({"type": "alerts", "data": logged})
         if notes:
             self.phone.enqueue(notes, self.state.phone_alerts)
         await self.hub.broadcast({"type": "alert_counts", "data": self.alert_counts.summary(today)})

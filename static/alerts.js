@@ -131,7 +131,10 @@ function addAlerts(events) {
                  pmh: "broke pre-market high", hod: "new high of day", resuming: "resumes in a minute",
                  resumed: "resumed", luld_up: "near limit-up band", luld_down: "near limit-down band",
                  sympathy: "sympathy move" };
-  notify(events.map((a) => ({ title: `${a.symbol} · ${what[a.kind] ?? "price alert"}`, body: a.message, tag: a.id })), 660);
+  const fresh = events.filter((a) => a.kind !== "filing");  // filings notify from the news feed (news.js)
+  if (fresh.length) {
+    notify(fresh.map((a) => ({ title: `${a.symbol} · ${what[a.kind] ?? "price alert"}`, body: a.message, tag: a.id })), 660);
+  }
 }
 
 // --- alerts -----------------------------------------------------------------------------

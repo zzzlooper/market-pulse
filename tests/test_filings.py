@@ -366,7 +366,11 @@ def test_engine_sends_filings_to_the_news_feed_and_the_phone(tmp_path):
             await engine.phone.aclose()
     asyncio.run(scenario())
     assert seen == {"ACME": "top gainer +45%"}
-    assert [m["type"] for m in hub.messages] == ["risk", "news", "alert_counts"]
+    assert [m["type"] for m in hub.messages] == ["risk", "news", "alerts", "alert_counts"]
+    logged = hub.messages[2]["data"]  # the alerting filing, in the alert log too, with why it matters
+    assert [(a["symbol"], a["kind"]) for a in logged] == [("ACME", "filing")]
+    assert logged[0]["message"] == "ACME Acme Corp: offering from shelf (424B5) (top gainer +45%, dilution risk HIGH)"
+    assert list(engine.alerts.recent) == logged
     assert hub.messages[0]["data"] == {"ACME": {"level": "high", "points": 6, "reasons": ["S-1 pending"], "warrant_levels": [], "offering_levels": [], "reverse_split": None}}
     assert len(hub.messages[1]["data"]) == 2 and hub.messages[1]["data"][0]["filing"]["risk"] == "high"
     assert [n["category"] for n in sent] == ["filings"]
