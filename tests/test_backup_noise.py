@@ -75,6 +75,7 @@ def test_news_and_filing_alerts_obey_snoozes_mutes_and_the_phone_cap(tmp_path):
     day.headline("09:45", "Crux Biotherapeutics Inc (NASDAQ: CRUX) reports topline data")
     day.headline("09:50", "Dyna Robotics Corp (NASDAQ: DYNA) names a new chief")
     day.filing("09:55", "424B5", "ECHO")
+    day.filing("09:58", "424B5", "ECHO")
     day.profile("ECHO", "high")
     run = Run(day, watchlist=["ACME", "BOLT", "CRUX", "DYNA", "ECHO"], phone_cap_per_kind=1)
     e = run.engine
@@ -95,6 +96,11 @@ def test_news_and_filing_alerts_obey_snoozes_mutes_and_the_phone_cap(tmp_path):
         assert (kinds["filing"]["today"], kinds["filing"]["phoned_today"]) == (1, 0)
         tracked = {r["symbol"] for r in e.reactions.since(0) if r["kind"] == "headline"}
         assert tracked == {"ACME", "BOLT", "CRUX", "DYNA"}  # muted and snoozed ones are still measured
+        assert [(a["symbol"], a["kind"]) for a in e.alerts.recent] == [("ECHO", "filing")]  # headlines stay in the news
+        asyncio.run(e.set_alert_mute("filing", browser=False, phone=None))
+        run.steps("09:59")
+        assert {k["kind"]: k for k in e.alert_kinds()}["filing"]["today"] == 2  # it did alert…
+        assert len(e.alerts.recent) == 1  # …but muted on this page: not in the log either
     finally:
         run.close()
 
