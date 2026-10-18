@@ -87,6 +87,26 @@ def test_band_warnings_follow_the_halt_alert_setting(tmp_path, monkeypatch):
         run.close()
 
 
+@pytest.mark.parametrize(("mode", "warned"), [("all", True), ("watchlist", False)])
+def test_all_stocks_warns_about_gappers_the_app_prices(tmp_path, monkeypatch, mode, warned):
+    monkeypatch.setattr("app.sec.MIN_REQUEST_GAP", 0)
+    day = Day(tmp_path, start="04:00")
+    day.headline("06:30", "Crux Biotherapeutics Inc (NASDAQ: CRUX) reports topline data")  # why the scanner looks
+    day.premarket("07:00", CRUX=(30.0, 30))
+    for hhmm in ("09:31", "09:32", "09:33"):
+        day.quotes(hhmm, CRUX=30.0)  # 13.00, on neither the watchlist nor a movers list
+    day.quotes("09:34", CRUX=43.65)  # 14.365: within a quarter band of the 14.68 limit-up band
+    run = Run(day, watchlist=["BOLT"])
+    run.engine.state.halt_alerts = mode
+    run.steps("07:01", "09:31", "09:32", "09:33", "09:34")
+    try:
+        assert run.engine.luld["CRUX"]["near"] == "up"  # the badge either way
+        titles = [n["title"] for n in run.phone if "band" in n["title"]]
+        assert titles == (["CRUX · near limit-up band"] if warned else [])
+    finally:
+        run.close()
+
+
 def test_no_bands_outside_regular_hours(tmp_path, monkeypatch):
     monkeypatch.setattr("app.sec.MIN_REQUEST_GAP", 0)
     day = Day(tmp_path, start="08:00")
