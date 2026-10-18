@@ -2,7 +2,7 @@
 ## How to run and test
 - Setup (Python 3.11+): `python -m venv .venv && source .venv/bin/activate && pip install -r requirements-dev.txt`
 - Run: `uvicorn app.main:app --reload`, then open http://localhost:8000 (as the service does: `python -m app.serve [--https]`)
-- Test everything: `python -m pytest` (~430 tests, offline, about 20 s; browser tests skip without Chromium)
+- Test everything: `python -m pytest` (~450 tests, offline, about 30 s; browser tests skip without Chromium)
 - One file or test: `python -m pytest tests/test_alerts.py -q`, `python -m pytest -k crossing`
 - Replay a recorded day offline: `python -m app.replay list`, then `python -m app.replay play <file> --speed 10` (port 8001)
 - Tests use a scratch config and data folder (MARKET_PULSE_CONFIG, MARKET_PULSE_DATA) and a fixture blocks the network.
