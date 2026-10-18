@@ -150,3 +150,22 @@ def test_stream_errors_never_contain_the_key():
     assert feed.error.startswith("stream disconnected:")
     assert "test-key" not in feed.error
     assert not feed.connected
+
+
+def test_stream_disconnect_logs_never_contain_the_key(caplog):
+    async def scenario():
+        # An invalid URL makes websockets echo the whole connect URL, ?token=… included.
+        feed = FinnhubFeed("fake-secret-key", lambda: None, ws_url="not a url")
+        task = asyncio.create_task(feed.run())
+        for _ in range(50):
+            if feed.error:
+                break
+            await asyncio.sleep(0.02)
+        task.cancel()
+        await feed.aclose()
+
+    with caplog.at_level("DEBUG", logger="app.finnhub"):
+        run(scenario())
+    lines = [r.getMessage() for r in caplog.records if r.name == "app.finnhub"]
+    assert any("disconnected" in line for line in lines)
+    assert not [line for line in lines if "fake-secret-key" in line]

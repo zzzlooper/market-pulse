@@ -48,6 +48,11 @@ class FinnhubFeed:
         self.error: str | None = None  # why the stream is down, or a problem it or REST reported
         self._client = httpx.AsyncClient(base_url=rest_url, timeout=10, headers={"X-Finnhub-Token": api_key})
 
+    def _redact(self, text: object) -> str:
+        """The connect URL carries the key, so keep it out of every log line and UI message."""
+        text = str(text)
+        return text.replace(self.api_key, "…") if self.api_key else text
+
     async def aclose(self) -> None:
         await self._client.aclose()
 
@@ -101,9 +106,8 @@ class FinnhubFeed:
                     async for raw in ws:
                         self.handle(json.loads(raw))
             except Exception as exc:
-                log.warning("Finnhub stream disconnected (%s); retrying in %ds", exc, delay)
-                # The connect URL carries the key, so keep it out of anything shown in the UI.
-                self.error = f"stream disconnected: {exc}".replace(self.api_key, "…")[:200]
+                log.warning("Finnhub stream disconnected (%s); retrying in %ds", self._redact(exc), delay)
+                self.error = self._redact(f"stream disconnected: {exc}")[:200]
             finally:
                 self._ws = None
                 self.connected = False
@@ -113,8 +117,8 @@ class FinnhubFeed:
     def handle(self, msg: dict) -> None:
         kind = msg.get("type")
         if kind == "error":
-            log.error("Finnhub: %s", msg.get("msg"))
-            self.error = str(msg.get("msg"))[:200]
+            log.error("Finnhub: %s", self._redact(msg.get("msg")))
+            self.error = self._redact(msg.get("msg"))[:200]
         if kind != "trade":
             return  # also "ping"
         changed = False
@@ -156,4 +160,4 @@ class FinnhubFeed:
         try:
             await self._ws.send(json.dumps({"type": kind, "symbol": fsym}))
         except Exception as exc:  # the run loop notices the dead socket and resubscribes
-            log.debug("Finnhub %s %s failed: %s", kind, fsym, exc)
+            log.debug("Finnhub %s %s failed: %s", kind, fsym, self._redact(exc))
