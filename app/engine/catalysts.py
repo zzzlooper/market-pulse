@@ -24,6 +24,7 @@ from ..reactions import (
     summarize,
     to_csv,
 )
+from .risk import RISK_RETRY
 
 log = logging.getLogger(__name__)
 
@@ -70,6 +71,8 @@ class CatalystsMixin:
         self.reactions = ReactionStore(self.state.path.parent / "reactions.db")
         self._reaction_retry: dict[str, float] = {}  # event id -> monotonic time to try again
         self._risk_queue: asyncio.Queue[tuple[str, str]] = asyncio.Queue()  # offerings awaiting a risk level
+        self._risk_queued: set[str] = set()         # their event ids, so one is never queued twice
+        self._risk_retry: dict[str, float] = {}     # event id -> monotonic time to look it up again
         self._pruned_on = None  # the day old history was last deleted
         self._records: tuple[float, dict[str, dict]] | None = None  # (monotonic time, label -> stats)
         self._gap_stats: tuple[float, dict[str, dict]] | None = None  # the same, for gappers
@@ -94,16 +97,37 @@ class CatalystsMixin:
 
     async def _fill_offering_risk(self) -> None:
         """Look up the dilution risk of each tracked offering, one at a time. The level is read
-        just after the filing, so it already counts that filing."""
+        just after the filing, so it already counts that filing (or later, for one queued again by
+        _queue_missing_risk)."""
         while True:
             await self._fill_one_offering_risk(*await self._risk_queue.get())
 
+    def _queue_offering_risk(self, event_id: str, symbol: str) -> None:
+        if event_id not in self._risk_queued:
+            self._risk_queued.add(event_id)
+            self._risk_queue.put_nowait((event_id, symbol))
+
+    def _queue_missing_risk(self) -> None:
+        """Queue again the recent offerings still without a risk level: the queue lives in memory,
+        so a restart loses what was waiting, and a lookup can fail. Those wait RISK_RETRY first."""
+        mono, rows = time.monotonic(), self.reactions.missing_risk(now_ts() - TRACK_MAX_AGE)
+        self._risk_retry = {r["id"]: self._risk_retry[r["id"]] for r in rows if r["id"] in self._risk_retry}
+        for row in rows:
+            if self._risk_retry.get(row["id"], 0) <= mono:
+                self._queue_offering_risk(row["id"], row["symbol"])
+
     async def _fill_one_offering_risk(self, event_id: str, symbol: str) -> None:
+        self._risk_queued.discard(event_id)
         try:
-            if summary := await self._risk_profile(symbol):
-                self.reactions.update(event_id, {"risk": summary["level"]})
+            summary = await self._risk_profile(symbol)
         except Exception as exc:
             log.info("no dilution risk for %s offering: %s", symbol, describe(exc))
+            summary = None
+        if summary:
+            self.reactions.update(event_id, {"risk": summary["level"]})
+            self._risk_retry.pop(event_id, None)
+        else:  # failed, or no SEC profile: not again every round
+            self._risk_retry[event_id] = time.monotonic() + RISK_RETRY
 
     def _prune_reactions(self) -> None:
         """Once a day, delete history older than reactions_keep_days (0 keeps everything)."""
@@ -116,8 +140,10 @@ class CatalystsMixin:
             log.info("deleted %d catalysts older than %d days from the reaction history", deleted, days)
 
     async def _update_reactions(self) -> None:
-        """Measure what's due: one chart download per symbol covers all its events."""
+        """Measure what's due: one chart download per symbol covers all its events. Also queues
+        the offerings still waiting for a risk level (at startup too: this loop runs first thing)."""
         self._prune_reactions()
+        self._queue_missing_risk()
         now, mono = now_ts(), time.monotonic()
         work: dict[tuple[str, str], list[dict]] = {}
         for event in self.reactions.pending():

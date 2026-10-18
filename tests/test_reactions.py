@@ -9,6 +9,7 @@ from fastapi.testclient import TestClient
 from app import main, market
 from app.config import Settings, UserState
 from app.engine import Engine
+from app.engine.risk import RISK_RETRY
 from app.market import ET
 from app.reactions import (
     GRACE,
@@ -223,6 +224,83 @@ def test_recap_runs_on_weekdays_after_the_close(now, expected):
     assert next_run(now, "16:30") == expected
 
 
+def test_a_restart_after_recap_time_sends_the_missed_recap_once(tmp_path, monkeypatch):
+    from scenario_kit import Day, Run
+    from scenario_kit import ts as at
+
+    from app.clock import clock
+    day = Day(tmp_path)
+    day.chart("SPY", lambda hhmm: 500.0)  # a regular session today
+    run = Run(day, watchlist=["BOLT"])
+    e = run.engine
+    try:
+        clock.freeze(at("16:00"))
+        assert not e._recap_missed()  # not due yet
+        clock.freeze(at("17:10"))  # started after recap_time, which nothing sent
+        assert e._recap_missed()
+        run._runner.run(e._send_recap())
+        assert e.phone._queue.qsize() == 1 and e.phone._queue.get_nowait()["category"] == "recap"
+        assert UserState(e.state.path).recap_sent == "2026-10-13"  # survives the next restart
+        assert not e._recap_missed()  # so that one won't repeat it
+
+        e.state.recap_sent = None  # a recap that fails isn't marked, so a restart tries again
+
+        async def broken():
+            raise RuntimeError("Yahoo down")
+        monkeypatch.setattr(e, "_traded_today", broken)
+        run._runner.run(e._send_recap())
+        assert e._recap_missed() and e.phone._queue.empty()
+    finally:
+        run.close()
+
+
+def test_the_recap_loop_catches_up_at_startup_then_waits_for_the_next_day(tmp_path, monkeypatch):
+    from scenario_kit import Day, Run
+    from scenario_kit import ts as at
+
+    from app.clock import clock
+    from app.engine.daily import RECAP_CATCH_UP
+
+    class Stop(Exception):
+        pass
+    run = Run(Day(tmp_path), watchlist=["BOLT"])
+    e = run.engine
+    sleeps = []
+
+    async def sleep(seconds):
+        sleeps.append(round(seconds))
+
+    async def send():
+        raise Stop
+    monkeypatch.setattr(clock, "sleep", sleep)
+    monkeypatch.setattr(e, "_send_recap", send)
+    try:
+        clock.freeze(at("17:10"))
+        with pytest.raises(Stop):
+            run._runner.run(e._recap_loop())
+        assert sleeps == [RECAP_CATCH_UP]  # the missed one first
+        sleeps.clear()
+        e.state.recap_sent = "2026-10-13"  # already went out today
+        with pytest.raises(Stop):
+            run._runner.run(e._recap_loop())
+        assert sleeps == [round(at("16:30") + 86400 - at("17:10"))]  # straight to tomorrow's
+    finally:
+        monkeypatch.undo()
+        run.close()
+
+
+def test_no_recap_is_missed_on_a_weekend(tmp_path):
+    from scenario_kit import Day, Run
+
+    from app.clock import clock
+    run = Run(Day(tmp_path), watchlist=["BOLT"])
+    try:
+        clock.freeze(datetime(2026, 10, 17, 18, 0, tzinfo=ET).timestamp())  # a Saturday evening
+        assert not run.engine._recap_missed()
+    finally:
+        run.close()
+
+
 def test_recap_time_must_be_hh_mm(tmp_path):
     from app.config import load_settings
     (tmp_path / "c.toml").write_text('recap_time = "4:30pm"')
@@ -293,6 +371,45 @@ def test_offerings_without_a_risk_level_get_one_looked_up(tmp_path, monkeypatch)
         filler.cancel()
     asyncio.run(scenario())
     assert engine.reactions.pending()[0]["risk"] == "high"
+    close_engine(engine)
+
+
+def test_an_offering_whose_risk_lookup_was_lost_or_failed_is_looked_up_again(tmp_path, monkeypatch):
+    clock = {"mono": 1000.0}
+    monkeypatch.setattr("app.engine.catalysts.now_ts", lambda: AT + 60)
+    monkeypatch.setattr("app.engine.catalysts.time.monotonic", lambda: clock["mono"])
+    engine = make_engine(tmp_path)
+    engine._track("o1", "ACME", "dilution", "offering from shelf", "Acme: offering", "2026-10-13T10:00:00-04:00")
+    engine._queue_offering_risk("o1", "ACME")
+    close_engine(engine)  # the app stops before the lookup: the queue was in memory
+
+    engine = make_engine(tmp_path)  # restart, same data folder
+    answers = [RuntimeError("SEC slow"), {"level": "medium", "points": 3, "reasons": []}]
+
+    async def get(symbol):
+        answer = answers.pop(0)
+        if isinstance(answer, Exception):
+            raise answer
+        return answer
+    engine.dilution.get = get
+    monkeypatch.setattr(market, "fetch_chart", lambda symbol, range_: {"bars": []})
+
+    async def round_():
+        await engine._update_reactions()  # queues what's still missing
+        while not engine._risk_queue.empty():
+            await engine._fill_one_offering_risk(*engine._risk_queue.get_nowait())
+
+    async def scenario():
+        await round_()  # found again after the restart, but the lookup fails
+        assert engine.reactions.since(0)[0]["risk"] is None
+        await engine._update_reactions()
+        assert engine._risk_queue.empty()  # not again right away
+        clock["mono"] += RISK_RETRY
+        await round_()  # after the back-off it's tried again, and gets its level
+    asyncio.run(scenario())
+    assert engine.reactions.since(0)[0]["risk"] == "medium" and answers == []
+    asyncio.run(engine._update_reactions())
+    assert engine._risk_queue.empty()  # nothing left to look up
     close_engine(engine)
 
 

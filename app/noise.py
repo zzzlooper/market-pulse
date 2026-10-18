@@ -40,6 +40,8 @@ KINDS: dict[str, tuple[str, str]] = {
     "resumed": ("Resumed after a halt", "Halts"),
     "luld_up": ("Near the limit-up band", "Halts"),
     "luld_down": ("Near the limit-down band", "Halts"),
+    "news": ("Headline on your watchlist or keywords", "News and filings"),
+    "filing": ("SEC filing on a watched or moving stock", "News and filings"),
 }
 
 

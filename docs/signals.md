@@ -122,7 +122,9 @@ data health. Back to the [README](../README.md).
   - A **pre-market brief** goes to the phone at `gap_brief_time` (09:15 ET): the biggest gaps
     with their cause, whether it's day 2 and any high or medium dilution risk, and the reverse
     splits taking effect that day. Skipped on mornings without
-    pre-market trading. Open `http://localhost:8000/#gaps` to start on the tab.
+    pre-market trading. If Market Pulse wasn't running at `gap_brief_time`, the brief goes out a
+    minute after it next starts, as long as the market hasn't opened yet; it never goes out
+    twice. Open `http://localhost:8000/#gaps` to start on the tab.
 - **Catalyst reactions** (*Reactions* tab, bottom left; `app/reactions.py`): every filing
   (routine 8-Ks only for watched and moving stocks), new trading halt and alerting headline
   is recorded with the price when it arrived, then 5 and 30 minutes later and at the close

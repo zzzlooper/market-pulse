@@ -2,10 +2,12 @@ import asyncio
 import json
 
 import httpx
+import pytest
 from websockets.asyncio.server import serve
 
 from app.clock import clock
 from app.finnhub import MAX_SYMBOLS, STALE_SECONDS, FinnhubFeed, LivePrice, to_finnhub
+from app.health import SourceError
 
 
 def run(coro):
@@ -168,8 +170,11 @@ def test_rejected_key_is_reported():
         feed._client = httpx.AsyncClient(base_url="https://test", transport=httpx.MockTransport(
             lambda request: httpx.Response(401)))
         await feed.set_symbols(["AAPL"])
-        await feed.refresh_quotes()
-        await feed.aclose()
+        try:
+            with pytest.raises(SourceError, match="API key rejected"):  # so the data status shows it
+                await feed.refresh_quotes()
+        finally:
+            await feed.aclose()
         return feed
 
     assert run(scenario()).error == "API key rejected (HTTP 401); check finnhub_api_key"

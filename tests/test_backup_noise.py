@@ -68,6 +68,37 @@ def test_mute_snooze_and_the_phone_cap(tmp_path):
         run.close()
 
 
+def test_news_and_filing_alerts_obey_snoozes_mutes_and_the_phone_cap(tmp_path):
+    day = Day(tmp_path)
+    day.headline("09:40", "Acme Rocket Corp (NASDAQ: ACME) wins launch contract")
+    day.headline("09:41", "Bolt Battery Inc (NASDAQ: BOLT) opens a plant")
+    day.headline("09:45", "Crux Biotherapeutics Inc (NASDAQ: CRUX) reports topline data")
+    day.headline("09:50", "Dyna Robotics Corp (NASDAQ: DYNA) names a new chief")
+    day.filing("09:55", "424B5", "ECHO")
+    day.profile("ECHO", "high")
+    run = Run(day, watchlist=["ACME", "BOLT", "CRUX", "DYNA", "ECHO"], phone_cap_per_kind=1)
+    e = run.engine
+    try:
+        run.steps("09:31")  # every feed's first read is the baseline
+        asyncio.run(e.snooze("BOLT"))
+        run.steps("09:42", "09:46")
+        assert run.news("Acme")["alert"] and not run.news("Bolt")["alert"]  # snoozed: in the news, no alert
+        assert run.news("Crux")["alert"]  # past the phone cap it still shows here
+        assert run.phone_titles("news") == ["ACME · Wire"]
+        asyncio.run(e.set_alert_mute("news", browser=False, phone=None))
+        asyncio.run(e.set_alert_mute("filing", browser=None, phone=False))
+        run.steps("09:51", "09:56")
+        assert not run.news("Dyna")["alert"]
+        assert run.news("Echo Mining")["alert"] and run.phone_titles("filings") == []
+        kinds = {k["kind"]: k for k in e.alert_kinds()}
+        assert (kinds["news"]["today"], kinds["news"]["phoned_today"]) == (4, 1)
+        assert (kinds["filing"]["today"], kinds["filing"]["phoned_today"]) == (1, 0)
+        tracked = {r["symbol"] for r in e.reactions.since(0) if r["kind"] == "headline"}
+        assert tracked == {"ACME", "BOLT", "CRUX", "DYNA"}  # muted and snoozed ones are still measured
+    finally:
+        run.close()
+
+
 def test_a_kind_muted_everywhere_is_still_counted_and_measured(tmp_path):
     run = Run(Day(tmp_path), watchlist=["BOLT"])
     e = run.engine

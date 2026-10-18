@@ -16,6 +16,7 @@ log = logging.getLogger(__name__)
 
 GAP_INTERVAL = 60.0
 GAP_TRACK_FROM = dtime(9, 31)  # gappers are measured from the open, once its first minute is in
+BRIEF_CATCH_UP = 60  # seconds after a start past gap_brief_time before sending the missed brief
 
 
 class GapsMixin:
@@ -93,22 +94,45 @@ class GapsMixin:
         return build_brief(clock.today(market.ET), self.gaps, self.risk, self.settings.gap_min_pct,
                            self.settings.public_url, earnings=self._earnings_brief(), day2=self.day2, extras=extras)
 
+    def _brief_missed(self) -> bool:
+        """Today is a weekday, its brief time has passed but the market hasn't opened, and its
+        brief hasn't gone out: the app was down at brief time. After the open, a pre-market
+        brief is old news."""
+        now = clock.now(market.ET)
+        hour, minute = (int(x) for x in self.settings.gap_brief_time.split(":"))
+        due = datetime.combine(now.date(), dtime(hour, minute), market.ET)
+        opens = datetime.combine(now.date(), market.OPEN, market.ET)
+        return now.weekday() < 5 and due <= now < opens and self.state.brief_sent != now.date().isoformat()
+
+    async def _try_gap_brief(self) -> None:
+        try:
+            await self._send_gap_brief()
+        except Exception:
+            log.exception("pre-market brief failed")  # not marked as sent: a restart before the open tries again
+
     async def _gap_brief_loop(self) -> None:
+        if self._brief_missed():
+            await clock.sleep(BRIEF_CATCH_UP)  # the first scan, news and movers come in first
+            if self._brief_missed():  # still before the open
+                await self._try_gap_brief()
         while True:
             run = next_run(clock.now(market.ET), self.settings.gap_brief_time)
             await clock.sleep_until(run.timestamp())
-            try:
-                await self._send_gap_brief()
-            except Exception:
-                log.exception("pre-market brief failed")
+            await self._try_gap_brief()
             await clock.sleep(60)
 
     async def _send_gap_brief(self) -> bool:
-        """Queue the brief for the phone, unless nothing traded this morning (a holiday)."""
+        """Queue the brief for the phone, unless nothing traded this morning (a holiday). Either
+        way today's brief is done (state.brief_sent)."""
         await self._update_gaps()
-        if self._gaps_day != clock.today(market.ET) or not self._gaps_traded:
+        today = clock.today(market.ET)
+        if self._gaps_day != today or not self._gaps_traded:
             log.info("no pre-market trading today; brief skipped")
-            return False
-        self.phone.enqueue([self.gap_brief()], self.state.phone_alerts)
-        log.info("pre-market brief queued")  # its contents stay out of the log
-        return True
+            sent = False
+        else:
+            self.phone.enqueue([self.gap_brief()], self.state.phone_alerts)
+            log.info("pre-market brief queued")  # its contents stay out of the log
+            sent = True
+        self.state.brief_sent = today.isoformat()
+        self.state.save()
+        return sent

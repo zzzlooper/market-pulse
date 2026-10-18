@@ -383,9 +383,9 @@ def test_the_alert_kinds_panel_counts_and_mutes_and_a_stock_can_be_snoozed(page,
     open_dashboard(page, world)
     page.click("#alert-kinds-box summary")
     rows = page.wait("document.querySelectorAll('#alert-kinds tbody tr:not(.group)').length")
-    assert rows == 18
+    assert rows == 20
     groups = page.eval("[...document.querySelectorAll('#alert-kinds tr.group')].map(r => r.textContent)")
-    assert groups == ["Your rules", "Volume", "Breakouts", "Levels from filings", "Halts"]
+    assert groups == ["Your rules", "Volume", "Breakouts", "Levels from filings", "Halts", "News and filings"]
     phone = "#alert-kinds [data-mute-kind=pmh][data-where=phone]"
     try:
         page.click(phone)  # off

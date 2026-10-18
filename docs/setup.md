@@ -119,7 +119,9 @@ and `SEC_USER_AGENT` for your contact address).
   data outages.
 - *Daily recap*: weekdays at `recap_time` (default 16:30 ET), one message with the watchlist's
   moves, the day's halts (yours named), filings by type, the biggest reactions by the close
-  (see *Catalyst reactions*) and any data source that's down. Skipped on market holidays.
+  (see *Catalyst reactions*) and any data source that's down. Skipped on market holidays. If
+  Market Pulse wasn't running at `recap_time`, the recap goes out a minute after it next starts
+  that day; it never goes out twice.
   *Reactions* tab → *Today's recap* previews it and can send it right away. It names your
   watchlist tickers, so on public ntfy.sh keep the topic secret. Unusual volume is off by default,
   since it can fire dozens of times a day.

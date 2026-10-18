@@ -145,6 +145,67 @@ def test_no_brief_on_a_morning_without_premarket_trading(day):
         run.close()
 
 
+def test_a_restart_after_brief_time_sends_the_missed_brief_before_the_open_once(day):
+    from scenario_kit import ts
+
+    from app.clock import clock
+    from app.config import UserState
+    day.premarket("07:00", BOLT=(4.5, 12))
+    run = Run(day, watchlist=["BOLT"]).steps("07:05")
+    e = run.engine
+    try:
+        clock.freeze(ts("09:00"))
+        assert not e._brief_missed()  # not due yet
+        clock.freeze(ts("09:20"))  # started after gap_brief_time, which nothing sent
+        assert e._brief_missed()
+        assert run.brief("09:20") is True and run.phone_titles("gaps") == ["Market Pulse · pre-market Tue Oct 13"]
+        assert UserState(e.state.path).brief_sent == "2026-10-13"  # survives the next restart
+        assert not e._brief_missed()  # so that one won't repeat it
+        e.state.brief_sent = None
+        clock.freeze(ts("09:30"))
+        assert not e._brief_missed()  # after the open a pre-market brief is old news
+    finally:
+        run.close()
+
+
+def test_the_brief_loop_catches_up_only_while_the_market_is_still_closed(day, monkeypatch):
+    from scenario_kit import ts
+
+    from app.clock import clock
+    from app.engine.gaps import BRIEF_CATCH_UP
+
+    class Stop(Exception):
+        pass
+    run = Run(day, watchlist=["BOLT"])
+    e = run.engine
+    sleeps, sent = [], []
+
+    async def sleep(seconds):
+        sleeps.append(round(seconds))
+        clock.freeze(clock.time() + seconds)  # time passes while it waits
+
+    async def send():
+        sent.append(clock.now(ET).strftime("%H:%M"))
+        raise Stop
+    monkeypatch.setattr(clock, "sleep", sleep)
+    monkeypatch.setattr(e, "_try_gap_brief", send)
+    try:
+        clock.freeze(ts("09:20"))
+        with pytest.raises(Stop):
+            run._runner.run(e._gap_brief_loop())
+        assert sleeps == [BRIEF_CATCH_UP] and sent == ["09:21"]  # the missed one, after the first scan
+        sleeps.clear()
+        sent.clear()
+        clock.freeze(ts("09:29"))  # by the end of the wait the market has opened: tomorrow's instead
+        with pytest.raises(Stop):
+            run._runner.run(e._gap_brief_loop())
+        assert sleeps[0] == BRIEF_CATCH_UP and sent == ["09:15"]
+        assert clock.today(ET) == date(2026, 10, 14)
+    finally:
+        monkeypatch.undo()
+        run.close()
+
+
 def test_the_scanner_is_idle_after_ten_and_keeps_the_morning_list(day):
     day.premarket("07:00", BOLT=(6.0, 20))
     run = Run(day, watchlist=["BOLT"]).steps("07:05")

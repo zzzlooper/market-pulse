@@ -23,13 +23,12 @@ class FeedsMixin:
     async def _update_news(self) -> str | None:
         fresh = await self.news.poll(list(self.state.watchlist), list(self.state.keywords))
         if fresh:
-            await self.hub.broadcast({"type": "news", "data": fresh})
-            self.phone.enqueue([from_news(n) for n in fresh if n["alert"]], self.state.phone_alerts)
-            self._wake_gaps.set()  # a fresh headline may explain (or start) a gap
-            for n in fresh:
+            for n in fresh:  # muted ones too, as in _publish_alerts
                 if n["alert"] and n["tickers"]:
                     self._track(n["id"], n["tickers"][0], "headline", f"headline ({n['sentiment']['label']})",
                                 n["title"], n["published"])
+            await self._publish_items(fresh, "news", from_news)
+            self._wake_gaps.set()  # a fresh headline may explain (or start) a gap
         total, failing = self.news.source_count, self.news.failing
         if total and len(self.news.failed) == total:
             raise SourceError(f"all {total} feeds failed")
@@ -63,11 +62,9 @@ class FeedsMixin:
             risk = f.get("risk") or (self.risk.get(symbol) or {}).get("level")
             if self._track(n["id"], symbol, f["kind"], f["label"], n["title"], n["published"], risk) \
                     and f["kind"] == "dilution" and risk is None:
-                self._risk_queue.put_nowait((n["id"], symbol))  # so offerings can be compared by risk
+                self._queue_offering_risk(n["id"], symbol)  # so offerings can be compared by risk
         if fresh:
-            await self.hub.broadcast({"type": "news", "data": fresh})
-            self.phone.enqueue([from_filing(n, self.settings.public_url) for n in fresh if n["alert"]],
-                               self.state.phone_alerts)
+            await self._publish_items(fresh, "filing", lambda n: from_filing(n, self.settings.public_url))
             self._wake_gaps.set()
         failing = self.filings.failing
         return f"EDGAR feeds failing: {', '.join(failing)}" if failing else None
