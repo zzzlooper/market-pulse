@@ -54,6 +54,21 @@ def test_a_stock_already_moving_in_sympathy_at_startup_is_only_a_baseline(day):
         run.close()
 
 
+def test_a_stock_already_moving_when_its_leaders_industry_arrives_is_only_a_baseline(day):
+    theme(day)
+    day.floats("09:00", ACME=None, CRUX=None, DYNA=None, BOLT=None,  # ACME's industry isn't known yet
+               industry={"CRUX": "Biotechnology", "DYNA": "Biotechnology", "BOLT": "Electrical Equipment & Parts"})
+    run = Run(day, watchlist=["BOLT"]).steps("09:31", "09:32")
+    try:
+        assert run.engine.sympathy == {}
+        run.engine.industries["ACME"] = "Biotechnology"  # CRUX was up 8% all along
+        run.steps("09:33", "09:34")
+        assert "CRUX" in run.engine.sympathy  # the badge shows
+        assert [a for a in run.browser("alerts") if a["kind"] == "sympathy"] == []
+    finally:
+        run.close()
+
+
 def test_the_sympathy_thresholds_are_yours_to_set(day):
     theme(day)
     run = Run(day, watchlist=["BOLT"], sympathy_min_pct=2.0, sympathy_lead_pct=50.0)

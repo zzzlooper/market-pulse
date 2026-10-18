@@ -160,8 +160,9 @@ class TapeMixin:
     async def _check_sympathy(self) -> None:
         """Sympathy moves among the stocks followed today (watchlist, movers): in each industry the
         biggest gainer up sympathy_lead_pct or more leads, and its peers up sympathy_min_pct or more
-        move with it. A stock's first check (once its industry is known) is a baseline, so one
-        already moving at startup isn't alerted. One alert per stock a day, with the breakouts
+        move with it. A stock's first check (once its industry is known) is a baseline, and so is its
+        leader's, so one already moving at startup isn't alerted, even if its leader's industry
+        arrives later. One alert per stock a day, with the breakouts
         (same switch, same phone category).
         Once in, a stock stays until it falls well back (a leader below 80% of the threshold, a
         follower below half), so one hovering at a threshold doesn't flicker in and out."""
@@ -186,7 +187,7 @@ class TapeMixin:
                 continue
             sympathy[symbol] = {"industry": industry, "leader": lead[0], "leader_pct": round(lead[1], 1),
                                 "change_pct": round(row["change_pct"], 1)}
-            if symbol not in self._sympathy_seen:  # already moving at its first check: only the baseline
+            if not {symbol, lead[0]} <= self._sympathy_seen:  # already moving at its or its leader's first check
                 self._sympathy_alerted.add(symbol)
             if symbol not in self._sympathy_alerted and self.state.breakout_alerts:
                 self._sympathy_alerted.add(symbol)
