@@ -43,6 +43,28 @@ def test_feed_errors_never_repeat_the_address():
     assert feed_error(TimeoutError()) == "TimeoutError"
 
 
+def test_a_headline_trimmed_from_the_history_never_comes_back_as_new():
+    def rss(*titles):
+        items = "".join(f"<item><title>{t}</title><link>https://wire.example.test/{i}</link></item>"
+                        for i, t in enumerate(titles))
+        return httpx.Response(200, text=f"<rss><channel>{items}</channel></rss>")
+    later = ("Acme wins FDA approval", "Bolt opens a plant", "Crux names a chief")
+    answers = [rss("Acme wins FDA approval"), rss(*later), rss(*later)]
+    feed = NewsFeed(Settings(feeds={"Wire": "https://wire.example.test/rss"}, ticker_news=False, news_history=2))
+    feed._client = httpx.AsyncClient(transport=httpx.MockTransport(lambda request: answers.pop(0)))
+
+    async def polls():
+        try:
+            return [await feed.poll([], ["FDA"]) for _ in range(3)]
+        finally:
+            await feed.aclose()
+    first, second, third = asyncio.run(polls())
+    assert [(n["title"], n["alert"]) for n in first] == [("Acme wins FDA approval", False)]  # backlog: baseline
+    assert {n["title"] for n in second} == {"Bolt opens a plant", "Crux names a chief"}
+    assert "Acme wins FDA approval" not in {n["title"] for n in feed.latest()}  # trimmed to news_history
+    assert third == []  # still in the feed, but seen: no repeat, no alert
+
+
 def test_a_failing_feed_with_a_token_in_its_address_keeps_it_out_of_the_log(caplog):
     def handler(request):
         if request.url.host == "down.example.test":

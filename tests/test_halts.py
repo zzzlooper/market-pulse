@@ -56,6 +56,15 @@ def test_feed_baseline_then_new_and_resumption():
     assert feed.apply([b]) == (True, [], [])                          # dropped from the feed
 
 
+def test_a_stock_halted_again_is_a_new_halt():
+    feed = HaltFeed()
+    first = halt("AAA", "LUDP", "13:00:00", resume="13:05:00")
+    feed.apply([first])
+    again = halt("AAA", "LUDP", "13:20:00")  # a second limit up/down pause the same day
+    changed, new, resumed = feed.apply([again, first])
+    assert changed and new == [again] and resumed == []
+
+
 def test_halt_messages_modes():
     watched = halt("AAPL", "LUDP", resume="13:05:00")
     other = halt("ZZZ")

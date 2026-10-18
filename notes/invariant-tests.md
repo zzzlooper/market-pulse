@@ -7,6 +7,24 @@ passed with no changes before starting. Nothing was fixed.
 
 **Result: 45 of 58 breaks caught, 13 NOT CAUGHT.**
 
+**Since then (branch `invariant-tests`):** each of the 13 has a test, and each break was run again
+and now fails it. The tables below still show the run at `62b7cba`.
+
+| # | Test that now catches it |
+|---|---|
+| 1i | `tests/test_resumptions.py` test_a_resumption_minutes_before_startup_isnt_reported_either |
+| 1j | `tests/test_sympathy.py` test_a_stock_already_moving_when_its_own_industry_arrives_is_only_a_baseline |
+| 1l | `tests/test_resumptions.py` test_a_resumption_under_a_minute_away_at_startup_still_gets_its_heads_up |
+| 2b | `tests/test_alerts.py` test_cooldown_is_per_rule_and_symbol |
+| 2m | `tests/test_halts.py` test_a_stock_halted_again_is_a_new_halt |
+| 2n | `tests/test_resumptions.py` test_the_heads_up_comes_once_however_often_the_clock_is_checked |
+| 2q | `tests/test_news.py` test_a_headline_trimmed_from_the_history_never_comes_back_as_new |
+| 3a | `tests/test_finnhub.py` test_price_heard_recently_stays_live_without_the_stream (now uses 30 s, not `STALE_SECONDS`) |
+| 4a | `tests/test_notify.py` test_per_minute_cap (now uses the real cap of 20) |
+| 4e, 4f | `tests/test_browser.py` test_a_burst_of_alerts_makes_three_desktop_notifications_and_a_summary |
+| 5c | `tests/test_notify.py` test_request_addresses_with_the_bot_token_stay_out_of_the_log |
+| 5h | `tests/test_finnhub.py` test_an_error_message_from_finnhub_never_shows_the_key |
+
 "Covering tests" are the tests that failed for a break. For a break that wasn't caught, the
 nearest test is named along with why it missed.
 

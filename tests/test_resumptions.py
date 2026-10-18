@@ -85,6 +85,39 @@ def test_a_resumption_before_startup_and_halts_off_the_watchlist_stay_quiet(day)
         run.close()
 
 
+def test_a_resumption_minutes_before_startup_isnt_reported_either(day):
+    day.halt("09:20", "BOLT", "LUDP", resumes="09:25")  # resumed 6 minutes before the app started
+    day.chart("BOLT", prices)
+    run = Run(day, watchlist=["BOLT"]).steps("09:31", "09:32", "09:40")
+    try:
+        assert [n["title"] for n in run.phone if n["category"] == "halts"] == []
+        assert run.engine.halt_info == {}
+    finally:
+        run.close()
+
+
+def test_a_resumption_under_a_minute_away_at_startup_still_gets_its_heads_up(day):
+    day.halt("10:00", "BOLT", "LUDP", resumes="10:05")
+    day.chart("BOLT", prices)
+    run = Run(day, watchlist=["BOLT"]).steps("10:04:30")  # the halt itself is the baseline
+    try:
+        assert [(n["at"], n["title"]) for n in run.phone if n["category"] == "halts"] == [
+            ("10:04:30", "BOLT · resumes in a minute")]
+    finally:
+        run.close()
+
+
+def test_the_heads_up_comes_once_however_often_the_clock_is_checked(day):
+    day.halt("10:00", "BOLT", "LUDP", resumes="10:05")
+    day.chart("BOLT", prices)
+    run = Run(day, watchlist=["BOLT"]).steps("09:31", "10:01", "10:04:10", "10:04:30", "10:04:50")
+    try:
+        assert [(n["at"], n["title"]) for n in run.phone if n["title"] == "BOLT · resumes in a minute"] == [
+            ("10:04:10", "BOLT · resumes in a minute")]
+    finally:
+        run.close()
+
+
 def test_with_halt_alerts_for_all_stocks_any_resumption_counts(day):
     day.halt("10:00", "CRUX", "LUDP", resumes="10:05")
     day.chart("CRUX", prices)

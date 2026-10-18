@@ -480,6 +480,19 @@ def test_real_time_ticks_update_just_their_rows(page, world):
     assert page.eval("state.quotes.length") == 2
 
 
+def test_a_burst_of_alerts_makes_three_desktop_notifications_and_a_summary(page, world):
+    open_dashboard(page, world)
+    page.eval("window.shown = []; window.Notification = class { static permission = 'granted';"
+              " constructor(title, options) { if (title === 'Market Pulse' || options.tag?.startsWith('burst'))"
+              " shown.push([title, options.body]); } }")  # only this burst: the replay may alert meanwhile
+    page.eval("handle({type: 'alerts', data: ['ACME', 'BOLT', 'CRUX', 'DYNA', 'ECHO'].map((s, i) => ({id: `burst${i}`,"
+              " time: new Date(appNow()).toISOString(), symbol: s, kind: 'above', message: `${s} crossed above 10`}))})")
+    assert page.eval("shown") == [["ACME · price alert", "ACME crossed above 10"],
+                                  ["BOLT · price alert", "BOLT crossed above 10"],
+                                  ["CRUX · price alert", "CRUX crossed above 10"],
+                                  ["Market Pulse", "+2 more alerts"]]
+
+
 def test_a_stale_real_time_price_is_marked_as_delayed(page, world):
     open_dashboard(page, world)
     page.eval("handle({type: 'quote_ticks', data: [{...state.quotes.find(q => q.symbol === 'BOLT'), live: false, delayed: true}]})")

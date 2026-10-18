@@ -100,9 +100,9 @@ def test_price_heard_recently_stays_live_without_the_stream():
     try:
         clock.freeze(1_000.0)
         feed.prices["AAPL"] = LivePrice(price=110.0, time=990.0, seen=1_000.0)  # e.g. a REST quote
-        clock.freeze(1_000.0 + STALE_SECONDS)
+        clock.freeze(1_000.0 + 30)  # 30 s, not STALE_SECONDS: CLAUDE.md promises this number
         assert feed.overlay(yahoo)["live"]
-        clock.freeze(1_000.0 + STALE_SECONDS + 1)
+        clock.freeze(1_000.0 + 31)
         assert feed.overlay(yahoo)["delayed"]
     finally:
         clock.reset()
@@ -197,6 +197,14 @@ def test_stream_errors_never_contain_the_key():
     assert feed.error.startswith("stream disconnected:")
     assert "test-key" not in feed.error
     assert not feed.connected
+
+
+def test_an_error_message_from_finnhub_never_shows_the_key(caplog):
+    feed, _ = make_feed()
+    with caplog.at_level("DEBUG", logger="app.finnhub"):
+        feed.handle({"type": "error", "msg": "Invalid API key test-key"})
+    assert feed.error == "Invalid API key …"
+    assert "Invalid API key" in caplog.text and "test-key" not in caplog.text
 
 
 def test_stream_disconnect_logs_never_contain_the_key(caplog):

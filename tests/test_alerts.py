@@ -56,6 +56,15 @@ def test_cooldown_suppresses_flapping():
     assert len(mon.check_quotes([q(price=101)], [rule])) == 1
 
 
+def test_cooldown_is_per_rule_and_symbol():
+    mon, _ = make()
+    rule = new_rule("", "above", 100)
+    mon.check_quotes([q("AAPL", price=99), q("TSLA", price=99)], [rule])
+    assert [e["symbol"] for e in mon.check_quotes([q("AAPL", price=101), q("TSLA", price=99)], [rule])] == ["AAPL"]
+    fired = mon.check_quotes([q("AAPL", price=101), q("TSLA", price=101)], [rule])  # AAPL's cooldown isn't TSLA's
+    assert [e["symbol"] for e in fired] == ["TSLA"]
+
+
 def test_all_symbols_rule_tracks_each_symbol_separately():
     mon, _ = make()
     rule = new_rule("", "move", 5)
