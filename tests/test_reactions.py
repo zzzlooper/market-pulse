@@ -223,6 +223,83 @@ def test_recap_runs_on_weekdays_after_the_close(now, expected):
     assert next_run(now, "16:30") == expected
 
 
+def test_a_restart_after_recap_time_sends_the_missed_recap_once(tmp_path, monkeypatch):
+    from scenario_kit import Day, Run
+    from scenario_kit import ts as at
+
+    from app.clock import clock
+    day = Day(tmp_path)
+    day.chart("SPY", lambda hhmm: 500.0)  # a regular session today
+    run = Run(day, watchlist=["BOLT"])
+    e = run.engine
+    try:
+        clock.freeze(at("16:00"))
+        assert not e._recap_missed()  # not due yet
+        clock.freeze(at("17:10"))  # started after recap_time, which nothing sent
+        assert e._recap_missed()
+        run._runner.run(e._send_recap())
+        assert e.phone._queue.qsize() == 1 and e.phone._queue.get_nowait()["category"] == "recap"
+        assert UserState(e.state.path).recap_sent == "2026-10-13"  # survives the next restart
+        assert not e._recap_missed()  # so that one won't repeat it
+
+        e.state.recap_sent = None  # a recap that fails isn't marked, so a restart tries again
+
+        async def broken():
+            raise RuntimeError("Yahoo down")
+        monkeypatch.setattr(e, "_traded_today", broken)
+        run._runner.run(e._send_recap())
+        assert e._recap_missed() and e.phone._queue.empty()
+    finally:
+        run.close()
+
+
+def test_the_recap_loop_catches_up_at_startup_then_waits_for_the_next_day(tmp_path, monkeypatch):
+    from scenario_kit import Day, Run
+    from scenario_kit import ts as at
+
+    from app.clock import clock
+    from app.engine.daily import RECAP_CATCH_UP
+
+    class Stop(Exception):
+        pass
+    run = Run(Day(tmp_path), watchlist=["BOLT"])
+    e = run.engine
+    sleeps = []
+
+    async def sleep(seconds):
+        sleeps.append(round(seconds))
+
+    async def send():
+        raise Stop
+    monkeypatch.setattr(clock, "sleep", sleep)
+    monkeypatch.setattr(e, "_send_recap", send)
+    try:
+        clock.freeze(at("17:10"))
+        with pytest.raises(Stop):
+            run._runner.run(e._recap_loop())
+        assert sleeps == [RECAP_CATCH_UP]  # the missed one first
+        sleeps.clear()
+        e.state.recap_sent = "2026-10-13"  # already went out today
+        with pytest.raises(Stop):
+            run._runner.run(e._recap_loop())
+        assert sleeps == [round(at("16:30") + 86400 - at("17:10"))]  # straight to tomorrow's
+    finally:
+        monkeypatch.undo()
+        run.close()
+
+
+def test_no_recap_is_missed_on_a_weekend(tmp_path):
+    from scenario_kit import Day, Run
+
+    from app.clock import clock
+    run = Run(Day(tmp_path), watchlist=["BOLT"])
+    try:
+        clock.freeze(datetime(2026, 10, 17, 18, 0, tzinfo=ET).timestamp())  # a Saturday evening
+        assert not run.engine._recap_missed()
+    finally:
+        run.close()
+
+
 def test_recap_time_must_be_hh_mm(tmp_path):
     from app.config import load_settings
     (tmp_path / "c.toml").write_text('recap_time = "4:30pm"')

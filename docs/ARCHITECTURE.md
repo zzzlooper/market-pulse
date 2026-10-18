@@ -302,7 +302,7 @@ update is older than `max(3 × interval, 60 s)`, whatever the cause, which also 
 
 | What | Where / format | Written by | Notes | file:line |
 |---|---|---|---|---|
-| Watchlist, keywords, alert rules, alert switches, mutes, snoozes, halt mode, phone categories | `data/state.json`, JSON | `UserState.save` on every UI change via `_config_changed` | Atomic tmp+replace, created 0600 | `app/config.py:131-170`, `app/engine/core.py:482-484` |
+| Watchlist, keywords, alert rules, alert switches, mutes, snoozes, halt mode, phone categories, the day the last recap went out | `data/state.json`, JSON | `UserState.save` on every UI change via `_config_changed`, and after each recap | Atomic tmp+replace, created 0600 | `app/config.py:131-174`, `app/engine/core.py:482-484` |
 | Dashboard setting overrides, **including secrets entered in Setup** (plain text) | `data/settings.json`, JSON | `DashboardSettings.save` from `update_settings` | Created 0600, atomic; only `EDITABLE` names are loaded | `app/setup.py:167-182`, `app/engine/core.py:597`, `app/main.py:72` |
 | Alerts fired/phoned per kind per day, last 8 days | `data/alert_counts.json`, JSON | `AlertCounts.save` on every publish | So the daily phone cap survives a restart; written then chmod 0600 | `app/noise.py:21`, `:88-96`, `app/engine/core.py:104`, `:276-280`, `:300`, `:325` |
 | LULD estimate-vs-official checks, last 500 | `data/luld_checks.json`, JSON | `Checks.add` | Written then chmod 0600; no tickers | `app/luld.py:84-108`, `app/engine/tape.py:63` |
@@ -333,10 +333,18 @@ Rebuilding these is what makes "a restart only sets a baseline" true.
 - **Catalyst helpers:** the offerings waiting for a risk level (`app/engine/catalysts.py:72`).
   **UNVERIFIED**: offerings queued at shutdown never get one.
 
-**Missed scheduled sends.** `next_run` always picks a time after now (`app/recap.py:85-86`). The
-recap loop sleeps until then (`app/engine/daily.py:38-39`), so a restart after `recap_time` skips
-that day's recap. The 09:15 gap brief uses the same `next_run` (`app/engine/gaps.py:98`).
-**UNVERIFIED**: the rest of the brief loop wasn't read.
+**Missed scheduled sends.** The recap and the brief handle a restart differently.
+- **Recap.** The day the last recap went out is saved as `recap_sent` in `state.json`
+  (`app/config.py:149`, `:163`). At startup, `_recap_missed` checks three things: it's a weekday,
+  `recap_time` has passed, and today's recap hasn't gone out (`app/engine/daily.py:39-45`). If all
+  hold, the loop waits `RECAP_CATCH_UP`=60 s for the first quotes, then sends the missed recap
+  (`app/engine/daily.py:15`, `:61-64`). After that it sleeps until `next_run`, which is always after
+  now (`app/engine/daily.py:65-67`, `app/recap.py:85-86`).
+- **Marking.** `_send_recap` marks the day only after a success, so a failed recap is tried again on
+  the next restart that day (`app/engine/daily.py:55-59`).
+- **Brief.** The 09:15 gap brief uses `next_run` too (`app/engine/gaps.py:98`), with no catch-up.
+  **UNVERIFIED**: the rest of the brief loop wasn't read, so a restart after 09:15 most likely skips
+  that day's brief.
 
 **Replay never touches real data.** A replay runs with state, settings and reactions in a temp
 folder, deleted on shutdown (`app/main.py:74-84`, `:112-113`). It also clears the phone and Finnhub
