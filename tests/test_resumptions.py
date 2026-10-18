@@ -107,6 +107,17 @@ def test_a_resumption_under_a_minute_away_at_startup_still_gets_its_heads_up(day
         run.close()
 
 
+def test_the_heads_up_comes_once_however_often_the_clock_is_checked(day):
+    day.halt("10:00", "BOLT", "LUDP", resumes="10:05")
+    day.chart("BOLT", prices)
+    run = Run(day, watchlist=["BOLT"]).steps("09:31", "10:01", "10:04:10", "10:04:30", "10:04:50")
+    try:
+        assert [(n["at"], n["title"]) for n in run.phone if n["title"] == "BOLT · resumes in a minute"] == [
+            ("10:04:10", "BOLT · resumes in a minute")]
+    finally:
+        run.close()
+
+
 def test_with_halt_alerts_for_all_stocks_any_resumption_counts(day):
     day.halt("10:00", "CRUX", "LUDP", resumes="10:05")
     day.chart("CRUX", prices)
