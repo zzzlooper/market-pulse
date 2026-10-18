@@ -135,6 +135,8 @@ class PhoneNotifier:
         self.settings = settings
         self._client = client or httpx.AsyncClient(timeout=10)
         self._on_status = on_status  # told after every delivery attempt, so the UI can show errors
+        # True during a replay (app/main.py): no channel, whatever is set in Setup or comes back from config.toml.
+        self.offline = False
         self._queue: asyncio.Queue[dict] = asyncio.Queue(maxsize=QUEUE_LIMIT)
         self._sent: deque[float] = deque()  # send times within the last minute
         self.last_sent: str | None = None
@@ -142,15 +144,17 @@ class PhoneNotifier:
 
     @property
     def channels(self) -> list[str]:
+        if self.offline:
+            return []
         s = self.settings
         return [name for name, on in (("ntfy", s.ntfy_topic), ("telegram", s.telegram_bot_token and s.telegram_chat_id)) if on]
 
     def status(self) -> dict:
         s = self.settings
         targets = []
-        if s.ntfy_topic:
+        if "ntfy" in self.channels:
             targets.append(f"ntfy {s.ntfy_server.removeprefix('https://')}/{mask(s.ntfy_topic)}")
-        if s.telegram_bot_token and s.telegram_chat_id:
+        if "telegram" in self.channels:
             targets.append(f"Telegram chat {mask(str(s.telegram_chat_id))}")
         return {"targets": targets, "last_sent": self.last_sent, "last_error": self.last_error}
 
