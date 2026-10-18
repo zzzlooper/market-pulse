@@ -56,8 +56,6 @@ served from `static/` (`app/main.py:621`).
 | `app/tls.py` | Local CA and server certificate | `ensure` `:139`, `status` `:172` |
 | `static/` | Browser UI; WebSocket client and message handler | `handle` `static/app.js:6`, socket `static/app.js:69` |
 
-Note: CLAUDE.md lists the UI as `app/static/`, but it lives at the repo root `static/` (`app/main.py:621`).
-
 ## 3. Data flow
 
 ### Shared machinery
