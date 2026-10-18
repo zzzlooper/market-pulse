@@ -69,6 +69,21 @@ def test_a_stock_already_moving_when_its_leaders_industry_arrives_is_only_a_base
         run.close()
 
 
+def test_a_stock_already_moving_when_its_own_industry_arrives_is_only_a_baseline(day):
+    theme(day)
+    day.floats("09:00", ACME=None, CRUX=None, DYNA=None, BOLT=None,  # CRUX's industry isn't known yet
+               industry={"ACME": "Biotechnology", "DYNA": "Biotechnology", "BOLT": "Electrical Equipment & Parts"})
+    run = Run(day, watchlist=["BOLT"]).steps("09:31", "09:32")
+    try:
+        assert run.engine.sympathy == {}
+        run.engine.industries["CRUX"] = "Biotechnology"  # up 8% with ACME all along; ACME was seen already
+        run.steps("09:33", "09:34")
+        assert "CRUX" in run.engine.sympathy  # the badge shows
+        assert [a for a in run.browser("alerts") if a["kind"] == "sympathy"] == []
+    finally:
+        run.close()
+
+
 def test_gappers_on_no_list_move_in_sympathy_before_and_after_the_open(tmp_path, monkeypatch):
     monkeypatch.setattr("app.sec.MIN_REQUEST_GAP", 0)
     day = Day(tmp_path, start="04:00")

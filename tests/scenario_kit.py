@@ -59,8 +59,8 @@ COMPANIES = {
 
 
 def ts(hhmm: str, day: date = DAY) -> float:
-    hour, minute = (int(x) for x in hhmm.split(":"))
-    return datetime.combine(day, time(hour, minute), ET).timestamp()
+    """"HH:MM", or "HH:MM:SS" for a step within a minute."""
+    return datetime.combine(day, time(*(int(x) for x in hhmm.split(":"))), ET).timestamp()
 
 
 def get(url: str) -> str:
