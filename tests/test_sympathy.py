@@ -30,7 +30,9 @@ def theme(day):
 
 def test_a_stock_moving_with_its_industrys_leader_is_marked_and_alerted_once(day):
     theme(day)
-    run = Run(day, watchlist=["BOLT"]).steps("09:31", "09:32", "09:33")
+    day.movers("09:31", gainers={"ACME": 45.0, "CRUX": 2.0, "DYNA": 3.0})  # CRUX starts flat...
+    day.movers("09:33", gainers={"ACME": 45.0, "CRUX": 8.0, "DYNA": 3.0})  # ...then joins in
+    run = Run(day, watchlist=["BOLT"]).steps("09:31", "09:32", "09:33", "09:34")
     try:
         assert run.engine.sympathy == {"CRUX": {"industry": "Biotechnology", "leader": "ACME", "leader_pct": 45.0,
                                                 "change_pct": 8.0}}
@@ -38,6 +40,16 @@ def test_a_stock_moving_with_its_industrys_leader_is_marked_and_alerted_once(day
         assert alerts == ["CRUX +8.0% in sympathy with ACME +45% (Biotechnology)"]
         assert any(m["type"] == "sympathy" and "CRUX" in m["data"] for m in run.hub.messages)
         assert [n for n in run.phone if n["category"] == "breakouts"] == []  # the phone's Breakouts are off by default
+    finally:
+        run.close()
+
+
+def test_a_stock_already_moving_in_sympathy_at_startup_is_only_a_baseline(day):
+    theme(day)  # CRUX is already up 8% with ACME when the app starts
+    run = Run(day, watchlist=["BOLT"]).steps("09:31", "09:32", "09:33")
+    try:
+        assert "CRUX" in run.engine.sympathy  # the badge shows
+        assert [a for a in run.browser("alerts") if a["kind"] == "sympathy"] == []
     finally:
         run.close()
 
